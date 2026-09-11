@@ -84,6 +84,43 @@ def compare(erplph: dict, stock5: dict, periods: set[str]) -> dict[str, dict[str
     return diff
 
 
+def compare_balances(run: Path, conn: sqlite3.Connection) -> dict:
+    """คงคลังคลัง 2 เทียบกับ Stock5 — ดึงคนละเวลา จึงรายงานไว้ดู ไม่ตัดสินว่าผิด
+
+    ถ้าดึงห่างกันไม่กี่นาที ควรตรงเกือบทั้งหมด รายการที่มีแต่ฝั่ง Stock5 ช่วยจับ
+    ความต่างของตัวกรอง (Stock5 กรองด้วยรูปแบบรหัส ที่นี่กรองด้วยหมวด)
+    """
+    path = run / "INVENTORY.json"
+    day = conn.execute("SELECT MAX(period) FROM periods WHERE store = ? AND kind = 'balance' "
+                       "AND status = 'complete'", (MAIN,)).fetchone()[0]
+    if not path.is_file() or not day:
+        print("\n  คงคลัง: ยังไม่มีภาพคงคลังของคลัง 2 ให้เทียบ")
+        return {"compared": False}
+
+    s5 = {(str(r.get("WORKING_CODE")), str(r.get("LOTNO") or "")):
+          (_number(r.get("QTY_ONHAND")), _number(r.get("SOURCE_STOCK_VALUE")))
+          for r in json.loads(path.read_text(encoding="utf-8"))}
+    er = {(code, lot): (qty, value) for code, lot, qty, value in conn.execute(
+        "SELECT stock_code, lot_no, qty, value FROM balances WHERE store = ? AND period = ?",
+        (MAIN, day))}
+    same = sum(1 for key in set(s5) & set(er)
+               if abs(s5[key][0] - er[key][0]) < 1e-6 and abs(s5[key][1] - er[key][1]) < 0.005)
+    only_s5 = sorted({code for code, _lot in set(s5) - set(er)})
+    only_er = sorted({code for code, _lot in set(er) - set(s5)})
+    names = dict(conn.execute("SELECT stock_code, name FROM items"))
+
+    print(f"\n  คงคลังคลัง 2  Stock5 {len(s5):,} ล็อต ฿{sum(v for _q, v in s5.values()):,.2f}"
+          f"  |  ERPLPH ({day}) {len(er):,} ล็อต ฿{sum(v for _q, v in er.values()):,.2f}")
+    print(f"    ตรงกันทั้งจำนวนและมูลค่า {same:,} ล็อต  (ดึงคนละเวลา ต่างได้ตามการเคลื่อนไหวระหว่างนั้น)")
+    if only_s5:
+        print(f"    รหัสที่มีแต่ Stock5 {len(only_s5)} รหัส: {', '.join(only_s5[:10])}")
+    if only_er:
+        print(f"    รหัสที่มีแต่ ERPLPH {len(only_er)} รหัส: "
+              + ", ".join(f"{code} {names.get(code, '')[:20]}" for code in only_er[:10]))
+    return {"compared": True, "erplph_day": day, "stock5_lots": len(s5), "erplph_lots": len(er),
+            "identical_lots": same, "codes_only_in_stock5": only_s5, "codes_only_in_erplph": only_er}
+
+
 def main() -> int:
     home = stock5_engine.stock5_home()
     try:
@@ -124,6 +161,8 @@ def main() -> int:
             note += "  (เดือนปัจจุบัน ดึงคนละเวลา)"
         print(f"  {period:<7} {a[0]:>10,} {b[0]:>10,} {a[1]:>18,.2f} {b[1]:>18,.2f}  {note}")
 
+    balance = compare_balances(run, conn)
+
     report = {
         "checked_at": datetime.now().isoformat(timespec="seconds"),
         "stock5_run": active.get("run_id"),
@@ -131,6 +170,7 @@ def main() -> int:
         "closed_period_differences": {p: dict(d) for p, d in closed_problems.items()},
         "current_period": current,
         "current_period_differences": dict(diff.get(current, {})),
+        "balance": balance,
         "matched": not closed_problems,
     }
     out = ROOT / "diagnostics" / f"stock5_parity_{datetime.now():%Y%m%d_%H%M%S}.json"

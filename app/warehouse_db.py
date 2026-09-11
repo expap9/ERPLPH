@@ -59,6 +59,7 @@ CREATE TABLE IF NOT EXISTS items (
     updated_at     TEXT DEFAULT ''
 );
 
+-- ภาพคงคลังวันละหนึ่งภาพต่อคลัง: period ของตารางนี้คือวันที่ YYYYMMDD ไม่ใช่เดือน
 CREATE TABLE IF NOT EXISTS balances (
     period       TEXT NOT NULL,
     store        TEXT NOT NULL,
@@ -163,12 +164,21 @@ def _upgrade(conn: sqlite3.Connection) -> list[str]:
     return applied
 
 
+def _without_leading_comments(statement: str) -> str:
+    # คำสั่งถูกแยกประเภทจากคำแรก ความเห็นนำหน้าจะทำให้ตารางไม่ถูกสร้างโดยไม่มีข้อผิดพลาด
+    lines = statement.strip().splitlines()
+    while lines and lines[0].strip().startswith("--"):
+        lines.pop(0)
+    return "\n".join(lines).strip()
+
+
 def init_db() -> list[str]:
     """สร้างตารางที่ยังไม่มี และอัปเกรดตารางเดิมให้มีคอลัมน์ครบ"""
     with connect() as conn:
         # สร้างตารางก่อน แล้วค่อยเติมคอลัมน์ที่ขาด จากนั้นจึงสร้าง index
         # ที่อาจอ้างคอลัมน์ใหม่ ลำดับนี้ทำให้ฐานข้อมูลรุ่นเก่าอัปเกรดได้
-        statements = [part.strip() for part in SCHEMA.split(";") if part.strip()]
+        statements = [_without_leading_comments(part) for part in SCHEMA.split(";")]
+        statements = [statement for statement in statements if statement]
         for statement in statements:
             if statement.upper().startswith("CREATE TABLE"):
                 conn.execute(statement)
@@ -239,7 +249,7 @@ def replace_period(period: str, store: str, kind: str, rows: list[dict[str, Any]
         raise ValueError(f"ชนิดข้อมูลไม่ถูกต้อง: {kind}")
 
     columns = _columns_of(table)
-    prepared = [_row_for(table, columns, row, period, store) for row in rows]
+    prepared = _unique_by_key(table, [_row_for(table, columns, row, period, store) for row in rows])
     placeholders = ", ".join("?" for _ in columns)
     statement = f"INSERT OR REPLACE INTO {table} ({', '.join(columns)}) VALUES ({placeholders})"
 
@@ -309,6 +319,17 @@ def adopt_unit_digests(digests: dict[tuple[str, str], str], kind: str = "issue")
     return len(digests)
 
 
+def latest_snapshots() -> dict[str, str]:
+    """วันของภาพคงคลังล่าสุดที่ดึงสำเร็จ รายคลัง"""
+    with connect() as conn:
+        return {
+            row["store"]: row["day"]
+            for row in conn.execute(
+                "SELECT store, MAX(period) AS day FROM periods "
+                "WHERE kind = 'balance' AND status = ? GROUP BY store", (PERIOD_COMPLETE,))
+        }
+
+
 def mark_period_failed(period: str, store: str, kind: str, message: str) -> None:
     """บันทึกว่างวดนี้ดึงไม่สำเร็จ ข้อมูลเดิม (ถ้ามี) ไม่ถูกแตะ"""
     with _transaction() as conn:
@@ -340,10 +361,15 @@ def upsert_items(rows: Iterable[dict[str, Any]]) -> int:
                                   item_group, base_unit, retired, updated_at)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                ON CONFLICT(stock_code) DO UPDATE SET
-                   name = excluded.name, trade_name = excluded.trade_name,
-                   main_category = excluded.main_category, item_group = excluded.item_group,
-                   base_unit = excluded.base_unit, retired = excluded.retired,
+                   name = COALESCE(NULLIF(excluded.name, ''), items.name),
+                   trade_name = COALESCE(NULLIF(excluded.trade_name, ''), items.trade_name),
+                   main_category = COALESCE(NULLIF(excluded.main_category, ''), items.main_category),
+                   item_group = COALESCE(NULLIF(excluded.item_group, ''), items.item_group),
+                   base_unit = COALESCE(NULLIF(excluded.base_unit, ''), items.base_unit),
+                   retired = CASE WHEN excluded.name = '' THEN items.retired
+                                  ELSE excluded.retired END,
                    updated_at = excluded.updated_at""", payload)
+    # คำสั่งแต่ละชนิดคืนคอลัมน์ไม่ครบเท่ากัน (คงคลังไม่มีหมวด) ค่าว่างจึงต้องไม่ทับค่าเดิม
     return len(payload)
 
 
@@ -369,6 +395,31 @@ def _columns_of(table: str) -> list[str]:
 
 
 _NUMERIC_COLUMNS = {"qty", "value", "unit_price"}
+
+
+def _unique_by_key(table: str, rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """ตัดสำเนาที่เหมือนกันทุกช่อง และหยุดถ้าคีย์เดียวกันแต่ตัวเลขต่างกัน
+
+    INSERT OR REPLACE จะเก็บแถวสุดท้ายไว้เงียบ ๆ ซึ่งเท่ากับเลือกจำนวนหรือราคาแทน
+    ผู้ใช้ — หลักเดียวกับ Stock5 คือหยุดแล้วให้คนตรวจ
+    """
+    with connect() as conn:
+        keys = [row["name"] for row in sorted(
+            (r for r in conn.execute(f"PRAGMA table_info({table})") if r["pk"]),
+            key=lambda r: r["pk"])]
+    seen: dict[tuple, dict[str, Any]] = {}
+    unique = []
+    for row in rows:
+        key = tuple(row[column] for column in keys)
+        if key in seen:
+            if seen[key] != row:
+                raise ValueError(
+                    f"พบข้อมูลต่างกันที่คีย์เดียวกันใน {table}: {', '.join(map(str, key[2:]))} "
+                    "หยุดเก็บงวดนี้เพื่อไม่เลือกจำนวนหรือราคาแทนกัน")
+            continue
+        seen[key] = row
+        unique.append(row)
+    return unique
 
 
 def _row_for(table: str, columns: list[str], row: dict[str, Any],

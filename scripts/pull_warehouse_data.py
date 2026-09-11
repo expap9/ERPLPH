@@ -7,6 +7,9 @@
     python scripts\\pull_warehouse_data.py --store 2 O5     เฉพาะคลังที่ระบุ
     python scripts\\pull_warehouse_data.py --limit 10       ทดลองสิบงวดแรก
     python scripts\\pull_warehouse_data.py --plan-only      ดูแผนโดยไม่ดึงจริง
+    python scripts\\pull_warehouse_data.py --kind balance   เฉพาะคงคลัง ณ วันนี้
+
+ทุกรอบจบด้วยการถ่ายภาพคงคลังของทุกคลัง ดึงซ้ำวันเดียวกันแทนภาพเดิมของวันนั้น
 """
 import argparse
 from pathlib import Path
@@ -23,8 +26,9 @@ import warehouse_db  # noqa: E402
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--store", nargs="*", help="รหัสคลัง เว้นว่าง = ทุกคลังที่ใช้งานอยู่")
-    parser.add_argument("--kind", nargs="*", default=list(extractor.PERIOD_KINDS),
-                        choices=["receipt", "issue", "balance"])
+    parser.add_argument("--kind", nargs="*", default=list(extractor.ALL_KINDS),
+                        choices=list(extractor.ALL_KINDS),
+                        help="receipt ใบรับ / issue ใบจ่าย / balance คงคลัง ณ วันนี้")
     parser.add_argument("--limit", type=int, help="ดึงไม่เกินกี่งวด สำหรับทดลอง")
     parser.add_argument("--pacing", type=float, default=extractor.PACING_SECONDS,
                         help="พักกี่วินาทีระหว่างคำสั่ง")
@@ -87,8 +91,34 @@ def main() -> int:
     print("  ฐานข้อมูล: %s" % coverage["database"])
     print("  คลังที่มีข้อมูลแล้ว %d คลัง  ทะเบียนรายการ %s รายการ" % (
         len(coverage["stores"]), f"{coverage['items']:,}"))
+    if "balance" in args.kind:
+        _print_snapshot_summary()
     print("=" * 70)
     return 0 if result["failed"] == 0 else 1
+
+
+def _print_snapshot_summary() -> None:
+    """ยอดคงคลังล่าสุดรายคลัง ให้เห็นทันทีว่าได้อะไรมา"""
+    latest = warehouse_db.latest_snapshots()
+    if not latest:
+        return
+    with warehouse_db.connect() as conn:
+        rows = []
+        for store, day in latest.items():
+            lots, value = conn.execute(
+                "SELECT COUNT(*), COALESCE(SUM(value), 0) FROM balances WHERE store = ? AND period = ?",
+                (store, day)).fetchone()
+            rows.append((value, store, day, lots))
+    rows.sort(reverse=True)
+    print("\n  คงคลังล่าสุด (มูลค่าตามต้นทุนในระบบ)")
+    for value, store, day, lots in rows:
+        if lots:
+            print(f"    {store:<5} {stores.store_name(store)[:28]:<30} {lots:>6,} ล็อต "
+                  f"฿{value:>16,.2f}  ({day})")
+    empty = [store for value, store, day, lots in rows if not lots]
+    if empty:
+        print(f"    ไม่มียาคงเหลือ {len(empty)} คลัง: {', '.join(sorted(empty))}")
+    print(f"    รวม {sum(r[0] for r in rows):,.2f} บาท")
 
 
 if __name__ == "__main__":

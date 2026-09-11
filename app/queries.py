@@ -52,6 +52,16 @@ def counts_as_consumption(document_type: object) -> bool:
     return movement_kind(document_type) in CONSUMPTION_KINDS
 
 
+#: ยอดใช้สุทธิ = จ่ายออกที่สอบทานผ่าน − รับคืนทั้งหมด (ผู้ใช้ตัดสิน 11 ก.ย. 2569)
+#:
+#: ใบรับคืนสอบทานไม่ผ่านเสมอ เพราะเครื่องของ Stock5 ไม่รับรองการเคลื่อนไหวขาเข้า
+#: ถ้านับตามสถานะอย่างเดียว ของที่จ่ายแล้วถูกคืนจะถูกนับเป็นการใช้เต็มจำนวน
+#: ข้อมูลจริงของห้องจ่ายยาผู้ป่วยใน: รับคืน ฿54.5 ล้าน 99.95% อยู่บนล็อต "." และ
+#: หักล้างกับใบจ่ายบนล็อต "." ฿54.1 ล้านที่สอบทานผ่าน — นับแบบไม่หักจะเกินจริง 22%
+def is_return(document_type: object, direction: str) -> bool:
+    return movement_kind(document_type) == "dispense" and direction == "in"
+
+
 def source_path() -> Path:
     return stock5_engine.stock5_home() / _SOURCE_FILE
 

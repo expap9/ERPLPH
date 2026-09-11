@@ -123,6 +123,12 @@ class MovementKindTests(unittest.TestCase):
             with self.subTest(document_type=document_type):
                 self.assertFalse(queries.counts_as_consumption(document_type))
 
+    def test_a_dispense_coming_back_in_is_a_return(self):
+        # รับคืนต้องถูกหักจากยอดใช้ ไม่ว่าสถานะสอบทานเป็นอะไร (ขาเข้าไม่เคยผ่าน)
+        self.assertTrue(queries.is_return("32", "in"))
+        self.assertFalse(queries.is_return("32", "out"))
+        self.assertFalse(queries.is_return("35", "in"), "ขาเข้าของการโอนไม่ใช่รับคืน")
+
 
 class PullTests(unittest.TestCase):
     def setUp(self):
@@ -493,6 +499,114 @@ class UnitRuleFreshnessTests(unittest.TestCase):
                 self.planned()
             # ใบรับไม่ใช้ตารางหน่วย จึงยังวางแผนได้
             extractor.plan(self.TODAY, ["O5"], ["receipt"])
+
+
+# ---------------------------------------------------------------------------
+# คงคลัง: ภาพ ณ วันที่ดึง วันละหนึ่งภาพต่อคลัง
+# ---------------------------------------------------------------------------
+
+BALANCE_COLUMNS = ("HOSP_CODE", "WORKING_CODE", "ENGLISHNAME", "TRADE_NAME", "QTY_ONHAND",
+                   "SOURCE_STOCK_VALUE", "SOURCE_STORE", "SOURCE_SCOPE_VERSION", "SOURCE_LOTNO",
+                   "LOTNO", "BASE_UNIT", "EXPIRE_DATE", "SOURCE_DATE_LAST_IN")
+
+
+def balance_row(code="1321080", lot="L1", qty=500.0, value=711.55):
+    return ("EA0010672", code, "AATORVASTATIN TAB 40 mg", "LLipitor", qty, value, "O5",
+            "SSBSTOCK_STORE_V1", lot, lot, "TAB", "20271231", "20260801")
+
+
+class SnapshotTests(unittest.TestCase):
+    import datetime as _dt
+    TODAY = _dt.date(2026, 9, 11)
+    DAY = "20260911"
+
+    def setUp(self):
+        if not stock5_engine.engine_available():
+            self.skipTest("ยังไม่ได้ติดตั้ง Stock5 ข้างโปรเจกต์นี้")
+        self.temp = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
+        self.addCleanup(self.temp.cleanup)
+        directory = Path(self.temp.name)
+        for name, value in (("DATA_DIR", directory), ("DB_PATH", directory / "test.db")):
+            patcher = patch.object(warehouse_db, name, value)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+        warehouse_db.init_db()
+
+    def snap(self, rows, day=DAY, store="O5", **kwargs):
+        connection = FakeConnection(rows, BALANCE_COLUMNS)
+        return extractor.pull_period(connection, day, store, "balance", **kwargs)
+
+    def balances(self):
+        with warehouse_db.connect() as conn:
+            return [dict(r) for r in conn.execute("SELECT * FROM balances ORDER BY period, lot_no")]
+
+    def test_every_run_ends_with_a_snapshot_of_every_store(self):
+        work = extractor.plan(self.TODAY, ["2", "O5"])
+        self.assertEqual(work[-2:], [(self.DAY, "2", "balance"), (self.DAY, "O5", "balance")])
+        self.assertEqual(len(work), 24 * 2 * 2 + 2)
+
+    def test_a_snapshot_only_plan_reads_nothing_else(self):
+        self.assertEqual(extractor.plan(self.TODAY, ["O5"], ["balance"]),
+                         [(self.DAY, "O5", "balance")])
+
+    def test_a_snapshot_is_stored_under_its_day(self):
+        result = self.snap([balance_row(), balance_row(lot="L2", qty=20.0, value=28.46)])
+        self.assertEqual(result["status"], "success")
+        rows = self.balances()
+        self.assertEqual([(r["period"], r["lot_no"], r["qty"]) for r in rows],
+                         [(self.DAY, "L1", 500.0), (self.DAY, "L2", 20.0)])
+        self.assertEqual(warehouse_db.latest_snapshots(), {"O5": self.DAY})
+
+    def test_pulling_again_the_same_day_replaces_that_days_snapshot(self):
+        self.snap([balance_row(), balance_row(lot="L2")])
+        self.snap([balance_row(qty=480.0)])
+        self.assertEqual([(r["lot_no"], r["qty"]) for r in self.balances()], [("L1", 480.0)])
+
+    def test_earlier_days_are_kept_for_trends(self):
+        self.snap([balance_row(qty=600.0)], day="20260910")
+        self.snap([balance_row(qty=500.0)])
+        self.assertEqual([(r["period"], r["qty"]) for r in self.balances()],
+                         [("20260910", 600.0), (self.DAY, 500.0)])
+        self.assertEqual(warehouse_db.latest_snapshots(), {"O5": self.DAY})
+
+    # --- หลักเดียวกับ Stock5: สำเนาซ้ำตัดทิ้งได้ แต่คีย์เดียวกันตัวเลขต่างต้องหยุด
+    def test_identical_join_copies_are_collapsed(self):
+        result = self.snap([balance_row(), balance_row()])
+        self.assertEqual(result["stored_rows"], 1)
+
+    def test_one_lot_with_two_different_quantities_stops_the_snapshot(self):
+        result = self.snap([balance_row(qty=500.0), balance_row(qty=5000.0)])
+        self.assertEqual(result["status"], "error")
+        self.assertEqual(self.balances(), [])
+        self.assertEqual(warehouse_db.period_status(self.DAY, "O5", "balance")["status"], "failed")
+
+    def test_the_database_refuses_to_pick_between_conflicting_rows(self):
+        # ด่านที่สอง ถ้าแถวซ้ำหลุดมาถึงฐานข้อมูล INSERT OR REPLACE ต้องไม่เลือกให้เงียบ ๆ
+        rows = [{"stock_code": "1321080", "lot_no": "L1", "qty": 1.0},
+                {"stock_code": "1321080", "lot_no": "L1", "qty": 2.0}]
+        with self.assertRaises(ValueError):
+            warehouse_db.replace_period(self.DAY, "O5", "balance", rows)
+
+    def test_a_storage_failure_is_recorded_and_does_not_stop_the_run(self):
+        with patch.object(warehouse_db, "replace_period", side_effect=OSError("disk full")):
+            result = self.snap([balance_row()])
+        self.assertEqual(result["status"], "error")
+        self.assertEqual(warehouse_db.period_status(self.DAY, "O5", "balance")["status"], "failed")
+
+    # --- ทะเบียนรายการ
+    def test_a_snapshot_does_not_blank_what_the_item_register_already_knows(self):
+        warehouse_db.upsert_items([{"stock_code": "1321080", "name": "ATORVASTATIN TAB 40 mg",
+                                    "main_category": "11", "item_group": "drug", "base_unit": "TAB"}])
+        self.snap([balance_row()])  # คำสั่งคงคลังไม่มีคอลัมน์หมวด
+        with warehouse_db.connect() as conn:
+            item = dict(conn.execute("SELECT * FROM items").fetchone())
+        self.assertEqual(item["main_category"], "11")
+
+    def test_items_take_their_group_from_the_pull_not_a_constant(self):
+        self.snap([balance_row()], group_key=categories.MEDICAL_SUPPLY)
+        with warehouse_db.connect() as conn:
+            group = conn.execute("SELECT item_group FROM items").fetchone()[0]
+        self.assertEqual(group, categories.MEDICAL_SUPPLY)
 
 
 class UnitRuleDigestTests(unittest.TestCase):

@@ -10,7 +10,7 @@
 - เดือนที่ยังไม่ครบจะถูกดึงซ้ำได้เสมอ เพราะยอดยังเปลี่ยน
 - ไม่เดาแทนผู้ใช้: ชนิดเอกสารที่ยังไม่รู้ความหมายถูกเก็บไว้แต่ไม่นับรวม
 """
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 import time
 from typing import Any, Callable, Iterable
 
@@ -28,6 +28,21 @@ PACING_SECONDS = 1.0
 
 #: ชนิดข้อมูลที่ดึงรายงวด — คงคลังเป็นภาพ ณ ปัจจุบัน จึงไม่ผูกกับงวดย้อนหลัง
 PERIOD_KINDS = ("receipt", "issue")
+
+#: คงคลังเก็บวันละหนึ่งภาพต่อคลัง ดึงซ้ำในวันเดียวกันแทนภาพเดิม ภาพของวันก่อนเก็บไว้
+#: ดูแนวโน้ม — ช่อง period ของภาพคงคลังจึงเป็นวันที่ YYYYMMDD ไม่ใช่เดือน
+SNAPSHOT_KIND = "balance"
+ALL_KINDS = PERIOD_KINDS + (SNAPSHOT_KIND,)
+
+#: คีย์ตัดแถวซ้ำชุดเดียวกับที่ Stock5 ใช้ก่อนเขียนแฟ้มรับและคงคลัง
+#: ใบจ่ายไม่ต้องใช้ เพราะการสอบทานรายล็อตจัดการแถวซ้ำอยู่แล้ว
+_DEDUPE_KEYS = {"receipt": ["RCV_NO", "suffix", "WORKING_CODE"],
+                SNAPSHOT_KIND: ["WORKING_CODE", "LOTNO"]}
+
+
+def snapshot_day(today=None) -> str:
+    """วันของภาพคงคลัง ตามเวลาเครื่องที่ดึง ซึ่งอยู่ในโรงพยาบาล"""
+    return (today or date.today()).strftime("%Y%m%d")
 
 
 def _text(row: dict, *names: str) -> str:
@@ -114,6 +129,23 @@ def _reconcile(raw: list[dict]) -> tuple[list[dict], dict | None]:
     return checked.to_dict("records"), stats
 
 
+def _deduplicate(raw: list[dict], kind: str) -> list[dict]:
+    """ตัดสำเนาที่เหมือนกันทุกช่องจากการเชื่อมตาราง แบบเดียวกับ Stock5
+
+    ถ้าคีย์เดียวกันแต่จำนวนหรือราคาต่างกัน ตัวเดิมของ Stock5 จะหยุดทันที ไม่เลือก
+    ตัวเลขแทนผู้ใช้ — ที่นี่หยุดด้วยเหตุผลเดียวกัน
+    """
+    keys = _DEDUPE_KEYS.get(kind)
+    if not raw or keys is None:
+        return raw
+    import pandas as pd
+
+    identity = stock5_engine.load("transaction_identity")
+    frame = pd.DataFrame(raw)
+    frame = frame.astype(object).where(pd.notna(frame), "")
+    return identity.deduplicate_scoped_extraction(frame, keys).to_dict("records")
+
+
 def _balance_row(row: dict) -> dict[str, Any]:
     return {
         "stock_code": _text(row, "WORKING_CODE"),
@@ -138,8 +170,12 @@ def _display_name(raw: str) -> str:
         return raw
 
 
-def _item_rows(rows: Iterable[dict]) -> list[dict[str, Any]]:
-    """ทะเบียนรายการที่พบในผลการดึง ใช้ร่วมทุกคลัง"""
+def _item_rows(rows: Iterable[dict], group_key: str = categories.DRUG) -> list[dict[str, Any]]:
+    """ทะเบียนรายการที่พบในผลการดึง ใช้ร่วมทุกคลัง
+
+    กลุ่มมาจากตัวกรองหมวดของคำสั่งที่ใช้ดึง ไม่ใช่ค่าคงที่ — เฟส 2 ดึงเวชภัณฑ์
+    มิใช่ยาแล้วต้องไม่ถูกบันทึกเป็นยา
+    """
     seen: dict[str, dict[str, Any]] = {}
     for row in rows:
         code = _text(row, "WORKING_CODE")
@@ -151,7 +187,7 @@ def _item_rows(rows: Iterable[dict]) -> list[dict[str, Any]]:
             "name": name,
             "trade_name": _display_name(_text(row, "TRADE_NAME")),
             "main_category": _text(row, "MAINCATEGORY"),
-            "item_group": categories.DRUG,
+            "item_group": group_key,
             "base_unit": _text(row, "BASE_UNIT", "BASE_UNIT*", "STDIRUNITCODE"),
             "retired": categories.is_retired_item(name),
         }
@@ -160,9 +196,16 @@ def _item_rows(rows: Iterable[dict]) -> list[dict[str, Any]]:
 
 def pull_period(connection, period: str, store: str, kind: str,
                 group_key: str = categories.DRUG) -> dict[str, Any]:
-    """ดึงงวดเดียว คืนผลสรุป ไม่โยนข้อผิดพลาดออกไปให้ลูปหลักล้ม"""
-    date_from, date_to = reporting_window.period_bounds(period)
+    """ดึงงวดเดียว คืนผลสรุป ไม่โยนข้อผิดพลาดออกไปให้ลูปหลักล้ม
+
+    สำหรับคงคลัง period คือวันที่ของภาพ (YYYYMMDD)
+    """
     try:
+        if kind == SNAPSHOT_KIND:
+            # คำสั่งคงคลังไม่ใช้ช่วงวัน แต่ตัวประกอบคำสั่งตรวจรูปแบบวันที่เสมอ
+            date_from = date_to = period
+        else:
+            date_from, date_to = reporting_window.period_bounds(period)
         sql = queries.build(_QUERY_FOR_KIND[kind], store, date_from, date_to, group_key)
     except Exception as exc:
         warehouse_db.mark_period_failed(period, store, kind, str(exc))
@@ -200,14 +243,21 @@ def pull_period(connection, period: str, store: str, kind: str,
             return {"period": period, "store": store, "kind": kind, "status": "error",
                     "message": f"สอบทานรายล็อตไม่สำเร็จ: {exc}"}
 
-    shaped = [_SHAPERS[kind](row) for row in raw]
-    shaped = [row for row in shaped if row.get("stock_code")]
-    warehouse_db.replace_period(period, store, kind, shaped,
-                                source_rows=source_rows, query_sha256=queries.fingerprint(sql),
-                                units_sha256=units_sha256)
-    warehouse_db.upsert_items(_item_rows(raw))
+    try:
+        raw = _deduplicate(raw, kind)
+        shaped = [_SHAPERS[kind](row) for row in raw]
+        shaped = [row for row in shaped if row.get("stock_code")]
+        stored = warehouse_db.replace_period(
+            period, store, kind, shaped, source_rows=source_rows,
+            query_sha256=queries.fingerprint(sql), units_sha256=units_sha256)
+        warehouse_db.upsert_items(_item_rows(raw, group_key))
+    except Exception as exc:
+        # งวดนี้ไม่ถูกเขียน (replace_period เป็นธุรกรรมเดียว) งวดอื่นยังดึงต่อได้
+        warehouse_db.mark_period_failed(period, store, kind, f"เก็บข้อมูลไม่สำเร็จ: {exc}")
+        return {"period": period, "store": store, "kind": kind, "status": "error",
+                "message": f"เก็บข้อมูลไม่สำเร็จ: {exc}"}
     outcome = {"period": period, "store": store, "kind": kind, "status": "success",
-               "source_rows": source_rows, "stored_rows": len(shaped)}
+               "source_rows": source_rows, "stored_rows": stored["rows"]}
     if reconciliation:
         outcome["verified_rows"] = reconciliation.get("verified_rows", 0)
         outcome["pending_rows"] = reconciliation.get("pending_rows", 0)
@@ -220,10 +270,11 @@ REASON_QUERY = "คำสั่งดึงเปลี่ยน"
 REASON_UNITS = "กติกาหน่วยเปลี่ยน"
 REASON_UNITS_UNKNOWN = "ไม่มีบันทึกกติกาหน่วยที่ใช้สอบทาน"
 REASON_CURRENT = "เดือนปัจจุบัน ยอดยังเปลี่ยนได้"
+REASON_SNAPSHOT = "คงคลัง ณ วันนี้"
 
 
 def plan(today=None, store_codes: Iterable[str] | None = None,
-         kinds: Iterable[str] = PERIOD_KINDS, years_back: int | None = None,
+         kinds: Iterable[str] = ALL_KINDS, years_back: int | None = None,
          include_current: bool = True) -> list[tuple[str, str, str]]:
     """งานที่ต้องดึง = งวดที่ยังไม่มี บวกเดือนปัจจุบันซึ่งยอดยังเปลี่ยนได้"""
     return [item[:3] for item in
@@ -231,13 +282,14 @@ def plan(today=None, store_codes: Iterable[str] | None = None,
 
 
 def plan_detail(today=None, store_codes: Iterable[str] | None = None,
-                kinds: Iterable[str] = PERIOD_KINDS, years_back: int | None = None,
+                kinds: Iterable[str] = ALL_KINDS, years_back: int | None = None,
                 include_current: bool = True) -> list[tuple[str, str, str, str]]:
     """เหมือน plan() แต่บอกเหตุผลของแต่ละงวดด้วย"""
     years = reporting_window.DEFAULT_FISCAL_YEARS_BACK if years_back is None else years_back
     periods = reporting_window.periods(today, years)
     selected = list(store_codes) if store_codes is not None else stores.active_store_codes()
-    kinds = list(kinds)
+    requested = list(kinds)
+    kinds = [kind for kind in requested if kind in PERIOD_KINDS]
     work = [(period, store, kind, REASON_MISSING)
             for period, store, kind in warehouse_db.missing_periods(periods, selected, kinds)]
     queued = {item[:3] for item in work}
@@ -278,6 +330,13 @@ def plan_detail(today=None, store_codes: Iterable[str] | None = None,
             for kind in kinds:
                 if (current, store, kind) not in queued:
                     add(current, store, kind, REASON_CURRENT)
+
+    # คงคลังคือยอด ณ ตอนดึง จึงถ่ายภาพใหม่ทุกรอบ และไว้ท้ายสุดให้ใกล้เวลาเดียวกับ
+    # การเคลื่อนไหวของเดือนปัจจุบันที่เพิ่งดึง
+    if SNAPSHOT_KIND in requested:
+        day = snapshot_day(today)
+        for store in selected:
+            work.append((day, store, SNAPSHOT_KIND, REASON_SNAPSHOT))
     return work
 
 
@@ -304,7 +363,7 @@ def _stale_unit_periods(wanted_periods: set[str],
 
 
 def run(today=None, store_codes: Iterable[str] | None = None,
-        kinds: Iterable[str] = PERIOD_KINDS, years_back: int | None = None,
+        kinds: Iterable[str] = ALL_KINDS, years_back: int | None = None,
         limit: int | None = None, pacing: float = PACING_SECONDS,
         progress: Callable[[dict], None] | None = None,
         connection_factory: Callable[[], Any] | None = None) -> dict[str, Any]:
