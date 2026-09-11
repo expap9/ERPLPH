@@ -187,3 +187,56 @@ class BorrowedEngineTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ReportingWindowTests(unittest.TestCase):
+    """ช่วงรายงานต้องเป็นปีงบประมาณเหมือน Stock5 เพื่อให้ตัวเลขสองระบบเทียบกันได้"""
+
+    import datetime as _dt
+
+    def setUp(self):
+        if not stock5_engine.engine_available():
+            self.skipTest("ยังไม่ได้ติดตั้ง Stock5 ข้างโปรเจกต์นี้")
+        global reporting_window
+        import reporting_window
+
+    def date(self, text):
+        return self._dt.date.fromisoformat(text)
+
+    def test_the_window_opens_on_1_october(self):
+        for day in ("2026-09-11", "2026-09-30"):
+            with self.subTest(day=day):
+                self.assertEqual(reporting_window.describe(self.date(day))["date_from"], "20241001")
+
+    def test_the_window_rolls_when_a_new_fiscal_year_begins(self):
+        before = reporting_window.describe(self.date("2026-09-30"))
+        after = reporting_window.describe(self.date("2026-10-01"))
+        self.assertEqual(before["fiscal_year"], "2569")
+        self.assertEqual(after["fiscal_year"], "2570")
+        self.assertEqual(after["date_from"], "20251001")
+
+    def test_the_window_never_grows_beyond_two_fiscal_years(self):
+        for year in range(2026, 2031):
+            for month in (1, 4, 7, 10):
+                day = self._dt.date(year, month, 1)
+                with self.subTest(day=day.isoformat()):
+                    months = reporting_window.describe(day)["months"]
+                    self.assertLessEqual(months, 25)
+                    self.assertGreaterEqual(months, 12)
+
+    def test_the_current_month_is_excluded_from_closed_periods(self):
+        # เดือนที่ยังไม่ครบใช้คำนวณอัตราเบิกจ่ายไม่ได้ เหมือนกติกาของ Stock5
+        today = self.date("2026-09-11")
+        self.assertIn("202609", reporting_window.periods(today))
+        self.assertNotIn("202609", reporting_window.closed_periods(today))
+        self.assertEqual(reporting_window.closed_periods(today)[-1], "202608")
+
+    def test_periods_run_without_gaps(self):
+        every = reporting_window.periods(self.date("2026-09-11"))
+        self.assertEqual(every[0], "202410")
+        self.assertEqual(every[-1], "202609")
+        self.assertEqual(len(every), len(set(every)), "ต้องไม่มีงวดซ้ำ")
+
+    def test_period_bounds_wrap_the_year_correctly(self):
+        self.assertEqual(reporting_window.period_bounds("202608"), ("20260801", "20260901"))
+        self.assertEqual(reporting_window.period_bounds("202612"), ("20261201", "20270101"))
