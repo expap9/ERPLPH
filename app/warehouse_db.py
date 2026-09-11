@@ -100,6 +100,10 @@ CREATE TABLE IF NOT EXISTS issues (
     unit         TEXT DEFAULT '',
     department   TEXT DEFAULT '',
     issued_at    TEXT DEFAULT '',
+    -- ชนิดเอกสารตัดสินว่าบรรทัดนี้เป็นการใช้จริงหรือแค่ย้ายของภายในโรงพยาบาล
+    -- 32 จ่ายให้หน่วยเบิก / 35 โอนระหว่างคลัง / 33,34 ยังไม่ทราบความหมาย
+    document_type TEXT DEFAULT '',
+    movement_kind TEXT DEFAULT '',
     check_status TEXT DEFAULT '',
     check_reason TEXT DEFAULT '',
     PRIMARY KEY (period, store, irno, suffix, stock_code, movement_key)
@@ -109,6 +113,7 @@ CREATE INDEX IF NOT EXISTS idx_balances_lookup ON balances(store, stock_code);
 CREATE INDEX IF NOT EXISTS idx_receipts_lookup ON receipts(store, stock_code, period);
 CREATE INDEX IF NOT EXISTS idx_issues_lookup   ON issues(store, stock_code, period);
 CREATE INDEX IF NOT EXISTS idx_issues_period   ON issues(period, store);
+CREATE INDEX IF NOT EXISTS idx_issues_kind     ON issues(movement_kind, period);
 CREATE INDEX IF NOT EXISTS idx_items_group     ON items(item_group, retired);
 """
 
@@ -125,9 +130,47 @@ def connect() -> sqlite3.Connection:
     return conn
 
 
-def init_db() -> None:
+#: คอลัมน์ที่เพิ่มเข้ามาหลังจากเคยสร้างฐานข้อมูลไปแล้ว
+#: CREATE TABLE IF NOT EXISTS ไม่เติมคอลัมน์ให้ตารางที่มีอยู่ ฐานข้อมูลรุ่นเก่า
+#: จึงต้องถูกอัปเกรดก่อน มิฉะนั้น index ที่อ้างคอลัมน์ใหม่จะสร้างไม่ได้
+_ADDED_COLUMNS = {
+    "issues": (("document_type", "TEXT DEFAULT ''"), ("movement_kind", "TEXT DEFAULT ''")),
+}
+
+
+def _upgrade(conn: sqlite3.Connection) -> list[str]:
+    """เติมคอลัมน์ที่ขาดให้ฐานข้อมูลรุ่นเก่า โดยไม่แตะข้อมูลเดิม"""
+    applied = []
+    existing_tables = {
+        row["name"] for row in
+        conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")
+    }
+    for table, columns in _ADDED_COLUMNS.items():
+        if table not in existing_tables:
+            continue
+        present = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})")}
+        for name, definition in columns:
+            if name not in present:
+                conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {definition}")
+                applied.append(f"{table}.{name}")
+    return applied
+
+
+def init_db() -> list[str]:
+    """สร้างตารางที่ยังไม่มี และอัปเกรดตารางเดิมให้มีคอลัมน์ครบ"""
     with connect() as conn:
-        conn.executescript(SCHEMA)
+        # สร้างตารางก่อน แล้วค่อยเติมคอลัมน์ที่ขาด จากนั้นจึงสร้าง index
+        # ที่อาจอ้างคอลัมน์ใหม่ ลำดับนี้ทำให้ฐานข้อมูลรุ่นเก่าอัปเกรดได้
+        statements = [part.strip() for part in SCHEMA.split(";") if part.strip()]
+        for statement in statements:
+            if statement.upper().startswith("CREATE TABLE"):
+                conn.execute(statement)
+        applied = _upgrade(conn)
+        for statement in statements:
+            if statement.upper().startswith("CREATE INDEX"):
+                conn.execute(statement)
+        conn.commit()
+    return applied
 
 
 @contextmanager

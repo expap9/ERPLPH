@@ -278,3 +278,54 @@ class DatabaseConfigTests(unittest.TestCase):
                 summary = database.error_summary(Exception(state))
                 self.assertEqual(summary["sqlstate"], state)
                 self.assertNotIn("ไม่เก็บข้อความจากไดรเวอร์", summary["message"])
+
+
+class SchemaUpgradeTests(unittest.TestCase):
+    """ฐานข้อมูลที่สร้างไว้ก่อนต้องอัปเกรดได้ โดยข้อมูลเดิมไม่หาย"""
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
+        self.addCleanup(self.temp.cleanup)
+        directory = Path(self.temp.name)
+        for name, value in (("DATA_DIR", directory), ("DB_PATH", directory / "old.db")):
+            patcher = patch.object(warehouse_db, name, value)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
+    def build_old_database(self):
+        """สร้างตาราง issues แบบรุ่นก่อน ที่ยังไม่มีคอลัมน์ชนิดเอกสาร"""
+        with warehouse_db.connect() as conn:
+            conn.execute("""
+                CREATE TABLE issues (
+                    period TEXT NOT NULL, store TEXT NOT NULL, irno TEXT NOT NULL,
+                    suffix TEXT NOT NULL DEFAULT '', movement_key TEXT NOT NULL DEFAULT '',
+                    stock_code TEXT NOT NULL, lot_no TEXT DEFAULT '', qty REAL DEFAULT 0,
+                    value REAL DEFAULT 0, unit TEXT DEFAULT '', department TEXT DEFAULT '',
+                    issued_at TEXT DEFAULT '', check_status TEXT DEFAULT '',
+                    check_reason TEXT DEFAULT '',
+                    PRIMARY KEY (period, store, irno, suffix, stock_code, movement_key))""")
+            conn.execute("INSERT INTO issues (period, store, irno, stock_code, qty)"
+                         " VALUES ('202607', '2', '69D9', '1321080', 42)")
+            conn.commit()
+
+    def test_missing_columns_are_added_to_an_existing_database(self):
+        self.build_old_database()
+        applied = warehouse_db.init_db()
+        self.assertIn("issues.document_type", applied)
+        self.assertIn("issues.movement_kind", applied)
+
+    def test_existing_rows_survive_the_upgrade(self):
+        self.build_old_database()
+        warehouse_db.init_db()
+        with warehouse_db.connect() as conn:
+            row = conn.execute("SELECT qty, movement_kind FROM issues").fetchone()
+        self.assertEqual(row["qty"], 42)
+        self.assertEqual(row["movement_kind"], "")
+
+    def test_running_the_upgrade_twice_changes_nothing_more(self):
+        self.build_old_database()
+        warehouse_db.init_db()
+        self.assertEqual(warehouse_db.init_db(), [], "ครั้งที่สองต้องไม่มีอะไรให้เติม")
+
+    def test_a_fresh_database_needs_no_upgrade(self):
+        self.assertEqual(warehouse_db.init_db(), [])
