@@ -1,0 +1,15 @@
+# ความลับและข้อมูลโรงพยาบาล ห้ามขึ้น git
+config.json
+config/table_mappings.json
+warehouse_data/
+diagnostics/
+*.db
+*.db-wal
+*.db-shm
+
+# สร้างใหม่ได้
+__pycache__/
+*.pyc
+.pytest_cache/
+frontend/node_modules/
+.venv/

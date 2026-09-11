@@ -1,0 +1,291 @@
+"""คลังข้อมูลของ ERPLPH — เก็บการเคลื่อนไหวทุกคลังแบบเพิ่มทีละเดือน
+
+Stock5 เก็บผลการดึงเป็นไฟล์ JSON ทั้งก้อนและเขียนใหม่ทุกรอบ ซึ่งพอเหลือคลังเดียว
+(78,586 บรรทัด = 141 MB) ยังไหว แต่การสำรวจพบว่าทุกคลังรวมกันคือ 930,720 บรรทัด
+ต่อ 12 เดือน — ไฟล์เดียวจะโตเป็นหลาย GB และต้องอ่านใหม่ทั้งหมดทุกรอบ
+
+ที่นี่จึงเก็บเป็น SQLite และเติมเป็นราย "งวด" (เดือน x คลัง) เพื่อให้ดึงเฉพาะ
+ส่วนที่ยังไม่มีหรือที่เปลี่ยนไป ไม่ต้องอ่านประวัติทั้งหมดซ้ำ
+
+หลักการที่ยกมาจาก Stock5 โดยตั้งใจ
+- งวดหนึ่งถูกเขียนแบบทั้งหมดหรือไม่เขียนเลย ไม่มีสภาพครึ่ง ๆ กลาง ๆ
+- เก็บ checksum และที่มาของทุกงวด เพื่อตรวจได้ว่าตัวเลขมาจากการดึงรอบไหน
+- ไม่เดาแทนผู้ใช้ งวดที่ยังดึงไม่ครบจะไม่ถูกนำไปคำนวณ
+"""
+from contextlib import contextmanager
+from datetime import datetime, timezone
+import hashlib
+import json
+import os
+from pathlib import Path
+import sqlite3
+from typing import Any, Iterable, Iterator
+
+BASE_DIR = Path(__file__).resolve().parents[1]
+DATA_DIR = BASE_DIR / "warehouse_data"
+DB_PATH = DATA_DIR / "erplph.db"
+
+#: สถานะของงวด — มีเฉพาะงวดที่ complete เท่านั้นที่ถูกนำไปคำนวณ
+PERIOD_PENDING = "pending"
+PERIOD_COMPLETE = "complete"
+PERIOD_FAILED = "failed"
+
+SCHEMA = """
+CREATE TABLE IF NOT EXISTS periods (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    period        TEXT NOT NULL,           -- YYYYMM
+    store         TEXT NOT NULL,
+    kind          TEXT NOT NULL,           -- receipt | issue | balance
+    status        TEXT NOT NULL DEFAULT 'pending',
+    source_rows   INTEGER DEFAULT 0,
+    stored_rows   INTEGER DEFAULT 0,
+    data_sha256   TEXT DEFAULT '',
+    query_sha256  TEXT DEFAULT '',
+    pulled_at     TEXT DEFAULT '',
+    message       TEXT DEFAULT '',
+    UNIQUE(period, store, kind)
+);
+
+CREATE TABLE IF NOT EXISTS items (
+    stock_code     TEXT PRIMARY KEY,
+    name           TEXT DEFAULT '',
+    trade_name     TEXT DEFAULT '',
+    main_category  TEXT DEFAULT '',
+    item_group     TEXT DEFAULT '',        -- drug | medical_supply | material | other
+    base_unit      TEXT DEFAULT '',
+    retired        INTEGER DEFAULT 0,
+    updated_at     TEXT DEFAULT ''
+);
+
+CREATE TABLE IF NOT EXISTS balances (
+    period       TEXT NOT NULL,
+    store        TEXT NOT NULL,
+    stock_code   TEXT NOT NULL,
+    lot_no       TEXT NOT NULL DEFAULT '',
+    qty          REAL DEFAULT 0,
+    value        REAL DEFAULT 0,
+    unit         TEXT DEFAULT '',
+    expire_date  TEXT DEFAULT '',
+    last_in_date TEXT DEFAULT '',
+    PRIMARY KEY (period, store, stock_code, lot_no)
+);
+
+CREATE TABLE IF NOT EXISTS receipts (
+    period       TEXT NOT NULL,
+    store        TEXT NOT NULL,
+    rcv_no       TEXT NOT NULL,
+    suffix       TEXT NOT NULL DEFAULT '',
+    stock_code   TEXT NOT NULL,
+    lot_no       TEXT DEFAULT '',
+    qty          REAL DEFAULT 0,
+    value        REAL DEFAULT 0,
+    unit         TEXT DEFAULT '',
+    unit_price   REAL DEFAULT 0,
+    po_no        TEXT DEFAULT '',
+    supplier     TEXT DEFAULT '',
+    rcv_date     TEXT DEFAULT '',
+    PRIMARY KEY (period, store, rcv_no, suffix, stock_code)
+);
+
+CREATE TABLE IF NOT EXISTS issues (
+    period       TEXT NOT NULL,
+    store        TEXT NOT NULL,
+    irno         TEXT NOT NULL,
+    suffix       TEXT NOT NULL DEFAULT '',
+    movement_key TEXT NOT NULL DEFAULT '',
+    stock_code   TEXT NOT NULL,
+    lot_no       TEXT DEFAULT '',
+    qty          REAL DEFAULT 0,
+    value        REAL DEFAULT 0,
+    unit         TEXT DEFAULT '',
+    department   TEXT DEFAULT '',
+    issued_at    TEXT DEFAULT '',
+    check_status TEXT DEFAULT '',
+    check_reason TEXT DEFAULT '',
+    PRIMARY KEY (period, store, irno, suffix, stock_code, movement_key)
+);
+
+CREATE INDEX IF NOT EXISTS idx_balances_lookup ON balances(store, stock_code);
+CREATE INDEX IF NOT EXISTS idx_receipts_lookup ON receipts(store, stock_code, period);
+CREATE INDEX IF NOT EXISTS idx_issues_lookup   ON issues(store, stock_code, period);
+CREATE INDEX IF NOT EXISTS idx_issues_period   ON issues(period, store);
+CREATE INDEX IF NOT EXISTS idx_items_group     ON items(item_group, retired);
+"""
+
+TABLE_FOR_KIND = {"receipt": "receipts", "issue": "issues", "balance": "balances"}
+
+
+def connect() -> sqlite3.Connection:
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    # การเติมทีละงวดเขียนหลายพันแถวต่อครั้ง WAL ทำให้ผู้อ่านไม่ถูกบล็อกระหว่างนั้น
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA synchronous=NORMAL")
+    return conn
+
+
+def init_db() -> None:
+    with connect() as conn:
+        conn.executescript(SCHEMA)
+
+
+@contextmanager
+def _transaction() -> Iterator[sqlite3.Connection]:
+    conn = connect()
+    try:
+        yield conn
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+def _digest(rows: Iterable[dict]) -> str:
+    payload = json.dumps(list(rows), ensure_ascii=False, sort_keys=True, default=str)
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def period_status(period: str, store: str, kind: str) -> dict[str, Any] | None:
+    with connect() as conn:
+        row = conn.execute(
+            "SELECT * FROM periods WHERE period = ? AND store = ? AND kind = ?",
+            (period, store, kind)).fetchone()
+    return dict(row) if row else None
+
+
+def is_period_complete(period: str, store: str, kind: str) -> bool:
+    found = period_status(period, store, kind)
+    return bool(found and found["status"] == PERIOD_COMPLETE)
+
+
+def missing_periods(periods: Iterable[str], stores: Iterable[str],
+                    kinds: Iterable[str] = ("receipt", "issue")) -> list[tuple[str, str, str]]:
+    """งวดที่ยังไม่มีหรือยังไม่สมบูรณ์ — คือรายการงานที่ต้องดึงเพิ่มเท่านั้น"""
+    wanted = [(p, s, k) for p in periods for s in stores for k in kinds]
+    if not wanted:
+        return []
+    with connect() as conn:
+        done = {
+            (row["period"], row["store"], row["kind"])
+            for row in conn.execute(
+                "SELECT period, store, kind FROM periods WHERE status = ?", (PERIOD_COMPLETE,))
+        }
+    return [item for item in wanted if item not in done]
+
+
+def replace_period(period: str, store: str, kind: str, rows: list[dict[str, Any]],
+                   source_rows: int | None = None, query_sha256: str = "") -> dict[str, Any]:
+    """เขียนงวดหนึ่งแบบทั้งหมดหรือไม่เขียนเลย
+
+    ลบของเดิมของงวดนั้นแล้วเขียนใหม่ในธุรกรรมเดียว ถ้าล้มกลางทางฐานข้อมูลจะกลับ
+    ไปสภาพเดิม ไม่เหลืองวดที่มีข้อมูลครึ่งเดียวให้เผลอนำไปคำนวณ
+    """
+    table = TABLE_FOR_KIND.get(kind)
+    if table is None:
+        raise ValueError(f"ชนิดข้อมูลไม่ถูกต้อง: {kind}")
+
+    columns = _columns_of(table)
+    prepared = [_row_for(table, columns, row, period, store) for row in rows]
+    placeholders = ", ".join("?" for _ in columns)
+    statement = f"INSERT OR REPLACE INTO {table} ({', '.join(columns)}) VALUES ({placeholders})"
+
+    with _transaction() as conn:
+        conn.execute(f"DELETE FROM {table} WHERE period = ? AND store = ?", (period, store))
+        conn.executemany(statement, [[row[c] for c in columns] for row in prepared])
+        conn.execute(
+            """INSERT INTO periods (period, store, kind, status, source_rows, stored_rows,
+                                    data_sha256, query_sha256, pulled_at, message)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, '')
+               ON CONFLICT(period, store, kind) DO UPDATE SET
+                   status = excluded.status, source_rows = excluded.source_rows,
+                   stored_rows = excluded.stored_rows, data_sha256 = excluded.data_sha256,
+                   query_sha256 = excluded.query_sha256, pulled_at = excluded.pulled_at,
+                   message = ''""",
+            (period, store, kind, PERIOD_COMPLETE,
+             int(source_rows if source_rows is not None else len(rows)), len(prepared),
+             _digest(prepared), query_sha256,
+             datetime.now(timezone.utc).isoformat(timespec="seconds")))
+    return {"period": period, "store": store, "kind": kind, "rows": len(prepared)}
+
+
+def mark_period_failed(period: str, store: str, kind: str, message: str) -> None:
+    """บันทึกว่างวดนี้ดึงไม่สำเร็จ ข้อมูลเดิม (ถ้ามี) ไม่ถูกแตะ"""
+    with _transaction() as conn:
+        conn.execute(
+            """INSERT INTO periods (period, store, kind, status, pulled_at, message)
+               VALUES (?, ?, ?, ?, ?, ?)
+               ON CONFLICT(period, store, kind) DO UPDATE SET
+                   status = excluded.status, pulled_at = excluded.pulled_at,
+                   message = excluded.message""",
+            (period, store, kind, PERIOD_FAILED,
+             datetime.now(timezone.utc).isoformat(timespec="seconds"), str(message)[:500]))
+
+
+def upsert_items(rows: Iterable[dict[str, Any]]) -> int:
+    """ทะเบียนรายการยา/พัสดุ ใช้ร่วมทุกคลัง จึงเก็บแยกจากงวด"""
+    now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    payload = [
+        (str(row.get("stock_code") or "").strip(), str(row.get("name") or ""),
+         str(row.get("trade_name") or ""), str(row.get("main_category") or ""),
+         str(row.get("item_group") or ""), str(row.get("base_unit") or ""),
+         1 if row.get("retired") else 0, now)
+        for row in rows if str(row.get("stock_code") or "").strip()
+    ]
+    if not payload:
+        return 0
+    with _transaction() as conn:
+        conn.executemany(
+            """INSERT INTO items (stock_code, name, trade_name, main_category,
+                                  item_group, base_unit, retired, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+               ON CONFLICT(stock_code) DO UPDATE SET
+                   name = excluded.name, trade_name = excluded.trade_name,
+                   main_category = excluded.main_category, item_group = excluded.item_group,
+                   base_unit = excluded.base_unit, retired = excluded.retired,
+                   updated_at = excluded.updated_at""", payload)
+    return len(payload)
+
+
+def coverage() -> dict[str, Any]:
+    """ขอบเขตข้อมูลที่มีอยู่จริง — รายงานต้องบอกได้ว่าครอบคลุมแค่ไหน"""
+    with connect() as conn:
+        rows = [dict(r) for r in conn.execute(
+            """SELECT kind, status, COUNT(*) AS periods,
+                      MIN(period) AS first_period, MAX(period) AS last_period,
+                      SUM(stored_rows) AS rows
+               FROM periods GROUP BY kind, status""")]
+        stores = [r["store"] for r in conn.execute(
+            "SELECT DISTINCT store FROM periods WHERE status = ? ORDER BY store",
+            (PERIOD_COMPLETE,))]
+        items = conn.execute("SELECT COUNT(*) FROM items").fetchone()[0]
+    return {"periods": rows, "stores": stores, "items": items,
+            "database": str(DB_PATH), "exists": DB_PATH.exists()}
+
+
+def _columns_of(table: str) -> list[str]:
+    with connect() as conn:
+        return [row["name"] for row in conn.execute(f"PRAGMA table_info({table})")]
+
+
+_NUMERIC_COLUMNS = {"qty", "value", "unit_price"}
+
+
+def _row_for(table: str, columns: list[str], row: dict[str, Any],
+             period: str, store: str) -> dict[str, Any]:
+    prepared: dict[str, Any] = {}
+    for column in columns:
+        if column == "period":
+            prepared[column] = period
+        elif column == "store":
+            prepared[column] = store
+        elif column in _NUMERIC_COLUMNS:
+            try:
+                prepared[column] = float(row.get(column) or 0)
+            except (TypeError, ValueError):
+                prepared[column] = 0.0
+        else:
+            prepared[column] = str(row.get(column) or "")
+    return prepared
