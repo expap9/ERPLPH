@@ -41,6 +41,8 @@ CREATE TABLE IF NOT EXISTS periods (
     stored_rows   INTEGER DEFAULT 0,
     data_sha256   TEXT DEFAULT '',
     query_sha256  TEXT DEFAULT '',
+    -- กติกาหน่วยที่ใช้สอบทานตอนดึง ถ้าเปลี่ยน สถานะที่เก็บไว้ถือว่าเก่า (ดู unit_rules.py)
+    units_sha256  TEXT DEFAULT '',
     pulled_at     TEXT DEFAULT '',
     message       TEXT DEFAULT '',
     UNIQUE(period, store, kind)
@@ -139,6 +141,7 @@ def connect() -> sqlite3.Connection:
 _ADDED_COLUMNS = {
     "issues": (("document_type", "TEXT DEFAULT ''"), ("movement_kind", "TEXT DEFAULT ''"),
                ("direction", "TEXT DEFAULT ''")),
+    "periods": (("units_sha256", "TEXT DEFAULT ''"),),
 }
 
 
@@ -224,7 +227,8 @@ def missing_periods(periods: Iterable[str], stores: Iterable[str],
 
 
 def replace_period(period: str, store: str, kind: str, rows: list[dict[str, Any]],
-                   source_rows: int | None = None, query_sha256: str = "") -> dict[str, Any]:
+                   source_rows: int | None = None, query_sha256: str = "",
+                   units_sha256: str = "") -> dict[str, Any]:
     """เขียนงวดหนึ่งแบบทั้งหมดหรือไม่เขียนเลย
 
     ลบของเดิมของงวดนั้นแล้วเขียนใหม่ในธุรกรรมเดียว ถ้าล้มกลางทางฐานข้อมูลจะกลับ
@@ -244,16 +248,16 @@ def replace_period(period: str, store: str, kind: str, rows: list[dict[str, Any]
         conn.executemany(statement, [[row[c] for c in columns] for row in prepared])
         conn.execute(
             """INSERT INTO periods (period, store, kind, status, source_rows, stored_rows,
-                                    data_sha256, query_sha256, pulled_at, message)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, '')
+                                    data_sha256, query_sha256, units_sha256, pulled_at, message)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '')
                ON CONFLICT(period, store, kind) DO UPDATE SET
                    status = excluded.status, source_rows = excluded.source_rows,
                    stored_rows = excluded.stored_rows, data_sha256 = excluded.data_sha256,
-                   query_sha256 = excluded.query_sha256, pulled_at = excluded.pulled_at,
-                   message = ''""",
+                   query_sha256 = excluded.query_sha256, units_sha256 = excluded.units_sha256,
+                   pulled_at = excluded.pulled_at, message = ''""",
             (period, store, kind, PERIOD_COMPLETE,
              int(source_rows if source_rows is not None else len(rows)), len(prepared),
-             _digest(prepared), query_sha256,
+             _digest(prepared), query_sha256, units_sha256,
              datetime.now(timezone.utc).isoformat(timespec="seconds")))
     return {"period": period, "store": store, "kind": kind, "rows": len(prepared)}
 
@@ -267,6 +271,42 @@ def stored_fingerprints() -> dict[tuple[str, str, str], str]:
                 "SELECT period, store, kind, query_sha256 FROM periods WHERE status = ?",
                 (PERIOD_COMPLETE,))
         }
+
+
+def stored_unit_digests(kind: str = "issue") -> dict[tuple[str, str], tuple[str, str]]:
+    """กติกาหน่วยที่แต่ละงวดใช้สอบทาน คู่กับเวลาที่ดึง"""
+    with connect() as conn:
+        return {
+            (row["period"], row["store"]): (row["units_sha256"] or "", row["pulled_at"] or "")
+            for row in conn.execute(
+                "SELECT period, store, units_sha256, pulled_at FROM periods "
+                "WHERE status = ? AND kind = ?", (PERIOD_COMPLETE, kind))
+        }
+
+
+def codes_by_period() -> dict[tuple[str, str], set[str]]:
+    """รหัสรายการที่อยู่ในแต่ละงวดของใบจ่าย ใช้หางวดที่กติกาหน่วยของรหัสนั้นเปลี่ยน"""
+    found: dict[tuple[str, str], set[str]] = {}
+    with connect() as conn:
+        for row in conn.execute("SELECT DISTINCT period, store, stock_code FROM issues"):
+            found.setdefault((row["period"], row["store"]), set()).add(row["stock_code"])
+    return found
+
+
+def adopt_unit_digests(digests: dict[tuple[str, str], str], kind: str = "issue") -> int:
+    """บันทึกลายนิ้วมือกติกาหน่วยให้งวดรุ่นเก่าที่พิสูจน์แล้วว่าสอบทานด้วยกติกาปัจจุบัน
+
+    แตะเฉพาะงวดที่ยังไม่มีลายนิ้วมือ งวดที่มีแล้วต้องเปลี่ยนด้วยการดึงใหม่เท่านั้น
+    """
+    if not digests:
+        return 0
+    with _transaction() as conn:
+        conn.executemany(
+            "UPDATE periods SET units_sha256 = ? WHERE period = ? AND store = ? AND kind = ? "
+            "AND status = ? AND COALESCE(units_sha256, '') = ''",
+            [(digest, period, store, kind, PERIOD_COMPLETE)
+             for (period, store), digest in digests.items()])
+    return len(digests)
 
 
 def mark_period_failed(period: str, store: str, kind: str, message: str) -> None:

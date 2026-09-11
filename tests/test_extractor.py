@@ -6,6 +6,7 @@
 from pathlib import Path
 import sys
 import tempfile
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
@@ -16,6 +17,7 @@ import categories
 import extractor
 import queries
 import stock5_engine
+import unit_rules
 import warehouse_db
 
 
@@ -24,6 +26,11 @@ ISSUE_COLUMNS = ("WORKING_CODE", "ENGLISHNAME", "TRADE_NAME", "IRNO", "SUFFIX",
                  "ISSUEUNITCODE", "DIS_DEPT_GROUP", "SOURCE_MOVEMENT_DATETIME",
                  "SOURCE_DOCUMENTTYPE", "SOURCE_MOS_STATUS", "SOURCE_MOS_REASON",
                  "MAINCATEGORY")
+
+
+def current_units(codes=()) -> str:
+    """ลายนิ้วมือกติกาหน่วยปัจจุบัน — งวดที่ "มีอยู่แล้ว" ต้องบันทึกค่านี้ไว้เหมือนการดึงจริง"""
+    return unit_rules.period_digest(codes, unit_rules.rules(), unit_rules.engine_digest())
 
 
 def issue_row(code="1321080", document_type="32", qty=100.0, value=1423.1):
@@ -198,7 +205,8 @@ class PlanTests(unittest.TestCase):
         import reporting_window
         date_from, date_to = reporting_window.period_bounds("202608")
         current = queries.fingerprint(queries.build("DISTRIBUTION", "2", date_from, date_to))
-        warehouse_db.replace_period("202608", "2", "issue", [], query_sha256=current)
+        warehouse_db.replace_period("202608", "2", "issue", [], query_sha256=current,
+                                    units_sha256=current_units())
         work = extractor.plan(self._dt.date(2026, 9, 11), ["2"], ["issue"])
         self.assertNotIn(("202608", "2", "issue"), work)
 
@@ -256,10 +264,6 @@ class RunTests(unittest.TestCase):
                                connection_factory=lambda: FakeConnection())
         self.assertEqual(result["planned"], 0)
         self.assertEqual(result["success"], 0)
-
-
-if __name__ == "__main__":
-    unittest.main()
 
 
 # ---------------------------------------------------------------------------
@@ -377,6 +381,171 @@ class FirstRealPullLessonsTests(unittest.TestCase):
     def test_periods_pulled_with_the_current_query_are_left_alone(self):
         date_from, date_to = __import__("reporting_window").period_bounds("202607")
         current = queries.fingerprint(queries.build("DISTRIBUTION", "O5", date_from, date_to))
-        warehouse_db.replace_period("202607", "O5", "issue", [], query_sha256=current)
+        warehouse_db.replace_period("202607", "O5", "issue", [], query_sha256=current,
+                                    units_sha256=current_units())
         work = extractor.plan(self._dt.date(2026, 9, 11), ["O5"], ["issue"])
         self.assertNotIn(("202607", "O5", "issue"), work)
+
+
+# ---------------------------------------------------------------------------
+# สถานะสอบทานต้องตามตารางหน่วยของ Stock5 ให้ทัน
+#
+# สถานะ VERIFIED/PENDING คำนวณตอนดึงแล้วเก็บไว้ ถ้าผู้ใช้เติม baseunit_0369.xlsx
+# ภายหลัง Stock5 จะใช้กติกาใหม่ แต่ที่นี่ยังเป็นของเดิม — คลัง 2 ของสองระบบจะไม่ตรงกัน
+# ---------------------------------------------------------------------------
+
+class UnitRuleFreshnessTests(unittest.TestCase):
+    import datetime as _dt
+    TODAY = _dt.date(2026, 9, 11)
+    PERIOD = ("202608", "O5", "issue")
+
+    def setUp(self):
+        if not stock5_engine.engine_available():
+            self.skipTest("ยังไม่ได้ติดตั้ง Stock5 ข้างโปรเจกต์นี้")
+        self.temp = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
+        self.addCleanup(self.temp.cleanup)
+        directory = Path(self.temp.name)
+        for name, value in (("DATA_DIR", directory), ("DB_PATH", directory / "test.db")):
+            patcher = patch.object(warehouse_db, name, value)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+        warehouse_db.init_db()
+
+        self.rules = {"1321080": "กติกาเดิม", "9999999": "กติกาของยาอื่น"}
+        self.engine = "เครื่องสอบทานรุ่นเดิม"
+        for name, value in (("rules", lambda: dict(self.rules)),
+                            ("engine_digest", lambda: self.engine)):
+            patcher = patch.object(unit_rules, name, value)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+        self.pull()
+
+    def pull(self):
+        result = extractor.pull_period(connection_for(lot_level_rows()), *self.PERIOD)
+        self.assertEqual(result["status"], "success")
+
+    def planned(self):
+        return extractor.plan(self.TODAY, ["O5"], ["issue"], include_current=False)
+
+    def make_legacy(self):
+        """จำลองงวดที่ดึงก่อนมีลายนิ้วมือกติกาหน่วย"""
+        with warehouse_db.connect() as conn:
+            conn.execute("UPDATE periods SET units_sha256 = ''")
+            conn.commit()
+
+    def test_a_pulled_issue_period_records_the_unit_rules_it_was_checked_with(self):
+        stored = warehouse_db.period_status(*self.PERIOD)["units_sha256"]
+        self.assertEqual(stored, unit_rules.period_digest(["1321080"], self.rules, self.engine))
+
+    def test_unchanged_rules_leave_the_period_alone(self):
+        self.assertNotIn(self.PERIOD, self.planned())
+
+    def test_filling_in_units_for_an_item_in_the_period_replans_it(self):
+        self.rules["1321080"] = "เติมหน่วยแล้ว"
+        self.assertIn(self.PERIOD, self.planned())
+
+    def test_a_first_rule_for_an_item_in_the_period_replans_it(self):
+        del self.rules["1321080"]
+        self.pull()
+        self.rules["1321080"] = "เพิ่งเติม"
+        self.assertIn(self.PERIOD, self.planned())
+
+    def test_rules_for_items_outside_the_period_do_not_force_a_repull(self):
+        # เติมหน่วยยาหนึ่งตัว ต้องไม่ทำให้ดึงใหม่ทั้ง 888 งวด
+        self.rules["9999999"] = "เปลี่ยนกติกา"
+        self.rules["5555555"] = "รหัสใหม่ในตาราง"
+        self.assertNotIn(self.PERIOD, self.planned())
+
+    def test_a_change_to_the_checking_engine_replans_the_period(self):
+        self.engine = "เครื่องสอบทานรุ่นใหม่"
+        self.assertIn(self.PERIOD, self.planned())
+
+    def test_the_plan_says_why_a_period_is_pulled_again(self):
+        self.rules["1321080"] = "เติมหน่วยแล้ว"
+        reasons = {item[:3]: item[3] for item in
+                   extractor.plan_detail(self.TODAY, ["O5"], ["issue"], include_current=False)}
+        self.assertEqual(reasons[self.PERIOD], extractor.REASON_UNITS)
+
+    def test_a_repull_brings_the_period_up_to_date(self):
+        self.rules["1321080"] = "เติมหน่วยแล้ว"
+        self.pull()
+        self.assertNotIn(self.PERIOD, self.planned())
+
+    def test_periods_without_a_recorded_rule_set_are_pulled_again(self):
+        # ไม่เดาจากเวลาแก้ไฟล์: git checkout เปลี่ยนเวลาได้ทั้งที่เนื้อหาเดิม
+        self.make_legacy()
+        reasons = {item[:3]: item[3] for item in
+                   extractor.plan_detail(self.TODAY, ["O5"], ["issue"], include_current=False)}
+        self.assertEqual(reasons[self.PERIOD], extractor.REASON_UNITS_UNKNOWN)
+
+    def test_adoption_fills_only_periods_without_a_recorded_rule_set(self):
+        recorded = warehouse_db.period_status(*self.PERIOD)["units_sha256"]
+        warehouse_db.adopt_unit_digests({self.PERIOD[:2]: "ทับ"})
+        self.assertEqual(warehouse_db.period_status(*self.PERIOD)["units_sha256"], recorded)
+
+        self.make_legacy()
+        warehouse_db.adopt_unit_digests({self.PERIOD[:2]: recorded})
+        self.assertNotIn(self.PERIOD, self.planned())
+
+    def test_an_unreadable_unit_table_stops_planning_before_reading_the_hospital_database(self):
+        with patch.object(unit_rules, "rules", side_effect=ValueError("ตารางหน่วยอ่านไม่ได้")):
+            with self.assertRaises(ValueError):
+                self.planned()
+            # ใบรับไม่ใช้ตารางหน่วย จึงยังวางแผนได้
+            extractor.plan(self.TODAY, ["O5"], ["receipt"])
+
+
+class UnitRuleDigestTests(unittest.TestCase):
+    """ลายนิ้วมือต้องเปลี่ยนเมื่อการแปลงหน่วยเปลี่ยนเท่านั้น"""
+
+    ENTRY = {"content_unit": "MG", "qty_per_container": 80.0, "container_unit": "PFS",
+             "pack_size": 1.0, "ir_unit": "PFS"}
+
+    def fake_engine(self, special, confirmed=None):
+        modules = {"special_units": SimpleNamespace(get_special_units=lambda: special),
+                   "confirmed_units": SimpleNamespace(CONFIRMED_UNITS=confirmed or {})}
+        return patch.object(unit_rules.stock5_engine, "load", lambda name: modules[name])
+
+    def test_moving_a_row_in_the_unit_table_does_not_change_the_rule(self):
+        with self.fake_engine({"2091520": dict(self.ENTRY, source_row=5, clean_name="IXEKIZUMAB")}):
+            before = unit_rules.rules()
+        with self.fake_engine({"2091520": dict(self.ENTRY, source_row=9, clean_name="IXEKIZUMAB 80")}):
+            after = unit_rules.rules()
+        self.assertEqual(before, after)
+
+    def test_changing_a_conversion_changes_the_rule(self):
+        with self.fake_engine({"2091520": dict(self.ENTRY)}):
+            before = unit_rules.rules()
+        with self.fake_engine({"2091520": dict(self.ENTRY, qty_per_container=40.0)}):
+            after = unit_rules.rules()
+        self.assertNotEqual(before["2091520"], after["2091520"])
+
+    def test_confirmed_units_written_with_sets_can_be_fingerprinted(self):
+        confirmed = {"2185030": {"label": "ขวด", "issue_sql_units": {"BX30"}}}
+        with self.fake_engine({}, confirmed):
+            self.assertIn("2185030", unit_rules.rules())
+
+    def test_the_engine_fingerprint_ignores_line_endings(self):
+        digests = []
+        for ending in (b"\n", b"\r\n"):
+            with tempfile.TemporaryDirectory() as home:
+                app_dir = Path(home) / "app"
+                app_dir.mkdir()
+                for name in unit_rules.ENGINE_FILES:
+                    (app_dir / name).write_bytes(b"line one" + ending + b"line two" + ending)
+                unit_rules.engine_digest.cache_clear()
+                with patch.object(unit_rules.stock5_engine, "stock5_home", lambda: Path(home)):
+                    digests.append(unit_rules.engine_digest())
+        unit_rules.engine_digest.cache_clear()
+        self.assertEqual(digests[0], digests[1])
+
+    def test_the_real_stock5_unit_table_can_be_fingerprinted(self):
+        if not stock5_engine.engine_available():
+            self.skipTest("ยังไม่ได้ติดตั้ง Stock5 ข้างโปรเจกต์นี้")
+        found = unit_rules.rules()
+        self.assertTrue(found)
+        self.assertTrue(all(isinstance(value, str) and len(value) == 64 for value in found.values()))
+
+
+if __name__ == "__main__":
+    unittest.main()

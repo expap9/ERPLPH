@@ -32,16 +32,26 @@ def main() -> int:
     args = parser.parse_args()
 
     warehouse_db.init_db()
-    work = extractor.plan(store_codes=args.store, kinds=args.kind)
-
     print("=" * 70)
     print("   ERPLPH — ดึงข้อมูลคลังเข้าฐานข้อมูล")
     print("=" * 70)
+    try:
+        work = extractor.plan_detail(store_codes=args.store, kinds=args.kind)
+    except Exception as exc:
+        # ส่วนใหญ่คือตารางหน่วยของ Stock5 อ่านไม่ได้ ถ้าดึงต่อ ทุกงวดใบจ่ายจะล้มอยู่ดี
+        print(f"\n  วางแผนไม่สำเร็จ ยังไม่ได้อ่านฐานข้อมูลโรงพยาบาล: {exc}")
+        return 1
+
     print(f"  งวดที่ต้องดึง {len(work):,} งวด")
+    by_reason: dict[str, int] = {}
+    for *_ignored, reason in work:
+        by_reason[reason] = by_reason.get(reason, 0) + 1
+    for reason, count in sorted(by_reason.items(), key=lambda item: -item[1]):
+        print(f"    - {reason:<32} {count:>5,} งวด")
     if args.limit:
         print(f"  จำกัดรอบนี้ {args.limit:,} งวด")
     by_store: dict[str, int] = {}
-    for _period, store, _kind in work:
+    for _period, store, _kind, _reason in work:
         by_store[store] = by_store.get(store, 0) + 1
     for store, count in sorted(by_store.items(), key=lambda item: -item[1])[:10]:
         print(f"    {store:<5} {stores.store_name(store)[:30]:<32} {count:>4} งวด")

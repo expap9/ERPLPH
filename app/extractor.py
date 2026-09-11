@@ -20,6 +20,7 @@ import queries
 import reporting_window
 import stock5_engine
 import stores
+import unit_rules
 import warehouse_db
 
 #: พักระหว่างคำสั่ง เพื่อไม่ให้เซิร์ฟเวอร์ของโรงพยาบาลรับภาระเป็นช่วงพีค
@@ -185,9 +186,13 @@ def pull_period(connection, period: str, store: str, kind: str,
 
     source_rows = len(raw)
     reconciliation = None
+    units_sha256 = ""
     if kind == "issue":
         try:
             raw, reconciliation = _reconcile(raw)
+            units_sha256 = unit_rules.period_digest(
+                (_text(row, "WORKING_CODE") for row in raw),
+                unit_rules.rules(), unit_rules.engine_digest())
         except Exception as exc:
             # สอบทานไม่ได้ต้องไม่เก็บ ข้อมูลที่ไม่ผ่านเครื่องเดียวกับ Stock5
             # จะให้ตัวเลขคนละชุดโดยไม่มีใครรู้
@@ -198,7 +203,8 @@ def pull_period(connection, period: str, store: str, kind: str,
     shaped = [_SHAPERS[kind](row) for row in raw]
     shaped = [row for row in shaped if row.get("stock_code")]
     warehouse_db.replace_period(period, store, kind, shaped,
-                                source_rows=source_rows, query_sha256=queries.fingerprint(sql))
+                                source_rows=source_rows, query_sha256=queries.fingerprint(sql),
+                                units_sha256=units_sha256)
     warehouse_db.upsert_items(_item_rows(raw))
     outcome = {"period": period, "store": store, "kind": kind, "status": "success",
                "source_rows": source_rows, "stored_rows": len(shaped)}
@@ -208,24 +214,47 @@ def pull_period(connection, period: str, store: str, kind: str,
     return outcome
 
 
+#: เหตุผลที่งวดหนึ่งถูกวางแผนดึง — ผู้ใช้ต้องเห็นว่าทำไมต้องอ่านฐานข้อมูลโรงพยาบาลอีก
+REASON_MISSING = "ยังไม่มีหรือดึงไม่สำเร็จ"
+REASON_QUERY = "คำสั่งดึงเปลี่ยน"
+REASON_UNITS = "กติกาหน่วยเปลี่ยน"
+REASON_UNITS_UNKNOWN = "ไม่มีบันทึกกติกาหน่วยที่ใช้สอบทาน"
+REASON_CURRENT = "เดือนปัจจุบัน ยอดยังเปลี่ยนได้"
+
+
 def plan(today=None, store_codes: Iterable[str] | None = None,
          kinds: Iterable[str] = PERIOD_KINDS, years_back: int | None = None,
          include_current: bool = True) -> list[tuple[str, str, str]]:
     """งานที่ต้องดึง = งวดที่ยังไม่มี บวกเดือนปัจจุบันซึ่งยอดยังเปลี่ยนได้"""
+    return [item[:3] for item in
+            plan_detail(today, store_codes, kinds, years_back, include_current)]
+
+
+def plan_detail(today=None, store_codes: Iterable[str] | None = None,
+                kinds: Iterable[str] = PERIOD_KINDS, years_back: int | None = None,
+                include_current: bool = True) -> list[tuple[str, str, str, str]]:
+    """เหมือน plan() แต่บอกเหตุผลของแต่ละงวดด้วย"""
     years = reporting_window.DEFAULT_FISCAL_YEARS_BACK if years_back is None else years_back
     periods = reporting_window.periods(today, years)
     selected = list(store_codes) if store_codes is not None else stores.active_store_codes()
     kinds = list(kinds)
-    work = warehouse_db.missing_periods(periods, selected, kinds)
+    work = [(period, store, kind, REASON_MISSING)
+            for period, store, kind in warehouse_db.missing_periods(periods, selected, kinds)]
+    queued = {item[:3] for item in work}
+    wanted_periods, wanted_stores = set(periods), set(selected)
+
+    def wanted(period: str, store: str, kind: str) -> bool:
+        return ((period, store, kind) not in queued and period in wanted_periods
+                and store in wanted_stores and kind in kinds)
+
+    def add(period: str, store: str, kind: str, reason: str) -> None:
+        work.append((period, store, kind, reason))
+        queued.add((period, store, kind))
 
     # งวดที่ดึงด้วยคำสั่งรุ่นเก่าต้องดึงใหม่ มิฉะนั้นข้อมูลผิดจากรุ่นก่อนจะค้างอยู่
     # เงียบ ๆ — การดึงรอบแรกเก็บขาเข้าของการโอนไว้ในฐานะการจ่ายของห้องยาย่อย
-    queued = set(work)
-    wanted_periods, wanted_stores = set(periods), set(selected)
     for (period, store, kind), stored in warehouse_db.stored_fingerprints().items():
-        if (period, store, kind) in queued or period not in wanted_periods:
-            continue
-        if store not in wanted_stores or kind not in kinds:
+        if not wanted(period, store, kind):
             continue
         try:
             date_from, date_to = reporting_window.period_bounds(period)
@@ -234,18 +263,44 @@ def plan(today=None, store_codes: Iterable[str] | None = None,
         except Exception:
             continue
         if latest != stored:
-            work.append((period, store, kind))
-            queued.add((period, store, kind))
+            add(period, store, kind, REASON_QUERY)
+
+    # สถานะสอบทานที่เก็บไว้คำนวณด้วยกติกาหน่วย ณ ตอนดึง ถ้าตารางหน่วยถูกเติมภายหลัง
+    # ต้องสอบทานใหม่ ไม่เช่นนั้นคลัง 2 จะไม่ตรงกับ Stock5 โดยไม่มีสัญญาณเตือน
+    if "issue" in kinds:
+        for period, store, reason in _stale_unit_periods(wanted_periods, wanted_stores):
+            if wanted(period, store, "issue"):
+                add(period, store, "issue", reason)
 
     if include_current and periods:
         current = periods[-1]
         for store in selected:
             for kind in kinds:
-                item = (current, store, kind)
-                if item not in queued:
-                    work.append(item)
-                    queued.add(item)
+                if (current, store, kind) not in queued:
+                    add(current, store, kind, REASON_CURRENT)
     return work
+
+
+def _stale_unit_periods(wanted_periods: set[str],
+                        wanted_stores: set[str]) -> list[tuple[str, str, str]]:
+    """งวดใบจ่ายที่สอบทานด้วยกติกาหน่วยคนละชุดกับปัจจุบัน หรือไม่รู้ว่าใช้ชุดไหน
+
+    งวดที่ไม่มีบันทึกถูกดึงใหม่ ไม่เดาจากเวลาแก้ไฟล์ — เวลาแก้ไฟล์เปลี่ยนได้โดยที่
+    เนื้อหาไม่เปลี่ยน (git checkout) และเนื้อหาเปลี่ยนได้โดยที่เวลาดูเก่า
+    """
+    rule_map = unit_rules.rules()
+    engine = unit_rules.engine_digest()
+    codes = warehouse_db.codes_by_period()
+    stale = []
+    for (period, store), (stored, _pulled_at) in warehouse_db.stored_unit_digests().items():
+        if period not in wanted_periods or store not in wanted_stores:
+            continue
+        current = unit_rules.period_digest(codes.get((period, store), ()), rule_map, engine)
+        if not stored:
+            stale.append((period, store, REASON_UNITS_UNKNOWN))
+        elif stored != current:
+            stale.append((period, store, REASON_UNITS))
+    return stale
 
 
 def run(today=None, store_codes: Iterable[str] | None = None,
