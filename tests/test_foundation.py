@@ -240,3 +240,41 @@ class ReportingWindowTests(unittest.TestCase):
     def test_period_bounds_wrap_the_year_correctly(self):
         self.assertEqual(reporting_window.period_bounds("202608"), ("20260801", "20260901"))
         self.assertEqual(reporting_window.period_bounds("202612"), ("20261201", "20270101"))
+
+
+class DatabaseConfigTests(unittest.TestCase):
+    """ERPLPH ต้องตั้งค่าฐานข้อมูลเองได้ และต้องไม่ทำรหัสผ่านหลุดไปกับรายงาน"""
+
+    def setUp(self):
+        global database
+        import database
+
+    def test_config_falls_back_to_stock5_without_copying_the_file(self):
+        config = database.load_config()
+        self.assertIn("db_host", config)
+        described = database.describe_config()
+        self.assertIn("inherited_from_stock5", described)
+
+    def test_the_password_never_appears_in_the_description(self):
+        # รายงานที่ส่งให้ผู้พัฒนาผ่านค่านี้ ต้องไม่มีรหัสผ่านติดไป
+        described = database.describe_config()
+        self.assertNotIn("db_pass", described)
+        self.assertIsInstance(described["password_set"], bool)
+
+    def test_a_missing_host_is_refused_before_connecting(self):
+        with self.assertRaises(ValueError):
+            database.connect({"db_host": "", "db_name": "X", "db_user": "u", "db_pass": "p"})
+
+    def test_driver_messages_are_not_copied_into_reports(self):
+        # ข้อความจากไดรเวอร์อาจมีสตริงการเชื่อมต่อซึ่งมีรหัสผ่านอยู่
+        leaky = Exception("PWD=secret123;SERVER=10.0.0.1")
+        summary = database.error_summary(leaky)
+        self.assertNotIn("secret123", summary["message"])
+        self.assertIsNone(summary["sqlstate"])
+
+    def test_known_sqlstates_get_a_readable_explanation(self):
+        for state in ("08001", "28000", "42S22", "42S02", "HYT00"):
+            with self.subTest(sqlstate=state):
+                summary = database.error_summary(Exception(state))
+                self.assertEqual(summary["sqlstate"], state)
+                self.assertNotIn("ไม่เก็บข้อความจากไดรเวอร์", summary["message"])

@@ -19,12 +19,7 @@ from uuid import uuid4
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "app"))
-import stock5_engine
-
-# ใช้การตั้งค่าฐานข้อมูลและตัวสรุปข้อผิดพลาดของ Stock5 โดยไม่แก้ไฟล์เดิม
-stock5_engine.install()
-from db_extractor import get_connection, load_config  # noqa: E402
-from export_mos_schema import error_summary  # noqa: E402
+from database import connect, error_summary, load_config  # noqa: E402
 
 
 def json_value(value):
@@ -128,7 +123,7 @@ def get_queries():
     ]
 
 
-def collect_report(connect, progress=None):
+def collect_report(open_connection, progress=None):
     report = dict(
         report_type="TRANSFER_VS_DISPENSE_V1",
         generated_at=datetime.now().isoformat(),
@@ -140,7 +135,7 @@ def collect_report(connect, progress=None):
     )
     conn = None
     try:
-        conn = connect()
+        conn = open_connection()
         conn.timeout = 180
         report["connected"] = True
         for name, sql, params, limit in get_queries():
@@ -244,7 +239,7 @@ def print_summary(report):
 def main():
     print("สำรวจการแยกจ่ายผู้ป่วย/โอนภายใน (อ่านอย่างเดียว ไม่แก้ไขฐานข้อมูล)", flush=True)
     report = collect_report(
-        lambda: get_connection(load_config(), timeout=15),
+        lambda: connect(load_config(), timeout=15),
         progress=lambda name, status, count: print(f"  {name}: {status}, {count} แถว", flush=True),
     )
     path = save_report(report)
