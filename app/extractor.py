@@ -80,9 +80,37 @@ def _issue_row(row: dict) -> dict[str, Any]:
         "issued_at": _text(row, "SOURCE_MOVEMENT_DATETIME")[:19],
         "document_type": document_type,
         "movement_kind": queries.movement_kind(document_type),
+        "direction": _direction(row),
         "check_status": _text(row, "SOURCE_MOS_STATUS"),
         "check_reason": _text(row, "SOURCE_MOS_REASON"),
     }
+
+
+def _direction(row: dict) -> str:
+    """out เมื่อของออกจากคลังนี้จริง อย่างอื่นคือขาเข้าหรือการกลับรายการ"""
+    nature_out = _number(row, "SOURCE_NATUREISOUT")
+    add_stock = _number(row, "SOURCE_ADDSTOCK")
+    if not _text(row, "SOURCE_NATUREISOUT"):
+        return ""
+    return "out" if nature_out == 1 and add_stock == 0 else "in"
+
+
+def _reconcile(raw: list[dict]) -> tuple[list[dict], dict | None]:
+    """สอบทานรายล็อตด้วยเครื่องเดียวกับ Stock5 ก่อนเก็บ
+
+    Stock5 เรียก reconcile_distribution ทุกครั้งก่อนเขียนแฟ้มจ่าย ตัวดึงรุ่นแรก
+    ของที่นี่ข้ามขั้นนี้ไป สถานะสอบทานจึงว่างทุกแถว และเครื่องคำนวณที่ยืมมาก็ไม่ได้
+    ถูกใช้จริง ขั้นนี้ยังทำเครื่องหมายขาเข้าของการโอนว่ารอตรวจ ไม่ให้ปนกับการจ่าย
+    """
+    if not raw or "SOURCE_ENGINE" not in raw[0]:
+        return raw, None
+    import pandas as pd
+
+    lot = stock5_engine.load("lot_reconciliation")
+    frame = pd.DataFrame(raw)
+    frame = frame.astype(object).where(pd.notna(frame), "")
+    checked, stats = lot.reconcile_distribution(frame)
+    return checked.to_dict("records"), stats
 
 
 def _balance_row(row: dict) -> dict[str, Any]:
@@ -155,13 +183,29 @@ def pull_period(connection, period: str, store: str, kind: str,
         if cursor is not None:
             cursor.close()
 
+    source_rows = len(raw)
+    reconciliation = None
+    if kind == "issue":
+        try:
+            raw, reconciliation = _reconcile(raw)
+        except Exception as exc:
+            # สอบทานไม่ได้ต้องไม่เก็บ ข้อมูลที่ไม่ผ่านเครื่องเดียวกับ Stock5
+            # จะให้ตัวเลขคนละชุดโดยไม่มีใครรู้
+            warehouse_db.mark_period_failed(period, store, kind, f"สอบทานรายล็อตไม่สำเร็จ: {exc}")
+            return {"period": period, "store": store, "kind": kind, "status": "error",
+                    "message": f"สอบทานรายล็อตไม่สำเร็จ: {exc}"}
+
     shaped = [_SHAPERS[kind](row) for row in raw]
     shaped = [row for row in shaped if row.get("stock_code")]
     warehouse_db.replace_period(period, store, kind, shaped,
-                                source_rows=len(raw), query_sha256=queries.fingerprint(sql))
+                                source_rows=source_rows, query_sha256=queries.fingerprint(sql))
     warehouse_db.upsert_items(_item_rows(raw))
-    return {"period": period, "store": store, "kind": kind, "status": "success",
-            "source_rows": len(raw), "stored_rows": len(shaped)}
+    outcome = {"period": period, "store": store, "kind": kind, "status": "success",
+               "source_rows": source_rows, "stored_rows": len(shaped)}
+    if reconciliation:
+        outcome["verified_rows"] = reconciliation.get("verified_rows", 0)
+        outcome["pending_rows"] = reconciliation.get("pending_rows", 0)
+    return outcome
 
 
 def plan(today=None, store_codes: Iterable[str] | None = None,
@@ -171,16 +215,36 @@ def plan(today=None, store_codes: Iterable[str] | None = None,
     years = reporting_window.DEFAULT_FISCAL_YEARS_BACK if years_back is None else years_back
     periods = reporting_window.periods(today, years)
     selected = list(store_codes) if store_codes is not None else stores.active_store_codes()
+    kinds = list(kinds)
     work = warehouse_db.missing_periods(periods, selected, kinds)
+
+    # งวดที่ดึงด้วยคำสั่งรุ่นเก่าต้องดึงใหม่ มิฉะนั้นข้อมูลผิดจากรุ่นก่อนจะค้างอยู่
+    # เงียบ ๆ — การดึงรอบแรกเก็บขาเข้าของการโอนไว้ในฐานะการจ่ายของห้องยาย่อย
+    queued = set(work)
+    wanted_periods, wanted_stores = set(periods), set(selected)
+    for (period, store, kind), stored in warehouse_db.stored_fingerprints().items():
+        if (period, store, kind) in queued or period not in wanted_periods:
+            continue
+        if store not in wanted_stores or kind not in kinds:
+            continue
+        try:
+            date_from, date_to = reporting_window.period_bounds(period)
+            latest = queries.fingerprint(
+                queries.build(_QUERY_FOR_KIND[kind], store, date_from, date_to))
+        except Exception:
+            continue
+        if latest != stored:
+            work.append((period, store, kind))
+            queued.add((period, store, kind))
 
     if include_current and periods:
         current = periods[-1]
-        already = {item for item in work}
         for store in selected:
             for kind in kinds:
                 item = (current, store, kind)
-                if item not in already:
+                if item not in queued:
                     work.append(item)
+                    queued.add(item)
     return work
 
 

@@ -104,6 +104,9 @@ CREATE TABLE IF NOT EXISTS issues (
     -- 32 จ่ายให้หน่วยเบิก / 35 โอนระหว่างคลัง / 33,34 ยังไม่ทราบความหมาย
     document_type TEXT DEFAULT '',
     movement_kind TEXT DEFAULT '',
+    -- ทิศทางจากฝั่งการเคลื่อนไหว: out = ของออกจากคลังนี้, in = ของเข้ามา
+    -- คำสั่งของ Stock5 คืนขาเข้าของการโอนมาด้วย ถ้าไม่แยก ขาเข้าจะดูเหมือนการจ่าย
+    direction    TEXT DEFAULT '',
     check_status TEXT DEFAULT '',
     check_reason TEXT DEFAULT '',
     PRIMARY KEY (period, store, irno, suffix, stock_code, movement_key)
@@ -134,7 +137,8 @@ def connect() -> sqlite3.Connection:
 #: CREATE TABLE IF NOT EXISTS ไม่เติมคอลัมน์ให้ตารางที่มีอยู่ ฐานข้อมูลรุ่นเก่า
 #: จึงต้องถูกอัปเกรดก่อน มิฉะนั้น index ที่อ้างคอลัมน์ใหม่จะสร้างไม่ได้
 _ADDED_COLUMNS = {
-    "issues": (("document_type", "TEXT DEFAULT ''"), ("movement_kind", "TEXT DEFAULT ''")),
+    "issues": (("document_type", "TEXT DEFAULT ''"), ("movement_kind", "TEXT DEFAULT ''"),
+               ("direction", "TEXT DEFAULT ''")),
 }
 
 
@@ -252,6 +256,17 @@ def replace_period(period: str, store: str, kind: str, rows: list[dict[str, Any]
              _digest(prepared), query_sha256,
              datetime.now(timezone.utc).isoformat(timespec="seconds")))
     return {"period": period, "store": store, "kind": kind, "rows": len(prepared)}
+
+
+def stored_fingerprints() -> dict[tuple[str, str, str], str]:
+    """ลายนิ้วมือคำสั่งของทุกงวดที่ดึงสำเร็จ ใช้หางวดที่ดึงด้วยคำสั่งรุ่นเก่า"""
+    with connect() as conn:
+        return {
+            (row["period"], row["store"], row["kind"]): row["query_sha256"] or ""
+            for row in conn.execute(
+                "SELECT period, store, kind, query_sha256 FROM periods WHERE status = ?",
+                (PERIOD_COMPLETE,))
+        }
 
 
 def mark_period_failed(period: str, store: str, kind: str, message: str) -> None:

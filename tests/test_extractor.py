@@ -193,7 +193,12 @@ class PlanTests(unittest.TestCase):
         self.assertEqual(len(work), 24 * 2, "24 งวด x 2 คลัง")
 
     def test_periods_already_held_are_not_planned_again(self):
-        warehouse_db.replace_period("202608", "2", "issue", [])
+        # "มีอยู่แล้ว" ต้องหมายถึงดึงด้วยคำสั่งรุ่นปัจจุบัน งวดที่ไม่มีลายนิ้วมือ
+        # พิสูจน์ไม่ได้ว่าถูกต้อง จึงถูกดึงใหม่ (ดู FirstRealPullLessonsTests)
+        import reporting_window
+        date_from, date_to = reporting_window.period_bounds("202608")
+        current = queries.fingerprint(queries.build("DISTRIBUTION", "2", date_from, date_to))
+        warehouse_db.replace_period("202608", "2", "issue", [], query_sha256=current)
         work = extractor.plan(self._dt.date(2026, 9, 11), ["2"], ["issue"])
         self.assertNotIn(("202608", "2", "issue"), work)
 
@@ -255,3 +260,123 @@ class RunTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+# ---------------------------------------------------------------------------
+# บทเรียนจากการดึงจริงรอบแรก (11 ก.ย. 2569)
+# ---------------------------------------------------------------------------
+
+def lot_level_rows(document_type="32", nature_out="1", add_stock="0", raw_qty=("1900", "1100")):
+    """แถวรายล็อตครบฟิลด์ที่ reconcile_distribution ต้องใช้ ตามรูปแบบคำสั่งจ่ายของ Stock5"""
+    common = dict(
+        HOSP_CODE="TEST", WORKING_CODE="1321080", ENGLISHNAME="AATORVASTATIN TAB 40 mg",
+        TRADE_NAME="Lipitor", SOURCE_ENGINE="SSBSTOCK_MOVE_V1", UNIT_PROVENANCE="SSBSTOCK_MOVE_V1",
+        SOURCE_SCOPE_VERSION="SSBSTOCK_STORE_V1", SOURCE_STORE="O5",
+        SOURCE_DOCUMENTTYPE=document_type, IRNO="O5-0001", SUFFIX="1",
+        SOURCE_MOVEMENT_DATETIME="2026-08-08 08:43:53.000",
+        SOURCE_PARENT_MOVEMENT_DATETIME="2026-08-08 08:43:53.000",
+        SOURCE_PARENT_PRESENT="1", SOURCE_MOVEMENT_PRESENT="1", SOURCE_PARENT_QTY="3000",
+        SOURCE_PARENT_UNIT="TAB", SOURCE_PARENT_TO_BASE_FACTOR="1",
+        SOURCE_MOVEMENT_UNIT="TAB", SOURCE_ISSUEUNITCODE="TAB", SOURCE_BASE_UNIT="TAB",
+        ISSUE_TO_BASE_FACTOR="1", SOURCE_ADDSTOCK=add_stock, SOURCE_NATUREISOUT=nature_out,
+        PERIOD_RPT="202608", BASE_UNIT="TAB", PACK_SIZE="1", PACK_COST="1.4231",
+        SOURCE_COST_BASIS="SKMOVE_FIFO_RECORDED", ISSUEUNITCODE="TAB", DIS="D1",
+        DIS_DEPT_GROUP="2", MAINCATEGORY="11")
+    return [
+        dict(common, SOURCE_ROW="2", SOURCE_LOTNO="L1", SOURCE_MOVEMENT_SUFFIX="36",
+             SOURCE_RAW_QTY=raw_qty[0], QTY_DIS=raw_qty[0], SOURCE_FIFO_VALUE="2703.89", VALUE="2703.89"),
+        dict(common, SOURCE_ROW="3", SOURCE_LOTNO="L2", SOURCE_MOVEMENT_SUFFIX="37",
+             SOURCE_RAW_QTY=raw_qty[1], QTY_DIS=raw_qty[1], SOURCE_FIFO_VALUE="1565.41", VALUE="1565.41"),
+    ]
+
+
+def connection_for(rows):
+    columns = tuple(rows[0].keys())
+    return FakeConnection([tuple(row[c] for c in columns) for row in rows], columns)
+
+
+class FirstRealPullLessonsTests(unittest.TestCase):
+    def setUp(self):
+        if not stock5_engine.engine_available():
+            self.skipTest("ยังไม่ได้ติดตั้ง Stock5 ข้างโปรเจกต์นี้")
+        self.temp = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
+        self.addCleanup(self.temp.cleanup)
+        directory = Path(self.temp.name)
+        for name, value in (("DATA_DIR", directory), ("DB_PATH", directory / "test.db")):
+            patcher = patch.object(warehouse_db, name, value)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+        warehouse_db.init_db()
+
+    def stored(self):
+        with warehouse_db.connect() as conn:
+            return [dict(row) for row in conn.execute("SELECT * FROM issues ORDER BY lot_no")]
+
+    # --- คลังยาหลักล้มทั้ง 24 งวด เพราะการ์ดนับ STORE = '2' ของตัวเองเป็นของเหลือ
+    def test_the_main_pharmacy_store_builds_every_query(self):
+        for kind in ("RECEIPT", "DISTRIBUTION", "INVENTORY"):
+            with self.subTest(kind=kind):
+                sql = queries.build(kind, "2", "20260801", "20260901")
+                self.assertIn("STORE = '2'", sql)
+
+    def test_the_main_store_keeps_stock5_numbering_filter_so_both_systems_agree(self):
+        sql = queries.build("DISTRIBUTION", "2", "20260801", "20260901")
+        self.assertIn("iro.IRNO LIKE '[0-9][0-9]D%'", sql)
+
+    # --- ห้องยาย่อยได้ชนิด 35 ล้วน เพราะตัวกรองเลขเอกสารของคลังหลักตัดการจ่ายทิ้ง
+    def test_sub_stores_filter_by_document_type_not_by_numbering(self):
+        sql = queries.build("DISTRIBUTION", "O5", "20260801", "20260901")
+        self.assertNotIn("IRNO LIKE", sql)
+        self.assertNotIn("DOCUMENTNO LIKE", sql)
+        self.assertIn("iro.DOCUMENTTYPE IN ('32', '33', '34', '35')", sql)
+
+    def test_other_query_kinds_are_left_as_stock5_wrote_them(self):
+        sql = queries.build("RECEIPT", "O5", "20260801", "20260901")
+        self.assertIn("RECEIVENO LIKE 'M%'", sql)
+
+    # --- ตัวดึงรุ่นแรกไม่ได้เรียก reconcile_distribution สถานะสอบทานจึงว่างทุกแถว
+    def test_issue_periods_are_reconciled_with_the_stock5_engine(self):
+        result = extractor.pull_period(connection_for(lot_level_rows()), "202608", "O5", "issue")
+        self.assertEqual(result["status"], "success")
+        self.assertEqual(result["verified_rows"], 2)
+        self.assertTrue(all(row["check_status"] == "VERIFIED" for row in self.stored()))
+
+    def test_a_quantity_mismatch_is_left_pending_not_counted(self):
+        rows = lot_level_rows(raw_qty=("1900", "900"))  # รวม 2,800 แต่รายการหลัก 3,000
+        result = extractor.pull_period(connection_for(rows), "202608", "O5", "issue")
+        self.assertEqual(result["pending_rows"], 2)
+        self.assertTrue(all(row["check_status"] == "PENDING" for row in self.stored()))
+
+    # --- ขาเข้าของการโอนต้องแยกได้ ไม่ปนกับการจ่าย
+    def test_outgoing_and_incoming_movements_are_told_apart(self):
+        extractor.pull_period(connection_for(lot_level_rows()), "202608", "O5", "issue")
+        self.assertTrue(all(row["direction"] == "out" for row in self.stored()))
+
+        extractor.pull_period(connection_for(lot_level_rows("35", nature_out="0", add_stock="1")),
+                              "202608", "O5", "issue")
+        rows = self.stored()
+        self.assertTrue(all(row["direction"] == "in" for row in rows))
+        self.assertTrue(all(row["check_status"] == "PENDING" for row in rows),
+                        "ขาเข้าต้องไม่ผ่านการสอบทาน จึงไม่ถูกนับเป็นการใช้")
+
+    def test_a_reconciliation_failure_is_recorded_and_nothing_is_stored(self):
+        with patch.object(extractor, "_reconcile", side_effect=ValueError("ขาดฟิลด์")):
+            result = extractor.pull_period(connection_for(lot_level_rows()), "202608", "O5", "issue")
+        self.assertEqual(result["status"], "error")
+        self.assertEqual(self.stored(), [])
+        self.assertFalse(warehouse_db.is_period_complete("202608", "O5", "issue"))
+
+    # --- ข้อมูลที่ดึงด้วยคำสั่งรุ่นเก่าต้องถูกดึงใหม่ ไม่ค้างอยู่เงียบ ๆ
+    import datetime as _dt
+
+    def test_periods_pulled_with_an_older_query_are_planned_again(self):
+        warehouse_db.replace_period("202607", "O5", "issue", [], query_sha256="รุ่นเก่า")
+        work = extractor.plan(self._dt.date(2026, 9, 11), ["O5"], ["issue"])
+        self.assertIn(("202607", "O5", "issue"), work)
+
+    def test_periods_pulled_with_the_current_query_are_left_alone(self):
+        date_from, date_to = __import__("reporting_window").period_bounds("202607")
+        current = queries.fingerprint(queries.build("DISTRIBUTION", "O5", date_from, date_to))
+        warehouse_db.replace_period("202607", "O5", "issue", [], query_sha256=current)
+        work = extractor.plan(self._dt.date(2026, 9, 11), ["O5"], ["issue"])
+        self.assertNotIn(("202607", "O5", "issue"), work)

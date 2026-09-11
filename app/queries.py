@@ -13,12 +13,14 @@
 การเปลี่ยนตัวกรองรหัสสำคัญ: การสำรวจพบว่ารูปแบบรหัสตัดยาจริงทิ้ง 157 ล็อต
 มูลค่า 273,692 บาท (ยาที่โรงพยาบาลผลิตเอง รหัสขึ้นต้น 49)
 """
+import functools
 import hashlib
 import re
 from pathlib import Path
 
 import categories
 import stock5_engine
+import stores
 
 #: ชนิดเอกสารจ่าย ตามที่สำรวจฐานข้อมูลจริง 11 กันยายน 2569
 DISPENSE = "32"       # จ่ายให้หน่วยเบิก 75,292 ใบ 21 คลัง — ไม่มีคลังคู่
@@ -60,7 +62,38 @@ def _read_source() -> str:
         raise FileNotFoundError(
             f"ไม่พบคำสั่งดึงข้อมูลของ Stock5 ที่ {path} "
             "ตั้ง STOCK5_HOME ให้ชี้ไปที่โฟลเดอร์ Stock5")
-    return path.read_text(encoding="utf-8")
+    return _cached_source(str(path), path.stat().st_mtime_ns)
+
+
+@functools.lru_cache(maxsize=4)
+def _cached_source(path: str, _mtime: int) -> str:
+    # คีย์รวม mtime ไว้ ถ้า Stock5 แก้ไฟล์คำสั่ง แคชจะหมดอายุเอง
+    return Path(path).read_text(encoding="utf-8")
+
+
+@functools.lru_cache(maxsize=4)
+def _statements(mappings_key: tuple, source: str) -> dict[str, str]:
+    stock5_engine.install()
+    from table_config import render_table_tokens
+
+    content = render_table_tokens(source, dict(mappings_key))
+    sections = re.split(_SECTION_PATTERN, content)
+    found = {}
+    for index in range(1, len(sections), 2):
+        body = sections[index + 1]
+        found[sections[index]] = "SELECT" + body.split("SELECT", 1)[1].rsplit(";", 1)[0]
+    return found
+
+
+#: รูปแบบเลขเอกสารของคลังหลัก ที่ Stock5 ใช้กรอง
+#: ห้องจ่ายยาย่อยใช้เลขเอกสารคนละรูปแบบ ถ้าคงตัวกรองนี้ไว้ การจ่ายให้ผู้ป่วยของ
+#: ห้องยาทั้งหมดจะถูกตัดทิ้ง — การดึงรอบแรกได้ชนิด 35 ล้วน ไม่มีชนิด 32 สักบรรทัด
+_MAIN_STORE_ISSUE_NUMBERING = (
+    ("AND (iro.IRNO LIKE '[0-9][0-9]D%' OR iro.IRNO LIKE 'M[0-9][0-9]%')",
+     "AND iro.DOCUMENTTYPE IN ({types})"),
+    ("AND (DOCUMENTNO LIKE '[0-9][0-9]D%' OR DOCUMENTNO LIKE 'M[0-9][0-9]%')",
+     "AND DOCUMENTTYPE IN ({types})"),
+)
 
 
 def _category_filter(column: str, group_key: str) -> str:
@@ -88,18 +121,25 @@ def build(kind: str, store: str, date_from: str, date_to: str,
             raise ValueError("วันที่ต้องเป็น YYYYMMDD")
 
     stock5_engine.install()
-    from table_config import load_table_mappings, render_table_tokens
+    from table_config import load_table_mappings
 
-    content = render_table_tokens(_read_source(), mappings or load_table_mappings())
-    sections = re.split(_SECTION_PATTERN, content)
-    statements = {}
-    for index in range(1, len(sections), 2):
-        body = sections[index + 1]
-        statements[sections[index]] = "SELECT" + body.split("SELECT", 1)[1].rsplit(";", 1)[0]
+    resolved = mappings or load_table_mappings()
+    statements = _statements(tuple(sorted(resolved.items())), _read_source())
     if wanted not in statements:
         raise ValueError(f"ไม่พบคำสั่ง {wanted} ในไฟล์ต้นฉบับของ Stock5")
 
     sql = statements[wanted]
+    main_store = str(store) == stores.PHARMACY_MAIN_STORE
+
+    # คลังหลักใช้คำสั่งของ Stock5 ตามเดิมทุกตัวอักษร ตัวเลขคลัง 2 ของสองระบบจึง
+    # ต้องตรงกันเสมอ ซึ่งเป็นตัวตรวจไขว้ที่ดีที่สุดที่มี
+    if not main_store and wanted == "DISTRIBUTION":
+        types = ", ".join(f"'{value}'" for value in sorted(MOVEMENT_KINDS))
+        for original, replacement in _MAIN_STORE_ISSUE_NUMBERING:
+            if original not in sql:
+                raise ValueError("รูปแบบคำสั่งจ่ายของ Stock5 เปลี่ยนไป ต้องตรวจการปรับขอบเขตใหม่")
+            sql = sql.replace(original, replacement.format(types=types))
+
     # ขอบเขตคลัง — รูปแบบเดียวกันทุกจุดในไฟล์ต้นฉบับ
     sql = sql.replace("STORE = '2'", f"STORE = '{store}'")
     # ขอบเขตรายการ — เปลี่ยนจากรูปแบบรหัสเป็นหมวดที่โรงพยาบาลกำหนด
@@ -111,7 +151,12 @@ def build(kind: str, store: str, date_from: str, date_to: str,
                       _category_filter("STOCKCODE", group_key))
     sql = sql.replace("{{DATE_FROM}}", date_from).replace("{{DATE_TO}}", date_to)
 
-    leftover = re.findall(r"\[12a-zA-Z\]%|STORE = '2'|\{\{[A-Z_]+\}\}", sql)
+    # เมื่อคลังเป้าหมายคือ 2 เอง STORE = '2' คือค่าที่ถูกต้อง ไม่ใช่ของเหลือ
+    # การ์ดรุ่นแรกนับมันเป็นของเหลือ คลังยาหลักจึงล้มครบทั้ง 24 งวดในการดึงรอบแรก
+    leftover_pattern = r"\[12a-zA-Z\]%|\{\{[A-Z_]+\}\}"
+    if not main_store:
+        leftover_pattern += r"|STORE = '2'"
+    leftover = re.findall(leftover_pattern, sql)
     if leftover:
         raise ValueError("ยังเหลือขอบเขตเดิมที่ไม่ได้เปลี่ยน: " + ", ".join(sorted(set(leftover))))
     return sql
