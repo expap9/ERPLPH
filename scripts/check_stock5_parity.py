@@ -84,17 +84,34 @@ def compare(erplph: dict, stock5: dict, periods: set[str]) -> dict[str, dict[str
     return diff
 
 
-def compare_balances(run: Path, conn: sqlite3.Connection) -> dict:
-    """คงคลังคลัง 2 เทียบกับ Stock5 — ดึงคนละเวลา จึงรายงานไว้ดู ไม่ตัดสินว่าผิด
+def balance_difference(stock5: dict, erplph: dict) -> dict:
+    """แยกความต่างของคงคลังสองชุด
 
-    ถ้าดึงห่างกันไม่กี่นาที ควรตรงเกือบทั้งหมด รายการที่มีแต่ฝั่ง Stock5 ช่วยจับ
-    ความต่างของตัวกรอง (Stock5 กรองด้วยรูปแบบรหัส ที่นี่กรองด้วยหมวด)
+    ล็อตที่มีฝั่งเดียวเป็นเรื่องปกติเมื่อดึงคนละเวลา ล็อตถูกตัดจ่ายจนหมดแล้วหายไป
+    แต่ **รหัสยาที่หายทั้งรหัส** แปลว่าสองระบบมองขอบเขตไม่เหมือนกัน ต้องตรวจ
     """
+    same = sum(1 for key in set(stock5) & set(erplph)
+               if abs(stock5[key][0] - erplph[key][0]) < 1e-6
+               and abs(stock5[key][1] - erplph[key][1]) < 0.005)
+    codes_s5 = {code for code, _lot in stock5}
+    codes_er = {code for code, _lot in erplph}
+    return {
+        "identical_lots": same,
+        "lots_only_in_stock5": len(set(stock5) - set(erplph)),
+        "lots_only_in_erplph": len(set(erplph) - set(stock5)),
+        "codes_only_in_stock5": sorted(codes_s5 - codes_er),
+        "codes_only_in_erplph": sorted(codes_er - codes_s5),
+    }
+
+
+def compare_balances(run: Path, conn: sqlite3.Connection) -> dict:
+    """คงคลังคลัง 2 เทียบกับ Stock5 — ดึงคนละเวลา จึงรายงานไว้ดู ไม่ตัดสินว่าผิด"""
     path = run / "INVENTORY.json"
     day = conn.execute("SELECT MAX(period) FROM periods WHERE store = ? AND kind = 'balance' "
                        "AND status = 'complete'", (MAIN,)).fetchone()[0]
     if not path.is_file() or not day:
-        print("\n  คงคลัง: ยังไม่มีภาพคงคลังของคลัง 2 ให้เทียบ")
+        print()
+        print("  คงคลัง: ยังไม่มีภาพคงคลังของคลัง 2 ให้เทียบ")
         return {"compared": False}
 
     s5 = {(str(r.get("WORKING_CODE")), str(r.get("LOTNO") or "")):
@@ -103,22 +120,23 @@ def compare_balances(run: Path, conn: sqlite3.Connection) -> dict:
     er = {(code, lot): (qty, value) for code, lot, qty, value in conn.execute(
         "SELECT stock_code, lot_no, qty, value FROM balances WHERE store = ? AND period = ?",
         (MAIN, day))}
-    same = sum(1 for key in set(s5) & set(er)
-               if abs(s5[key][0] - er[key][0]) < 1e-6 and abs(s5[key][1] - er[key][1]) < 0.005)
-    only_s5 = sorted({code for code, _lot in set(s5) - set(er)})
-    only_er = sorted({code for code, _lot in set(er) - set(s5)})
+    difference = balance_difference(s5, er)
     names = dict(conn.execute("SELECT stock_code, name FROM items"))
 
-    print(f"\n  คงคลังคลัง 2  Stock5 {len(s5):,} ล็อต ฿{sum(v for _q, v in s5.values()):,.2f}"
+    print()
+    print(f"  คงคลังคลัง 2  Stock5 {len(s5):,} ล็อต ฿{sum(v for _q, v in s5.values()):,.2f}"
           f"  |  ERPLPH ({day}) {len(er):,} ล็อต ฿{sum(v for _q, v in er.values()):,.2f}")
-    print(f"    ตรงกันทั้งจำนวนและมูลค่า {same:,} ล็อต  (ดึงคนละเวลา ต่างได้ตามการเคลื่อนไหวระหว่างนั้น)")
-    if only_s5:
-        print(f"    รหัสที่มีแต่ Stock5 {len(only_s5)} รหัส: {', '.join(only_s5[:10])}")
-    if only_er:
-        print(f"    รหัสที่มีแต่ ERPLPH {len(only_er)} รหัส: "
-              + ", ".join(f"{code} {names.get(code, '')[:20]}" for code in only_er[:10]))
+    print(f"    ล็อตที่ตรงกันทั้งจำนวนและมูลค่า {difference['identical_lots']:,} ล็อต")
+    print(f"    ล็อตที่มีแต่ Stock5 {difference['lots_only_in_stock5']:,}  "
+          f"มีแต่ ERPLPH {difference['lots_only_in_erplph']:,}  "
+          "(ปกติเมื่อดึงคนละเวลา: ล็อตถูกจ่ายจนหมด หรือเพิ่งรับเข้ามา)")
+    for side, codes in (("Stock5", difference["codes_only_in_stock5"]),
+                        ("ERPLPH", difference["codes_only_in_erplph"])):
+        if codes:
+            print(f"    [!] รหัสที่มีแต่ {side} {len(codes)} รหัส — สองระบบมองขอบเขตไม่เหมือนกัน: "
+                  + ", ".join(f"{code} {names.get(code, '')[:18]}" for code in codes[:10]))
     return {"compared": True, "erplph_day": day, "stock5_lots": len(s5), "erplph_lots": len(er),
-            "identical_lots": same, "codes_only_in_stock5": only_s5, "codes_only_in_erplph": only_er}
+            **difference}
 
 
 def main() -> int:

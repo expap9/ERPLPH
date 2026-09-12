@@ -270,20 +270,28 @@ REASON_QUERY = "คำสั่งดึงเปลี่ยน"
 REASON_UNITS = "กติกาหน่วยเปลี่ยน"
 REASON_UNITS_UNKNOWN = "ไม่มีบันทึกกติกาหน่วยที่ใช้สอบทาน"
 REASON_CURRENT = "เดือนปัจจุบัน ยอดยังเปลี่ยนได้"
+REASON_LATE_POSTING = "เดือนก่อน อาจมีเอกสารบันทึกย้อนวัน"
 REASON_SNAPSHOT = "คงคลัง ณ วันนี้"
+
+#: เอกสารเข้าระบบช้ากว่าวันที่บนเอกสารได้ พบจริงวันที่ 12 ก.ย. 2569: ใบโอน
+#: 69D09127-69D09131 ลงวันที่ 10 ก.ย. 15:11 แต่ยังไม่อยู่ในฐานข้อมูลตอนบ่ายวันที่ 11
+#: (1,551,124 หน่วย ฿1,923,985) เดือนที่ผ่านไปแล้วจึงยังเปลี่ยนได้อีกระยะหนึ่ง
+#: การดึงซ้ำเฉพาะเดือนปัจจุบันจะไม่มีวันเห็นใบที่ลงวันที่สิ้นเดือนแต่บันทึกต้นเดือนถัดไป
+LATE_POSTING_DAYS = 10
 
 
 def plan(today=None, store_codes: Iterable[str] | None = None,
          kinds: Iterable[str] = ALL_KINDS, years_back: int | None = None,
-         include_current: bool = True) -> list[tuple[str, str, str]]:
+         include_current: bool = True, recheck_months: int = 0) -> list[tuple[str, str, str]]:
     """งานที่ต้องดึง = งวดที่ยังไม่มี บวกเดือนปัจจุบันซึ่งยอดยังเปลี่ยนได้"""
     return [item[:3] for item in
-            plan_detail(today, store_codes, kinds, years_back, include_current)]
+            plan_detail(today, store_codes, kinds, years_back, include_current, recheck_months)]
 
 
 def plan_detail(today=None, store_codes: Iterable[str] | None = None,
                 kinds: Iterable[str] = ALL_KINDS, years_back: int | None = None,
-                include_current: bool = True) -> list[tuple[str, str, str, str]]:
+                include_current: bool = True,
+                recheck_months: int = 0) -> list[tuple[str, str, str, str]]:
     """เหมือน plan() แต่บอกเหตุผลของแต่ละงวดด้วย"""
     years = reporting_window.DEFAULT_FISCAL_YEARS_BACK if years_back is None else years_back
     periods = reporting_window.periods(today, years)
@@ -331,6 +339,15 @@ def plan_detail(today=None, store_codes: Iterable[str] | None = None,
                 if (current, store, kind) not in queued:
                     add(current, store, kind, REASON_CURRENT)
 
+    # เดือนก่อนยังเปลี่ยนได้จากเอกสารที่บันทึกย้อนวัน จึงดึงซ้ำในช่วงต้นเดือนถัดไป
+    # และดึงลึกกว่านั้นได้ตามต้องการด้วย recheck_months (เช่น งานประจำสัปดาห์)
+    months_back = max(recheck_months, 1 if (today or date.today()).day <= LATE_POSTING_DAYS else 0)
+    for period in periods[max(0, len(periods) - 1 - months_back):-1]:
+        for store in selected:
+            for kind in kinds:
+                if (period, store, kind) not in queued:
+                    add(period, store, kind, REASON_LATE_POSTING)
+
     # คงคลังคือยอด ณ ตอนดึง จึงถ่ายภาพใหม่ทุกรอบ และไว้ท้ายสุดให้ใกล้เวลาเดียวกับ
     # การเคลื่อนไหวของเดือนปัจจุบันที่เพิ่งดึง
     if SNAPSHOT_KIND in requested:
@@ -366,10 +383,11 @@ def run(today=None, store_codes: Iterable[str] | None = None,
         kinds: Iterable[str] = ALL_KINDS, years_back: int | None = None,
         limit: int | None = None, pacing: float = PACING_SECONDS,
         progress: Callable[[dict], None] | None = None,
-        connection_factory: Callable[[], Any] | None = None) -> dict[str, Any]:
+        connection_factory: Callable[[], Any] | None = None,
+        recheck_months: int = 0) -> dict[str, Any]:
     """ดึงตามแผน คืนผลสรุป งวดที่ล้มไม่ทำให้งวดอื่นหยุด"""
     warehouse_db.init_db()
-    work = plan(today, store_codes, kinds, years_back)
+    work = plan(today, store_codes, kinds, years_back, recheck_months=recheck_months)
     if limit is not None:
         work = work[:limit]
 

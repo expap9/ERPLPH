@@ -609,6 +609,69 @@ class SnapshotTests(unittest.TestCase):
         self.assertEqual(group, categories.MEDICAL_SUPPLY)
 
 
+# ---------------------------------------------------------------------------
+# เอกสารบันทึกย้อนวัน: เดือนที่ผ่านไปแล้วยังเปลี่ยนได้
+#
+# 12 ก.ย. 2569 พบใบโอน 69D09127-69D09131 ลงวันที่ 10 ก.ย. 15:11 (1,551,124 หน่วย
+# ฿1,923,985) ซึ่งยังไม่อยู่ในฐานข้อมูลตอนบ่ายวันที่ 11 ถ้าใบแบบนี้ลงวันที่สิ้นเดือน
+# แต่บันทึกต้นเดือนถัดไป การดึงซ้ำเฉพาะเดือนปัจจุบันจะไม่มีวันเห็น
+# ---------------------------------------------------------------------------
+
+class LatePostingTests(unittest.TestCase):
+    import datetime as _dt
+
+    def setUp(self):
+        if not stock5_engine.engine_available():
+            self.skipTest("ยังไม่ได้ติดตั้ง Stock5 ข้างโปรเจกต์นี้")
+        self.temp = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
+        self.addCleanup(self.temp.cleanup)
+        directory = Path(self.temp.name)
+        for name, value in (("DATA_DIR", directory), ("DB_PATH", directory / "test.db")):
+            patcher = patch.object(warehouse_db, name, value)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+        warehouse_db.init_db()
+        for period in ("202607", "202608", "202609", "202610"):
+            self.hold(period)
+
+    def hold(self, period, store="O5", kind="issue"):
+        """งวดที่ดึงครบแล้วด้วยคำสั่งและกติกาหน่วยปัจจุบัน"""
+        import reporting_window
+
+        date_from, date_to = reporting_window.period_bounds(period)
+        current = queries.fingerprint(queries.build("DISTRIBUTION", store, date_from, date_to))
+        warehouse_db.replace_period(period, store, kind, [], query_sha256=current,
+                                    units_sha256=current_units())
+
+    def planned(self, day, **kwargs):
+        return extractor.plan(day, ["O5"], ["issue"], **kwargs)
+
+    def test_early_in_the_month_the_previous_month_is_pulled_again(self):
+        work = self.planned(self._dt.date(2026, 10, 3))
+        self.assertIn(("202609", "O5", "issue"), work)
+        self.assertIn(("202610", "O5", "issue"), work)
+
+    def test_the_plan_says_it_is_about_late_postings(self):
+        reasons = {item[:3]: item[3] for item in
+                   extractor.plan_detail(self._dt.date(2026, 10, 3), ["O5"], ["issue"])}
+        self.assertEqual(reasons[("202609", "O5", "issue")], extractor.REASON_LATE_POSTING)
+
+    def test_later_in_the_month_the_previous_month_is_left_alone(self):
+        work = self.planned(self._dt.date(2026, 10, 20))
+        self.assertNotIn(("202609", "O5", "issue"), work)
+
+    def test_a_deeper_recheck_can_be_asked_for(self):
+        # งานประจำสัปดาห์: กันใบที่ลงวันที่เก่ากว่าหนึ่งเดือน
+        work = self.planned(self._dt.date(2026, 10, 20), recheck_months=3)
+        for period in ("202609", "202608", "202607"):
+            with self.subTest(period=period):
+                self.assertIn((period, "O5", "issue"), work)
+
+    def test_the_window_start_is_never_crossed(self):
+        work = self.planned(self._dt.date(2026, 10, 3), recheck_months=99)
+        self.assertTrue(all(period >= "202510" for period, _s, _k in work))
+
+
 class UnitRuleDigestTests(unittest.TestCase):
     """ลายนิ้วมือต้องเปลี่ยนเมื่อการแปลงหน่วยเปลี่ยนเท่านั้น"""
 

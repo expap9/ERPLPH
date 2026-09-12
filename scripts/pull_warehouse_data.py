@@ -8,6 +8,7 @@
     python scripts\\pull_warehouse_data.py --limit 10       ทดลองสิบงวดแรก
     python scripts\\pull_warehouse_data.py --plan-only      ดูแผนโดยไม่ดึงจริง
     python scripts\\pull_warehouse_data.py --kind balance   เฉพาะคงคลัง ณ วันนี้
+    python scripts\\pull_warehouse_data.py --recheck 3      ดึงซ้ำ 3 เดือนหลังสุด กันเอกสารย้อนวัน
 
 ทุกรอบจบด้วยการถ่ายภาพคงคลังของทุกคลัง ดึงซ้ำวันเดียวกันแทนภาพเดิมของวันนั้น
 """
@@ -33,6 +34,8 @@ def main() -> int:
     parser.add_argument("--pacing", type=float, default=extractor.PACING_SECONDS,
                         help="พักกี่วินาทีระหว่างคำสั่ง")
     parser.add_argument("--plan-only", action="store_true", help="แสดงแผนโดยไม่ดึงจริง")
+    parser.add_argument("--recheck", type=int, default=0, metavar="N",
+                        help="ดึงซ้ำย้อนหลัง N เดือน กันเอกสารที่บันทึกย้อนวัน (งานประจำสัปดาห์)")
     args = parser.parse_args()
 
     warehouse_db.init_db()
@@ -40,7 +43,8 @@ def main() -> int:
     print("   ERPLPH — ดึงข้อมูลคลังเข้าฐานข้อมูล")
     print("=" * 70)
     try:
-        work = extractor.plan_detail(store_codes=args.store, kinds=args.kind)
+        work = extractor.plan_detail(store_codes=args.store, kinds=args.kind,
+                                     recheck_months=args.recheck)
     except Exception as exc:
         # ส่วนใหญ่คือตารางหน่วยของ Stock5 อ่านไม่ได้ ถ้าดึงต่อ ทุกงวดใบจ่ายจะล้มอยู่ดี
         print(f"\n  วางแผนไม่สำเร็จ ยังไม่ได้อ่านฐานข้อมูลโรงพยาบาล: {exc}")
@@ -80,7 +84,7 @@ def main() -> int:
                 outcome.get("message", "")[:44]), flush=True)
 
     result = extractor.run(store_codes=args.store, kinds=args.kind, limit=args.limit,
-                           pacing=args.pacing, progress=show)
+                           pacing=args.pacing, progress=show, recheck_months=args.recheck)
 
     print("\n" + "=" * 70)
     print("  สำเร็จ %s งวด  ล้มเหลว %s งวด  รวม %s แถว" % (
