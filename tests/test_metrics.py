@@ -248,6 +248,20 @@ class LowStockTests(MetricsTestCase):
         self.assertEqual(found["items"][0]["basis"], "qty")
         self.assertAlmostEqual(found["items"][0]["months_left"], 0.5)
 
+    def test_an_item_marked_as_ordered_per_patient_is_kept_out_of_the_alerts(self):
+        # ยามะเร็งราคาแพงที่สั่งตามใบสั่งแพทย์รายคน คงคลังศูนย์คือเรื่องปกติ
+        # เจ้าหน้าที่เป็นคนกำหนดเครื่องหมายนี้ ระบบไม่เดาจากพฤติกรรม
+        self.use("O5", "PERPATIENT", 111_169.0)
+        found = metrics.low_stock(self.conn, ["O5"], until=THIS_MONTH,
+                                  patient_specific={"PERPATIENT"})
+        self.assertEqual(found["items"], [])
+        self.assertEqual([row["stock_code"] for row in found["patient_specific"]], ["PERPATIENT"])
+
+    def test_without_the_mark_the_same_item_is_an_alert(self):
+        self.use("O5", "PERPATIENT", 111_169.0)
+        found = metrics.low_stock(self.conn, ["O5"], until=THIS_MONTH, patient_specific=set())
+        self.assertEqual([row["stock_code"] for row in found["items"]], ["PERPATIENT"])
+
     def test_an_item_without_a_price_and_with_different_units_is_reported_not_guessed(self):
         # หน่วยคงคลังเป็นขวด หน่วยจ่ายเป็นโดส ระบบไม่แปลงหน่วยเอง
         self.hold("2", "EPI2002", 50, 0.0, unit="VIAL")

@@ -17,6 +17,7 @@ sys.path.insert(0, str(ROOT / "app"))
 import metrics  # noqa: E402
 import stores  # noqa: E402
 import warehouse_db  # noqa: E402
+import work_db  # noqa: E402
 
 
 def _baht(value: float) -> str:
@@ -94,8 +95,19 @@ def main() -> int:
             print(f"      {row['store']:<5}{row['stock_code']:<9}{row['name'][:28]:<30}"
                   f"เหลือ {row['months_left']:>5.2f} เดือน  ใช้เดือนละ {row['monthly_use']:>12,.2f}")
         if low["without_value"]:
-            print(f"    รายการที่ระบบไม่ได้ลงมูลค่าไว้ {len(low['without_value']):,} รายการ "
-                  "คิดเป็นเดือนไม่ได้ ต้องดูจำนวนแทน")
+            print(f"    รายการที่วัดไม่ได้ {len(low['without_value']):,} รายการ "
+                  "(ไม่มีมูลค่าในระบบ และหน่วยคงคลังกับหน่วยจ่ายไม่ตรงกัน)")
+        if low["retired_in_use"]:
+            print(f"    รหัสที่เลิกใช้แล้วแต่ยังมีการจ่าย {len(low['retired_in_use']):,} รายการ")
+        marked = low["patient_specific"]
+        print(f"\n[7] {work_db.label(work_db.PATIENT_SPECIFIC)} {len(marked):,} รายการ "
+              "(ไม่นับเป็นของใกล้หมด)")
+        for row in marked[:args.top]:
+            print(f"      {row['stock_code']:<9}{row['name'][:34]:<36}"
+                  f"ใช้เดือนละ {row['monthly_use']:>12,.2f}")
+        if not marked:
+            print("      ยังไม่มีรายการที่ทำเครื่องหมายไว้ "
+                  "(ติดได้ด้วย scripts\\mark_item.py จนกว่าหน้าเว็บจะพร้อม)")
         print("\n" + "=" * 78)
         return 0
     finally:

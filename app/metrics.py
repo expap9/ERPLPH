@@ -21,6 +21,7 @@ from datetime import date, timedelta
 from typing import Any, Iterable
 
 import warehouse_db
+import work_db
 
 #: เกณฑ์ที่ผู้ใช้กำหนด แก้ได้ที่นี่ที่เดียว
 LOW_STOCK_MONTHS = 1.0
@@ -204,7 +205,8 @@ def _unit_set(text: str | None) -> set[str]:
 
 
 def low_stock(conn, stores: Iterable[str] | None = None, months: int = AVERAGE_MONTHS,
-              threshold: float = LOW_STOCK_MONTHS, until: str | None = None) -> dict[str, Any]:
+              threshold: float = LOW_STOCK_MONTHS, until: str | None = None,
+              patient_specific: set[str] | None = None) -> dict[str, Any]:
     """รายการที่เหลือพอใช้ต่ำกว่าเกณฑ์ รวมของที่หมดเกลี้ยงแล้วแต่ยังมีการใช้
 
     ของที่หมดแล้วไม่มีอยู่ในภาพคงคลัง เพราะระบบเก็บเฉพาะล็อตที่เหลือมากกว่าศูนย์
@@ -216,6 +218,10 @@ def low_stock(conn, stores: Iterable[str] | None = None, months: int = AVERAGE_M
     ปกติวัดด้วยมูลค่า เพราะหน่วยตัดกันไปเอง ส่วนรายการที่ระบบไม่ได้ลงมูลค่าไว้ (เช่น
     วัคซีนที่ได้รับจัดสรร) วัดด้วยจำนวนได้ก็ต่อเมื่อหน่วยของคงคลังกับของใบจ่ายตรงกัน
     ถ้าไม่ตรงจะรายงานแยกไว้ ไม่แปลงหน่วยเอง
+
+    ยาที่เจ้าหน้าที่ทำเครื่องหมายว่า "บริการผู้ป่วยเฉพาะราย ไม่ได้ซื้อประจำ" จะถูกแยก
+    ออกจากรายการเตือน เพราะคงคลังเป็นศูนย์คือเรื่องปกติของยากลุ่มนั้น เครื่องหมายนี้
+    เจ้าหน้าที่เป็นคนกำหนด ระบบไม่เดาจากพฤติกรรม (ดู app/work_db.py)
     """
     store = next(iter(stores), None) if stores is not None else None
     clause, values = _balance_scope(conn, stores)
@@ -251,8 +257,10 @@ def low_stock(conn, stores: Iterable[str] | None = None, months: int = AVERAGE_M
     }
     catalogue = {code: (name, bool(retired)) for code, name, retired in
                  conn.execute("SELECT stock_code, name, retired FROM items")}
+    if patient_specific is None:
+        patient_specific = set(work_db.marked(work_db.PATIENT_SPECIFIC))
 
-    items, unmeasurable, retired_items = [], [], []
+    items, unmeasurable, retired_items, per_patient = [], [], [], []
     for code in set(held) | set(used):
         qty, value, stock_units = held.get(code, (0.0, 0.0, set()))
         used_value, used_qty, issue_units = used.get(code, (0.0, 0.0, set()))
@@ -265,6 +273,10 @@ def low_stock(conn, stores: Iterable[str] | None = None, months: int = AVERAGE_M
         if retired:
             retired_items.append(row)
             continue          # รหัสที่เลิกใช้แล้ว ไม่ต้องสั่งเพิ่ม
+        if code in patient_specific:
+            # เจ้าหน้าที่ทำเครื่องหมายว่าสั่งเป็นรายผู้ป่วย คงคลังศูนย์จึงไม่ใช่ปัญหา
+            per_patient.append(row)
+            continue
         if value > 0 and monthly_value > 0:
             remaining, basis = value / monthly_value, "value"
         elif monthly_qty > 0 and qty <= 0:
@@ -281,8 +293,9 @@ def low_stock(conn, stores: Iterable[str] | None = None, months: int = AVERAGE_M
             items.append({**row, "months_left": remaining, "basis": basis,
                           "out_of_stock": qty <= 0})
     items.sort(key=lambda row: (not row["out_of_stock"], row["months_left"], -row["monthly_use"]))
+    per_patient.sort(key=lambda row: -row["monthly_use"])
     return {"threshold_months": threshold, "items": items, "without_value": unmeasurable,
-            "retired_in_use": retired_items}
+            "retired_in_use": retired_items, "patient_specific": per_patient}
 
 
 def summary(store: str | None = None, conn=None) -> dict[str, Any]:
