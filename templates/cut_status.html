@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>คลังไหนข้อมูลค้าง · ERPLPH</title>
+<style>
+  :root { --ink:#1b2430; --muted:#6b7684; --line:#dde3ea; --bg:#f4f6f9;
+          --late:#b4232a; --late-bg:#fdf0f0; --ok:#1d7a4c; --ok-bg:#eef8f2; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font-size:15px;
+         font-family:"Sarabun","Leelawadee UI","Tahoma",sans-serif; }
+  .wrap { max-width:1060px; margin:0 auto; padding:24px 20px 56px; }
+  h1 { font-size:22px; margin:0 0 4px; }
+  .sub { color:var(--muted); margin:0 0 18px; }
+  .freshness { background:#fff; border:1px solid var(--line); border-left:4px solid #3d6fb4;
+               border-radius:6px; padding:12px 14px; margin-bottom:18px; line-height:1.7; }
+  .freshness b { font-variant-numeric:tabular-nums; }
+  .headline { display:flex; gap:14px; align-items:baseline; margin:0 0 14px; }
+  .headline .big { font-size:34px; font-weight:700; }
+  .headline .big.late { color:var(--late); }
+  .headline .big.ok { color:var(--ok); }
+  .tabs { margin:0 0 14px; }
+  .tabs a { display:inline-block; padding:5px 12px; margin-right:6px; border:1px solid var(--line);
+            border-radius:999px; background:#fff; color:var(--ink); text-decoration:none; font-size:14px; }
+  .tabs a.on { background:var(--ink); color:#fff; border-color:var(--ink); }
+  table { width:100%; border-collapse:collapse; background:#fff; border:1px solid var(--line);
+          border-radius:8px; overflow:hidden; }
+  th, td { padding:11px 12px; text-align:left; border-bottom:1px solid var(--line); vertical-align:top; }
+  th { background:#eef1f5; font-size:13px; color:var(--muted); font-weight:600; }
+  td.num, th.num { text-align:right; font-variant-numeric:tabular-nums; }
+  tr.late { background:var(--late-bg); }
+  .pill { display:inline-block; padding:2px 9px; border-radius:999px; font-size:13px; font-weight:600; }
+  .pill.late { background:var(--late); color:#fff; }
+  .pill.ok { background:var(--ok-bg); color:var(--ok); }
+  .store-code { color:var(--muted); font-size:13px; }
+  details { margin-top:6px; }
+  summary { cursor:pointer; color:#3d6fb4; font-size:13px; }
+  .days { margin-top:8px; display:flex; flex-wrap:wrap; gap:5px; }
+  .day { background:#fff; border:1px solid var(--late); color:var(--late); border-radius:4px;
+         padding:2px 7px; font-size:12.5px; font-variant-numeric:tabular-nums; }
+  .note { color:var(--muted); font-size:13.5px; line-height:1.8; margin-top:20px;
+          border-top:1px solid var(--line); padding-top:14px; }
+  .problem { background:#fff8e6; border:1px solid #e8d48a; border-radius:6px; padding:14px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>คลังไหนข้อมูลค้าง</h1>
+  <p class="sub">ถ้าคลังยังไม่ได้ตัดยอดหรือยังไม่ได้บันทึกเอกสาร ยอดคงคลังของคลังนั้นจะสูงกว่าจริง</p>
+
+  {% if problem %}
+    <div class="problem">{{ problem }}</div>
+  {% elif not report.stores %}
+    <div class="problem">{{ report.reason }}</div>
+  {% else %}
+
+  <div class="freshness">
+    ข้อมูลถึงวันที่ <b>{{ report.as_of[6:8] }}/{{ report.as_of[4:6] }}/{{ report.as_of[:4] }}</b>
+    — ต้นทางเป็นสำเนาที่คัดลอกวันละครั้ง ตัวเลขทั้งหน้านี้จึงไม่ใช่ข้อมูลสดของวันนี้<br>
+    ช่วงที่ตรวจ <b>{{ report.window_days }}</b> วัน (นับเฉพาะวันทำการ <b>{{ report.working_days }}</b> วัน
+    เสาร์-อาทิตย์ไม่นับว่าขาด)
+  </div>
+
+  {% set late = report.needs_attention | length %}
+  <div class="headline">
+    <span class="big {{ 'late' if late else 'ok' }}">{{ late }}</span>
+    <span>คลังที่ต้องตาม จากทั้งหมด {{ report.stores | length }} คลังที่มีข้อมูลในระบบ</span>
+  </div>
+
+  <div class="tabs">
+    {% for choice in windows %}
+      <a class="{{ 'on' if choice == window }}" href="?days={{ choice }}">{{ choice }} วัน</a>
+    {% endfor %}
+  </div>
+
+  <table>
+    <thead>
+      <tr>
+        <th>คลัง</th>
+        <th>วิธีบันทึก</th>
+        <th>ข้อมูลถึง</th>
+        <th class="num">ค้าง (วันทำการ)</th>
+        <th>สาเหตุที่ขึ้นเตือน / วันที่ยังไม่ได้ตัด</th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for row in report.stores %}
+      <tr class="{{ 'late' if row.needs_attention }}">
+        <td>
+          {{ row.name }}<br>
+          <span class="store-code">รหัส {{ row.store }} · {{ '{:,}'.format(row.documents) }} ใบ</span>
+        </td>
+        <td>
+          {% if row.method == 'import' %}
+            ระบบ import<br><span class="store-code">ควรมีทุกวันทำการ</span>
+          {% else %}
+            เจ้าหน้าที่คีย์เอง<br><span class="store-code">ปกติทุก ๆ {{ row.expected_gap }} วันทำการ</span>
+          {% endif %}
+        </td>
+        <td>{{ row.last_day[6:8] }}/{{ row.last_day[4:6] }}/{{ row.last_day[:4] }}</td>
+        <td class="num">
+          {% if row.days_behind %}
+            <span class="pill {{ 'late' if row.needs_attention else 'ok' }}">{{ row.days_behind }}</span>
+          {% else %}
+            <span class="pill ok">ทันวัน</span>
+          {% endif %}
+        </td>
+        <td>
+          {% if row.reason %}<div>{{ row.reason }}</div>{% endif %}
+          {% if row.method == 'import' %}
+            {% if row.missing_working_days %}
+              <details>
+                <summary>ตัดแล้ว {{ row.working_days_done }}/{{ row.working_days_total }} วันทำการ ·
+                  ดูวันที่ขาด {{ row.missing_working_days | length }} วัน</summary>
+                <div class="days">
+                  {% for day in row.missing_working_days %}
+                    <span class="day">{{ day[6:8] }}/{{ day[4:6] }}</span>
+                  {% endfor %}
+                </div>
+              </details>
+            {% else %}
+              <span class="pill ok">ตัดครบทุกวันทำการ</span>
+            {% endif %}
+          {% elif not row.reason %}
+            <span class="pill ok">ปกติ</span>
+          {% endif %}
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+
+  <div class="note">
+    <b>ตัวเลขนี้มาจากไหน</b> — คลังที่ใช้ระบบ import นับจากเอกสารที่ระบบสร้างให้ ซึ่งใช้เลข
+    ขึ้นต้นด้วยวันที่ (เช่น <code>20260907-I2-I/S1</code>) ส่วนคลังที่เจ้าหน้าที่คีย์เอกสารเอง
+    (เช่น <code>I76909054</code>, <code>WG69-2680</code>) ไม่มีเอกสารแบบนั้น จึงวัดจาก
+    วันล่าสุดที่มีการบันทึก เทียบกับจังหวะปกติของคลังนั้นเอง<br>
+    <b>ยังไม่รู้</b> — ยังไม่มีตารางวันหยุดนักขัตฤกษ์ วันหยุดราชการจึงขึ้นเป็นวันที่ขาดทั้งที่ถูกต้อง ·
+    เกณฑ์เตือนขั้นต่ำ {{ warning_days }} วันทำการ ยังไม่ได้ตกลงกับผู้ใช้<br>
+    <b>คลังที่ไม่อยู่ในตารางนี้</b> — คือคลังที่ยังไม่ได้ดึงข้อมูลเข้าคลังข้อมูลของเรา
+    ไม่ใช่ว่าคลังนั้นไม่มีปัญหา (ตอนนี้ดึงมาเฉพาะกลุ่มยา คลังพัสดุจึงยังไม่ครบ)
+  </div>
+
+  {% endif %}
+</div>
+</body>
+</html>
