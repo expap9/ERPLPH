@@ -172,6 +172,25 @@ def build_queries(case: dict) -> list[tuple]:
           AND ir.UPDATESTOCKDATETIME >= DATEADD(day, -{SALES_DAYS_BACK}, GETDATE())
         ORDER BY ir.UPDATESTOCKDATETIME DESC""", [], 30))
 
+    # ตารางรหัสหน่วยงาน — ภาพหน้าจอ 17 ก.ย. 2569 เห็นโครง 3 ชั้น กลุ่มงาน[203] > งาน[02] > ส่วนย่อย
+    # ต้องหาให้เจอว่าเก็บที่ไหน ไม่งั้นรายงานรายแผนกจะมีแต่รหัส ไม่มีชื่อ
+    queries.append(("department_tables_by_column", """
+        SELECT TABLE_CATALOG, TABLE_NAME, COUNT(*) AS MATCHED_COLUMNS
+        FROM INFORMATION_SCHEMA.COLUMNS
+        WHERE COLUMN_NAME IN ('DIVISION', 'DEPT', 'SECTION', 'DIVISIONCODE', 'DEPTCODE')
+        GROUP BY TABLE_CATALOG, TABLE_NAME
+        HAVING COUNT(*) >= 2
+        ORDER BY COUNT(*) DESC, TABLE_NAME""", [], 200))
+
+    # ชื่อหน่วยงานที่เห็นบนหน้าจอขึ้นต้นด้วย "กลุ่มงาน" ทุกอัน ลองหาในตารางค่าคงที่ของระบบก่อน
+    # (SYSCONFIG เป็นที่เก็บตารางเทียบรหัสหลายชุด เช่น วิธีจัดซื้อ CTRLCODE 40083)
+    for database in ("SSBHOSPITAL", "SSBSTOCK"):
+        queries.append((f"department_names_in_sysconfig:{database}", f"""
+            SELECT TOP 100 CTRLCODE, CODE, LTRIM(RTRIM(THAINAME)) AS THAINAME
+            FROM {database}.dbo.SYSCONFIG WITH (NOLOCK)
+            WHERE THAINAME LIKE N'%กลุ่มงาน%'
+            ORDER BY CTRLCODE, CODE""", [], 100))
+
     store, day = case.get("reconcile_store"), case.get("reconcile_day")
     if store and day:
         # กระทบยอดวันเดียว — ตอบคำถามว่าเอกสาร "ขาย" รวมอะไรไว้แล้วบ้าง
@@ -349,6 +368,21 @@ def print_summary(report):
         for row in twice["rows"][:10]:
             print(f"    {str(row.get('STOCKCODE')):<10} {row.get('DOCS')} ใบ  "
                   f"เข้า {float(row.get('QTY_IN') or 0):>10,.2f}  ออก {float(row.get('QTY_OUT') or 0):>10,.2f}")
+
+    tables = queries.get("department_tables_by_column")
+    if tables and tables["status"] != "error":
+        print(f"\n[10] ตารางที่มีคอลัมน์รหัสหน่วยงานตั้งแต่ 2 ช่องขึ้นไป ({len(tables['rows'])} ตาราง)")
+        for row in tables["rows"][:15]:
+            print(f"    {row.get('TABLE_CATALOG')}.{row.get('TABLE_NAME')} "
+                  f"({row.get('MATCHED_COLUMNS')} ช่อง)")
+
+    for name, found in queries.items():
+        if not name.startswith("department_names_in_sysconfig:") or found["status"] == "error":
+            continue
+        database = name.split(":", 1)[1]
+        print(f"\n[11] ชื่อหน่วยงานใน {database}.SYSCONFIG ({len(found['rows'])} แถว)")
+        for row in found["rows"][:12]:
+            print(f"    CTRLCODE={row.get('CTRLCODE')} CODE={row.get('CODE')} {row.get('THAINAME')}")
 
     for query in report.get("queries", []):
         if query["status"] == "error":
