@@ -34,6 +34,7 @@ PACING_SECONDS = 0.5
 CASE_FILE_PATTERN = "substore_*.json"
 NUMBER_FIELDS = ("requisition_no", "supply_requisition_no")
 MONTHS_BACK = 12
+SALES_DAYS_BACK = 60
 
 
 def load_case(directory: Path) -> dict:
@@ -132,13 +133,35 @@ def build_queries(case: dict) -> list[tuple]:
         FROM dbo.STOCK_LOT sl WITH (NOLOCK)
         GROUP BY sl.STORE ORDER BY COUNT(*) DESC""", [], 100))
 
+    # ชื่อคอลัมน์วันที่ยืนยันจาก probe_transfer_vs_dispense.py ที่รันผ่านจริงแล้ว
+    # (UPDATESTOCKDATETIME ไม่ใช่ ISSUEDATETIME)
     queries.append(("substore_movement_12m", f"""
         SELECT ir.STORE, ir.CONTRASTORE, ir.DOCUMENTTYPE, COUNT(*) AS SLIPS,
-               MAX(ir.ISSUEDATETIME) AS LAST_SLIP
+               MAX(ir.UPDATESTOCKDATETIME) AS LAST_SLIP
         FROM dbo.SKIR ir WITH (NOLOCK)
-        WHERE ir.ISSUEDATETIME >= DATEADD(month, -{MONTHS_BACK}, GETDATE())
+        WHERE ir.UPDATESTOCKDATETIME >= DATEADD(month, -{MONTHS_BACK}, GETDATE())
         GROUP BY ir.STORE, ir.CONTRASTORE, ir.DOCUMENTTYPE
         ORDER BY COUNT(*) DESC""", [], 300))
+
+    # งาน (ก) "วันไหนคลังย่อยยังตัดขายไม่ได้" — เอกสารที่ระบบสร้างตอน import ยอดใช้ยา
+    # ใช้เลขรูปแบบ YYYYMMDD-คลัง-I/S<ลำดับ> (เห็นจากหน้าจอจริง 16 ก.ย. 2569 เช่น
+    # 20260907-I2-I/S1) จึงกรองด้วยรูปแบบเลขได้โดยไม่ต้องรู้ชื่อคอลัมน์รหัสรายการก่อน
+    queries.append((f"sales_cut_by_store_day_{SALES_DAYS_BACK}d", f"""
+        SELECT ir.STORE, CAST(ir.UPDATESTOCKDATETIME AS DATE) AS CUT_DAY,
+               COUNT(*) AS SLIPS, MIN(ir.IRNO) AS SAMPLE_IRNO
+        FROM dbo.SKIR ir WITH (NOLOCK)
+        WHERE ir.IRNO LIKE '[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]-%'
+          AND ir.UPDATESTOCKDATETIME >= DATEADD(day, -{SALES_DAYS_BACK}, GETDATE())
+        GROUP BY ir.STORE, CAST(ir.UPDATESTOCKDATETIME AS DATE)
+        ORDER BY ir.STORE, CAST(ir.UPDATESTOCKDATETIME AS DATE)""", [], 1000))
+
+    # ทุกคอลัมน์ของเอกสารกลุ่มนี้ เพื่อหาว่าช่อง "วันที่อนุมัติ" กับ "รหัสรายการ" บนหน้าจอ
+    # คือคอลัมน์ไหนจริง ๆ (ยังไม่รู้ จึงดึงทั้งแถวมาดู ไม่เดาชื่อ)
+    queries.append(("sales_documents_sample", f"""
+        SELECT TOP 30 ir.* FROM dbo.SKIR ir WITH (NOLOCK)
+        WHERE ir.IRNO LIKE '[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]-%'
+          AND ir.UPDATESTOCKDATETIME >= DATEADD(day, -{SALES_DAYS_BACK}, GETDATE())
+        ORDER BY ir.UPDATESTOCKDATETIME DESC""", [], 30))
     return queries
 
 
@@ -228,6 +251,33 @@ def print_summary(report):
             print(f"    {str(row.get('STORE')):<5} -> {str(row.get('CONTRASTORE') or '-'):<5} "
                   f"ชนิด {row.get('DOCUMENTTYPE')}  {row.get('SLIPS'):>7} ใบ  "
                   f"ล่าสุด {str(row.get('LAST_SLIP') or '')[:10]}")
+
+    cut = queries.get(f"sales_cut_by_store_day_{SALES_DAYS_BACK}d")
+    if cut and cut["status"] != "error":
+        by_store: dict[str, list[str]] = {}
+        for row in cut["rows"]:
+            by_store.setdefault(str(row.get("STORE") or "?"), []).append(str(row.get("CUT_DAY") or "")[:10])
+        today = datetime.now().date()
+        print(f"\n[6] วันที่คลังย่อยตัดขาย (เอกสาร import) ย้อนหลัง {SALES_DAYS_BACK} วัน — {len(by_store)} คลัง")
+        for store, days in sorted(by_store.items()):
+            latest = max(days) if days else ""
+            try:
+                behind = (today - datetime.strptime(latest, "%Y-%m-%d").date()).days
+            except ValueError:
+                behind = None
+            line = f"    คลัง {store:<5} ตัดแล้ว {len(set(days)):>3} วัน  ล่าสุด {latest or '-'}"
+            if behind is not None:
+                line += f"  (ค้าง {behind} วัน)" + ("  <-- ค้าง" if behind >= 2 else "")
+            print(line)
+
+    sample = queries.get("sales_documents_sample")
+    if sample and sample["status"] == "complete" and sample["rows"]:
+        columns = list(sample["rows"][0].keys())
+        date_like = [c for c in columns if "DATE" in c.upper() or "TIME" in c.upper()]
+        print(f"\n[7] คอลัมน์ของเอกสาร import ({len(columns)} ช่อง) — ช่องวันที่ที่มี: {', '.join(date_like)}")
+        first = sample["rows"][0]
+        for name in date_like:
+            print(f"    {name} = {first.get(name)}")
 
     for query in report.get("queries", []):
         if query["status"] == "error":

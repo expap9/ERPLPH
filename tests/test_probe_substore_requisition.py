@@ -29,6 +29,12 @@ CONTENT = (("IRNO", "02-0000-69"), ("SUFFIX", 1), ("DOCUMENTTYPE", 35), ("STOCKC
 COLUMN = (("TABLE_NAME", "SKIROUT"), ("COLUMN_NAME", "ISSUEQTY"), ("DATA_TYPE", "float"))
 MOVEMENT = (("STORE", "2"), ("CONTRASTORE", "I2"), ("DOCUMENTTYPE", 35), ("SLIPS", 7254),
             ("LAST_SLIP", datetime(2026, 9, 15)))
+CUT_DAY = (("STORE", "I2"), ("CUT_DAY", datetime(2026, 9, 7)), ("SLIPS", 2),
+           ("SAMPLE_IRNO", "20260907-I2-I/S1"))
+SALES_DOC = (("IRNO", "20260907-I2-I/S1"), ("STORE", "I2"),
+             ("UPDATESTOCKDATETIME", datetime(2026, 9, 7, 0, 50)),
+             ("APPROVEDATETIME", datetime(2026, 9, 9, 13, 53)),
+             ("REMARKSMEMO", "ผู้ป่วยสมมุติ HN 999999"))
 
 CASE = {"numbers": ["02-0000-69"], "codes": ["1000000", "3000000"], "dates": ["2026-09-07"],
         "codes_by_date": {"2026-09-07": ["1000000", "3000000"]}}
@@ -46,6 +52,10 @@ class FakeCursor:
             raise RuntimeError("42S02")
         if "INFORMATION_SCHEMA" in sql:
             rows = [COLUMN]
+        elif "SELECT TOP 30 ir.*" in sql:
+            rows = [SALES_DOC]
+        elif "CAST(ir.UPDATESTOCKDATETIME AS DATE)" in sql:
+            rows = [CUT_DAY]
         elif "GROUP BY ir.STORE" in sql:
             rows = [MOVEMENT]
         elif "JOIN dbo.SKIR" in sql:
@@ -115,6 +125,22 @@ class SubstoreRequisitionProbeTests(unittest.TestCase):
         self.assertIn("requisition_by_content_2026-09-07", names)
         old = next(q for q in probe.build_queries(case) if q[0].endswith("2016-12-01"))
         self.assertEqual(old[2], ["2016-12-01", "2016-12-01", "1011220"])
+
+    def test_daily_cut_coverage_is_collected_for_work_item_ka(self):
+        """งาน (ก): ต้องรู้ว่าคลังย่อยไหนตัดขายถึงวันไหนแล้ว และช่องวันที่อนุมัติคือคอลัมน์ไหน"""
+        cut = self.queries[f"sales_cut_by_store_day_{probe.SALES_DAYS_BACK}d"]
+        self.assertEqual(cut["rows"][0]["SAMPLE_IRNO"], "20260907-I2-I/S1")
+        sample = self.queries["sales_documents_sample"]["rows"][0]
+        self.assertTrue(sample["APPROVEDATETIME"].startswith("2026-09-09"))
+        self.assertTrue(sample["UPDATESTOCKDATETIME"].startswith("2026-09-07"))
+
+    def test_import_documents_are_found_by_number_pattern_not_a_guessed_column(self):
+        """ยังไม่รู้ชื่อคอลัมน์รหัสรายการ จึงกรองด้วยรูปแบบเลขเอกสารที่เห็นจากหน้าจอจริง"""
+        sqls = [sql for sql, _ in self.connection.executed if "[0-9][0-9][0-9][0-9]" in sql]
+        self.assertEqual(len(sqls), 2)
+        for sql in sqls:
+            self.assertNotIn("ขาย", sql)
+            self.assertNotIn("SALES", sql.upper())
 
     def test_a_missing_table_does_not_stop_the_other_checks(self):
         self.assertEqual(self.queries["stock_rows_by_store"]["status"], "error")
