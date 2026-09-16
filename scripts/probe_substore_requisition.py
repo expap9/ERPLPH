@@ -31,24 +31,40 @@ from database import connect, error_summary, load_config  # noqa: E402
 from trace_payment_document import compact, json_value, safe_value  # noqa: E402
 
 PACING_SECONDS = 0.5
-CASE_FILE_PATTERN = "substore_requisitions_*.json"
+CASE_FILE_PATTERN = "substore_*.json"
+NUMBER_FIELDS = ("requisition_no", "supply_requisition_no")
 MONTHS_BACK = 12
 
 
 def load_case(directory: Path) -> dict:
-    """ใบเบิกจริงเก็บอยู่ใน diagnostics/ (ไม่ขึ้น git) ไม่ฝังเลขเอกสารจริงไว้ในโค้ด"""
-    numbers, codes, dates = [], [], []
+    """ใบเบิก/ใบโอนจริงเก็บอยู่ใน diagnostics/ (ไม่ขึ้น git) ไม่ฝังเลขเอกสารจริงไว้ในโค้ด
+
+    ฟอร์มมีช่องเลขที่สองช่อง ("เลขที่ใบเบิกหรือใบส่งคืน" กับ "เลขที่ใบเบิกพัสดุ") แต่ละใบ
+    กรอกคนละช่อง จึงเก็บทั้งสองแบบ และรวมรหัสยาแยกตามวันที่ของใบนั้น เพราะใบที่ได้มา
+    ห่างกันสิบปี ใช้วันเดียวค้นแทนกันไม่ได้
+    """
+    numbers, codes, by_date = [], [], {}
     for path in sorted(directory.glob(CASE_FILE_PATTERN)):
         data = json.loads(path.read_text(encoding="utf-8"))
         for document in data.get("documents", []):
-            if document.get("requisition_no"):
-                numbers.append(str(document["requisition_no"]))
-            if document.get("date"):
-                dates.append(str(document["date"]))
+            for field in NUMBER_FIELDS:
+                value = str(document.get(field) or "").strip()
+                if value and not value.startswith("("):
+                    numbers.append(value)
+            day = str(document.get("date") or "").strip()
             for line in document.get("lines", []):
-                if line.get("code"):
-                    codes.append(str(line["code"]))
-    return {"numbers": sorted(set(numbers)), "codes": sorted(set(codes)), "dates": sorted(set(dates))}
+                if not line.get("code"):
+                    continue
+                code = str(line["code"])
+                codes.append(code)
+                if day:
+                    by_date.setdefault(day, set()).add(code)
+    return {
+        "numbers": sorted(set(numbers)),
+        "codes": sorted(set(codes)),
+        "dates": sorted(by_date),
+        "codes_by_date": {day: sorted(values) for day, values in sorted(by_date.items())},
+    }
 
 
 def _run(conn, name, sql, params, limit, terms=()):
@@ -73,8 +89,6 @@ def _run(conn, name, sql, params, limit, terms=()):
 def build_queries(case: dict) -> list[tuple]:
     numbers = case["numbers"]
     plain = [compact(n).replace("-", "") for n in numbers]
-    codes = case["codes"]
-    day = case["dates"][0] if case["dates"] else None
     queries = []
 
     if numbers:
@@ -91,11 +105,11 @@ def build_queries(case: dict) -> list[tuple]:
                OR REPLACE(REPLACE(UPPER(iro.IRNO), ' ', ''), '-', '') IN ({plain_marks})
             ORDER BY iro.IRNO, iro.SUFFIX""", numbers + plain, 200))
 
-    # ถ้าเลขบนกระดาษไม่ใช่ IRNO ต้องหาใบเดียวกันจากเนื้อหาแทน: วันเดียวกัน คลังยา (2)
-    # ปลายทางคลังย่อย และรหัสยาที่อยู่บนใบ
-    if day and codes:
-        code_marks = ", ".join("?" for _ in codes)
-        queries.append(("requisition_by_content", f"""
+    # ถ้าเลขบนกระดาษไม่ใช่ IRNO ต้องหาใบเดียวกันจากเนื้อหาแทน: วันเดียวกันกับใบนั้น
+    # และรหัสยาที่อยู่บนใบนั้น (แยกคำสั่งตามวัน เพราะใบที่ได้มาห่างกันสิบปี)
+    for day, day_codes in case.get("codes_by_date", {}).items():
+        code_marks = ", ".join("?" for _ in day_codes)
+        queries.append((f"requisition_by_content_{day}", f"""
             SELECT TOP 200 iro.IRNO, iro.SUFFIX, iro.DOCUMENTTYPE, iro.STOCKCODE, iro.ISSUEQTY,
                    iro.ISSUEUNITCODE, iro.LOTNO, iro.UPDATESTOCKDATETIME,
                    ir.STORE, ir.CONTRASTORE, ir.DIVISION, ir.DEPT, ir.[SECTION]
@@ -104,7 +118,7 @@ def build_queries(case: dict) -> list[tuple]:
               ON iro.IRNO = ir.IRNO AND iro.DOCUMENTTYPE = ir.DOCUMENTTYPE
             WHERE iro.UPDATESTOCKDATETIME >= ? AND iro.UPDATESTOCKDATETIME < DATEADD(day, 1, ?)
               AND iro.STOCKCODE IN ({code_marks})
-            ORDER BY iro.IRNO, iro.SUFFIX""", [day, day] + codes, 200))
+            ORDER BY iro.IRNO, iro.SUFFIX""", [day, day] + list(day_codes), 200))
 
     queries.append(("skir_columns", """
         SELECT TABLE_NAME, COLUMN_NAME, DATA_TYPE
@@ -180,9 +194,10 @@ def print_summary(report):
         else:
             print("\n[1] ไม่พบเลขบนกระดาษใน SKIR.IRNO — เป็นเลขคนละชุด ดูข้อ 2")
 
-    content = queries.get("requisition_by_content")
-    if content and content["status"] != "error":
-        print(f"\n[2] ค้นจากวันที่+รหัสยาบนใบ: {len(content['rows'])} บรรทัด")
+    for name, content in queries.items():
+        if not name.startswith("requisition_by_content_") or content["status"] == "error":
+            continue
+        print(f"\n[2] ค้นจากรหัสยาบนใบ วันที่ {name.rsplit('_', 1)[-1]}: {len(content['rows'])} บรรทัด")
         seen = {}
         for row in content["rows"]:
             key = (row.get("IRNO"), row.get("STORE"), row.get("CONTRASTORE"), row.get("DOCUMENTTYPE"))

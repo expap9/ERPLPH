@@ -30,7 +30,8 @@ COLUMN = (("TABLE_NAME", "SKIROUT"), ("COLUMN_NAME", "ISSUEQTY"), ("DATA_TYPE", 
 MOVEMENT = (("STORE", "2"), ("CONTRASTORE", "I2"), ("DOCUMENTTYPE", 35), ("SLIPS", 7254),
             ("LAST_SLIP", datetime(2026, 9, 15)))
 
-CASE = {"numbers": ["02-0000-69"], "codes": ["1000000", "3000000"], "dates": ["2026-09-07"]}
+CASE = {"numbers": ["02-0000-69"], "codes": ["1000000", "3000000"], "dates": ["2026-09-07"],
+        "codes_by_date": {"2026-09-07": ["1000000", "3000000"]}}
 
 
 class FakeCursor:
@@ -102,7 +103,18 @@ class SubstoreRequisitionProbeTests(unittest.TestCase):
         params = next(p for sql, p in self.connection.executed if "JOIN dbo.SKIR" in sql)
         self.assertEqual(params[:2], ["2026-09-07", "2026-09-07"])
         self.assertIn("3000000", params)
-        self.assertEqual(self.queries["requisition_by_content"]["rows"][0]["CONTRASTORE"], "I2")
+        rows = self.queries["requisition_by_content_2026-09-07"]["rows"]
+        self.assertEqual(rows[0]["CONTRASTORE"], "I2")
+
+    def test_each_slip_is_searched_on_its_own_date(self):
+        """ใบที่ได้มาห่างกันสิบปี ถ้าใช้วันเดียวค้นทุกใบจะหาไม่เจอ"""
+        case = {"numbers": [], "codes": ["1000000", "1011220"], "dates": ["2016-12-01", "2026-09-07"],
+                "codes_by_date": {"2016-12-01": ["1011220"], "2026-09-07": ["1000000"]}}
+        names = [q[0] for q in probe.build_queries(case)]
+        self.assertIn("requisition_by_content_2016-12-01", names)
+        self.assertIn("requisition_by_content_2026-09-07", names)
+        old = next(q for q in probe.build_queries(case) if q[0].endswith("2016-12-01"))
+        self.assertEqual(old[2], ["2016-12-01", "2016-12-01", "1011220"])
 
     def test_a_missing_table_does_not_stop_the_other_checks(self):
         self.assertEqual(self.queries["stock_rows_by_store"]["status"], "error")
@@ -115,6 +127,7 @@ class SubstoreRequisitionProbeTests(unittest.TestCase):
         self.assertNotIn("999999", text)
 
     def test_case_comes_from_ignored_diagnostics_files(self):
+        """ฟอร์มมีช่องเลขที่สองช่อง แต่ละใบกรอกคนละช่อง ต้องอ่านได้ทั้งสองแบบ"""
         with tempfile.TemporaryDirectory() as tmp:
             folder = Path(tmp)
             (folder / "substore_requisitions_20260916.json").write_text(json.dumps({
@@ -124,17 +137,23 @@ class SubstoreRequisitionProbeTests(unittest.TestCase):
                     {"requisition_no": "02-1112-69", "date": "2026-09-07",
                      "lines": [{"code": "3230000", "qty": 100}]},
                 ]}, ensure_ascii=False), encoding="utf-8")
+            (folder / "substore_transfers_20260916.json").write_text(json.dumps({
+                "documents": [
+                    {"supply_requisition_no": "20161201-AN-R/S",
+                     "requisition_no_slot": "(ว่าง) — ข้อความอธิบาย ไม่ใช่เลขเอกสาร",
+                     "date": "2016-12-01", "lines": [{"code": "1011220", "qty": 325}]},
+                ]}, ensure_ascii=False), encoding="utf-8")
             case = probe.load_case(folder)
-        self.assertEqual(case["numbers"], ["02-1111-69", "02-1112-69"])
-        self.assertEqual(case["codes"], ["1221890", "1229850", "3230000"])
-        self.assertEqual(case["dates"], ["2026-09-07"])
+        self.assertEqual(case["numbers"], ["02-1111-69", "02-1112-69", "20161201-AN-R/S"])
+        self.assertEqual(case["codes"], ["1011220", "1221890", "1229850", "3230000"])
+        self.assertEqual(case["codes_by_date"]["2016-12-01"], ["1011220"])
+        self.assertEqual(case["codes_by_date"]["2026-09-07"], ["1221890", "1229850", "3230000"])
 
     def test_no_case_and_no_numbers_asks_for_input_instead_of_querying(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            queries = probe.build_queries({"numbers": [], "codes": [], "dates": []})
-            names = [q[0] for q in queries]
+        names = [q[0] for q in probe.build_queries(
+            {"numbers": [], "codes": [], "dates": [], "codes_by_date": {}})]
         self.assertNotIn("requisition_header_by_number", names)
-        self.assertNotIn("requisition_by_content", names)
+        self.assertFalse([n for n in names if n.startswith("requisition_by_content")])
         self.assertIn("skir_columns", names)
 
 
