@@ -36,6 +36,13 @@ NUMBER_FIELDS = ("requisition_no", "supply_requisition_no")
 MONTHS_BACK = 12
 SALES_DAYS_BACK = 60
 
+#: วันที่และคลังสำหรับ "กระทบยอดวันเดียว" — เลือก 8 ก.ย. 2569 ที่คลัง I2 เพราะจากภาพหน้าจอ
+#: วันนั้นมีครบทั้ง 5 ทาง: เอกสารขาย (20260908-I2-I/S1) · เบิกจ่ายให้หน่วยเบิก (I769090xx) ·
+#: โอนออก (I7T6909005/S1, I7T6909007/S1) · รับของภายใน (WG69-2680 ถึง WG69-2694) ·
+#: และรับจากคลังใหญ่ จึงใช้ตรวจว่าเอกสารแต่ละชนิดกระทบสต๊อกอย่างไร ซ้ำกันหรือไม่
+RECONCILE_STORE = "I2"
+RECONCILE_DAY = "2026-09-08"
+
 
 def load_case(directory: Path) -> dict:
     """ใบเบิก/ใบโอนจริงเก็บอยู่ใน diagnostics/ (ไม่ขึ้น git) ไม่ฝังเลขเอกสารจริงไว้ในโค้ด
@@ -65,6 +72,8 @@ def load_case(directory: Path) -> dict:
         "codes": sorted(set(codes)),
         "dates": sorted(by_date),
         "codes_by_date": {day: sorted(values) for day, values in sorted(by_date.items())},
+        "reconcile_store": RECONCILE_STORE,
+        "reconcile_day": RECONCILE_DAY,
     }
 
 
@@ -162,6 +171,39 @@ def build_queries(case: dict) -> list[tuple]:
         WHERE ir.IRNO LIKE '[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]-%'
           AND ir.UPDATESTOCKDATETIME >= DATEADD(day, -{SALES_DAYS_BACK}, GETDATE())
         ORDER BY ir.UPDATESTOCKDATETIME DESC""", [], 30))
+
+    store, day = case.get("reconcile_store"), case.get("reconcile_day")
+    if store and day:
+        # กระทบยอดวันเดียว — ตอบคำถามว่าเอกสาร "ขาย" รวมอะไรไว้แล้วบ้าง
+        # SKMOVE คือบัญชีเคลื่อนไหวสต๊อกตัวจริง ถ้าเอกสารชนิดไหนไม่ปรากฏที่นี่ แปลว่าไม่กระทบสต๊อก
+        queries.append(("reconcile_documents", """
+            SELECT TOP 200 ir.* FROM dbo.SKIR ir WITH (NOLOCK)
+            WHERE ir.STORE = ?
+              AND ir.UPDATESTOCKDATETIME >= ? AND ir.UPDATESTOCKDATETIME < DATEADD(day, 1, ?)
+            ORDER BY ir.UPDATESTOCKDATETIME""", [store, day, day], 200))
+
+        queries.append(("reconcile_movement_by_document", """
+            SELECT mv.DOCUMENTNO, mv.DOCUMENTTYPE, mv.ADDSTOCK, mv.NATUREISOUT,
+                   mv.STOCKACTCODE, COUNT(*) AS LINES,
+                   COUNT(DISTINCT mv.STOCKCODE) AS ITEMS, SUM(mv.UPDATEQTY) AS QTY
+            FROM dbo.SKMOVE mv WITH (NOLOCK)
+            WHERE mv.STORE = ?
+              AND mv.UPDATESTOCKDATETIME >= ? AND mv.UPDATESTOCKDATETIME < DATEADD(day, 1, ?)
+            GROUP BY mv.DOCUMENTNO, mv.DOCUMENTTYPE, mv.ADDSTOCK, mv.NATUREISOUT, mv.STOCKACTCODE
+            ORDER BY mv.DOCUMENTNO""", [store, day, day], 500))
+
+        # ยาตัวเดียวกันที่เคลื่อนไหวหลายเอกสารในวันเดียว = จุดที่ต้องดูว่านับซ้ำหรือไม่
+        queries.append(("reconcile_items_touched_twice", """
+            SELECT TOP 100 mv.STOCKCODE, COUNT(DISTINCT mv.DOCUMENTNO) AS DOCS,
+                   SUM(CASE WHEN mv.ADDSTOCK = 1 THEN mv.UPDATEQTY ELSE 0 END) AS QTY_IN,
+                   SUM(CASE WHEN mv.ADDSTOCK = 1 THEN 0 ELSE mv.UPDATEQTY END) AS QTY_OUT,
+                   MIN(mv.DOCUMENTNO) AS FIRST_DOC, MAX(mv.DOCUMENTNO) AS LAST_DOC
+            FROM dbo.SKMOVE mv WITH (NOLOCK)
+            WHERE mv.STORE = ?
+              AND mv.UPDATESTOCKDATETIME >= ? AND mv.UPDATESTOCKDATETIME < DATEADD(day, 1, ?)
+            GROUP BY mv.STOCKCODE
+            HAVING COUNT(DISTINCT mv.DOCUMENTNO) > 1
+            ORDER BY COUNT(DISTINCT mv.DOCUMENTNO) DESC""", [store, day, day], 100))
     return queries
 
 
@@ -278,6 +320,35 @@ def print_summary(report):
         first = sample["rows"][0]
         for name in date_like:
             print(f"    {name} = {first.get(name)}")
+
+    moves = queries.get("reconcile_movement_by_document")
+    if moves and moves["status"] != "error":
+        groups: dict[tuple, dict] = {}
+        for row in moves["rows"]:
+            number = str(row.get("DOCUMENTNO") or "")
+            kind = ("ขาย (เลขวันที่)" if number[:8].isdigit()
+                    else "รับของภายใน (WG)" if number.startswith("WG")
+                    else "โอนออก (I7T)" if number.startswith("I7T")
+                    else "เบิกจ่าย (I7)" if number.startswith("I7")
+                    else "อื่น ๆ")
+            key = (kind, row.get("ADDSTOCK"), row.get("STOCKACTCODE"))
+            entry = groups.setdefault(key, {"docs": set(), "lines": 0, "qty": 0.0})
+            entry["docs"].add(number)
+            entry["lines"] += row.get("LINES") or 0
+            entry["qty"] += float(row.get("QTY") or 0)
+        print(f"\n[8] กระทบยอดวันเดียว คลัง {RECONCILE_STORE} วันที่ {RECONCILE_DAY}")
+        print(f"    {'ชนิดเอกสาร':<20}{'เข้า/ออก':>9}{'ACT':>6}{'ใบ':>6}{'บรรทัด':>8}{'จำนวนรวม':>14}")
+        for (kind, add, act), entry in sorted(groups.items()):
+            direction = "เข้า" if add == 1 else "ออก"
+            print(f"    {kind:<20}{direction:>9}{str(act or '-'):>6}"
+                  f"{len(entry['docs']):>6}{entry['lines']:>8}{entry['qty']:>14,.2f}")
+
+    twice = queries.get("reconcile_items_touched_twice")
+    if twice and twice["status"] != "error":
+        print(f"\n[9] ยาที่เคลื่อนไหวหลายเอกสารในวันเดียว ({len(twice['rows'])} รายการ) — จุดที่ต้องดูว่านับซ้ำไหม")
+        for row in twice["rows"][:10]:
+            print(f"    {str(row.get('STOCKCODE')):<10} {row.get('DOCS')} ใบ  "
+                  f"เข้า {float(row.get('QTY_IN') or 0):>10,.2f}  ออก {float(row.get('QTY_OUT') or 0):>10,.2f}")
 
     for query in report.get("queries", []):
         if query["status"] == "error":

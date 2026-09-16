@@ -36,8 +36,15 @@ SALES_DOC = (("IRNO", "20260907-I2-I/S1"), ("STORE", "I2"),
              ("APPROVEDATETIME", datetime(2026, 9, 9, 13, 53)),
              ("REMARKSMEMO", "ผู้ป่วยสมมุติ HN 999999"))
 
+MOVE_BY_DOC = (("DOCUMENTNO", "20260908-I2-I/S1"), ("DOCUMENTTYPE", 32), ("ADDSTOCK", 0),
+               ("NATUREISOUT", 1), ("STOCKACTCODE", "S01"), ("LINES", 120), ("ITEMS", 90),
+               ("QTY", 3400.0))
+MOVE_TWICE = (("STOCKCODE", "1000000"), ("DOCS", 3), ("QTY_IN", 10.0), ("QTY_OUT", 25.0),
+              ("FIRST_DOC", "20260908-I2-I/S1"), ("LAST_DOC", "WG69-2680"))
+
 CASE = {"numbers": ["02-0000-69"], "codes": ["1000000", "3000000"], "dates": ["2026-09-07"],
-        "codes_by_date": {"2026-09-07": ["1000000", "3000000"]}}
+        "codes_by_date": {"2026-09-07": ["1000000", "3000000"]},
+        "reconcile_store": "I2", "reconcile_day": "2026-09-08"}
 
 
 class FakeCursor:
@@ -52,6 +59,12 @@ class FakeCursor:
             raise RuntimeError("42S02")
         if "INFORMATION_SCHEMA" in sql:
             rows = [COLUMN]
+        elif "HAVING COUNT(DISTINCT mv.DOCUMENTNO)" in sql:
+            rows = [MOVE_TWICE]
+        elif "GROUP BY mv.DOCUMENTNO" in sql:
+            rows = [MOVE_BY_DOC]
+        elif "SELECT TOP 200 ir.*" in sql:
+            rows = [SALES_DOC]
         elif "SELECT TOP 30 ir.*" in sql:
             rows = [SALES_DOC]
         elif "CAST(ir.UPDATESTOCKDATETIME AS DATE)" in sql:
@@ -141,6 +154,17 @@ class SubstoreRequisitionProbeTests(unittest.TestCase):
         for sql in sqls:
             self.assertNotIn("ขาย", sql)
             self.assertNotIn("SALES", sql.upper())
+
+    def test_one_day_reconciliation_separates_document_kinds(self):
+        """ผู้ใช้ถามว่าเอกสาร 'ขาย' รวมโอน/คืน/จ่าย stock ward ไว้แล้วหรือยัง
+        ตอบได้จาก SKMOVE ของวันเดียว: เอกสารชนิดไหนกระทบสต๊อกจริงบ้าง ทิศทางไหน"""
+        moves = self.queries["reconcile_movement_by_document"]["rows"]
+        self.assertEqual(moves[0]["DOCUMENTNO"], "20260908-I2-I/S1")
+        self.assertEqual(moves[0]["ADDSTOCK"], 0)
+        params = next(p for sql, p in self.connection.executed if "GROUP BY mv.DOCUMENTNO" in sql)
+        self.assertEqual(params, ["I2", "2026-09-08", "2026-09-08"])
+        twice = self.queries["reconcile_items_touched_twice"]["rows"]
+        self.assertEqual(twice[0]["DOCS"], 3)
 
     def test_a_missing_table_does_not_stop_the_other_checks(self):
         self.assertEqual(self.queries["stock_rows_by_store"]["status"], "error")
