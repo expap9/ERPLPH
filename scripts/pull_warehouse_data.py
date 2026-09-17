@@ -51,7 +51,7 @@ def main() -> int:
     print("=" * 70)
     try:
         work = extractor.plan_detail(store_codes=args.store, kinds=args.kind,
-                                     recheck_months=args.recheck)
+                                     recheck_months=args.recheck, group_key=args.group)
     except Exception as exc:
         # ส่วนใหญ่คือตารางหน่วยของ Stock5 อ่านไม่ได้ ถ้าดึงต่อ ทุกงวดใบจ่ายจะล้มอยู่ดี
         print(f"\n  วางแผนไม่สำเร็จ ยังไม่ได้อ่านฐานข้อมูลโรงพยาบาล: {exc}")

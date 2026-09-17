@@ -295,17 +295,24 @@ LATE_POSTING_DAYS = 10
 
 def plan(today=None, store_codes: Iterable[str] | None = None,
          kinds: Iterable[str] = ALL_KINDS, years_back: int | None = None,
-         include_current: bool = True, recheck_months: int = 0) -> list[tuple[str, str, str]]:
+         include_current: bool = True, recheck_months: int = 0,
+         group_key: str = categories.DRUG) -> list[tuple[str, str, str]]:
     """งานที่ต้องดึง = งวดที่ยังไม่มี บวกเดือนปัจจุบันซึ่งยอดยังเปลี่ยนได้"""
     return [item[:3] for item in
-            plan_detail(today, store_codes, kinds, years_back, include_current, recheck_months)]
+            plan_detail(today, store_codes, kinds, years_back, include_current, recheck_months,
+                        group_key)]
 
 
 def plan_detail(today=None, store_codes: Iterable[str] | None = None,
                 kinds: Iterable[str] = ALL_KINDS, years_back: int | None = None,
                 include_current: bool = True,
-                recheck_months: int = 0) -> list[tuple[str, str, str, str]]:
-    """เหมือน plan() แต่บอกเหตุผลของแต่ละงวดด้วย"""
+                recheck_months: int = 0,
+                group_key: str = categories.DRUG) -> list[tuple[str, str, str, str]]:
+    """เหมือน plan() แต่บอกเหตุผลของแต่ละงวดด้วย
+
+    group_key ต้องเป็นค่าเดียวกับที่จะใช้ดึงจริง เพราะขั้น "คำสั่งดึงเปลี่ยน" เทียบลายนิ้วมือ
+    คำสั่ง ถ้าวางแผนด้วยหมวดหนึ่งแต่ดึงด้วยอีกหมวด ทุกงวดจะถูกวางแผนซ้ำไม่รู้จบ
+    """
     years = reporting_window.DEFAULT_FISCAL_YEARS_BACK if years_back is None else years_back
     periods = reporting_window.periods(today, years)
     selected = list(store_codes) if store_codes is not None else stores.active_store_codes()
@@ -332,7 +339,7 @@ def plan_detail(today=None, store_codes: Iterable[str] | None = None,
         try:
             date_from, date_to = reporting_window.period_bounds(period)
             latest = queries.fingerprint(
-                queries.build(_QUERY_FOR_KIND[kind], store, date_from, date_to))
+                queries.build(_QUERY_FOR_KIND[kind], store, date_from, date_to, group_key))
         except Exception:
             continue
         if latest != stored:
@@ -405,7 +412,8 @@ def run(today=None, store_codes: Iterable[str] | None = None,
     ตาราง periods ไม่มีมิติหมวด การสลับค่านี้จึงเท่ากับดึงทับของเดิม ไม่ใช่ดึงเพิ่ม
     """
     warehouse_db.init_db()
-    work = plan(today, store_codes, kinds, years_back, recheck_months=recheck_months)
+    work = plan(today, store_codes, kinds, years_back, recheck_months=recheck_months,
+                group_key=group_key)
     if limit is not None:
         work = work[:limit]
 

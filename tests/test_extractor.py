@@ -254,6 +254,22 @@ class PlanTests(unittest.TestCase):
         work = extractor.plan(self._dt.date(2026, 9, 11), ["2"], ["issue"])
         self.assertNotIn(("202608", "2", "issue"), work)
 
+    def test_a_period_pulled_for_every_category_is_not_planned_again(self):
+        """วางแผนกับดึงต้องใช้ขอบเขตหมวดเดียวกัน ไม่งั้นทุกงวดจะถูกวางแผนซ้ำไม่รู้จบ
+
+        ขั้นตอน "คำสั่งดึงเปลี่ยน" เทียบลายนิ้วมือคำสั่ง ถ้าวางแผนด้วยหมวดยาแต่ดึงด้วยทุกหมวด
+        ลายนิ้วมือจะไม่มีวันตรงกัน และการดึงจะไม่จบสักที
+        """
+        import reporting_window
+        date_from, date_to = reporting_window.period_bounds("202608")
+        pulled = queries.fingerprint(
+            queries.build("DISTRIBUTION", "2", date_from, date_to, categories.ALL))
+        warehouse_db.replace_period("202608", "2", "issue", [], query_sha256=pulled,
+                                    units_sha256=current_units())
+        work = extractor.plan(self._dt.date(2026, 9, 11), ["2"], ["issue"],
+                              group_key=categories.ALL)
+        self.assertNotIn(("202608", "2", "issue"), work)
+
     def test_the_current_month_is_always_replanned(self):
         # เดือนที่ยังไม่ครบ ยอดยังเปลี่ยนได้ จึงต้องดึงซ้ำเสมอ
         warehouse_db.replace_period("202609", "2", "issue", [])
