@@ -34,6 +34,13 @@ METHOD_MANUAL = "manual"
 #: ค้างอย่างน้อยเท่านี้วันทำการจึงเตือน — กันไม่ให้คลังที่บันทึกห่าง ๆ เป็นปกติขึ้นเตือนทุกวัน
 MIN_BEHIND_DAYS = 2
 
+#: ค้างเกินหนึ่งสัปดาห์ทำการ = หยุดยาว ไม่ใช่แค่ช้า — เส้นที่เราเลือกเอง ไม่ใช่กติกาโรงพยาบาล
+STOPPED_DAYS = 5
+
+SEVERITY_STOPPED = "stopped"
+SEVERITY_LATE = "late"
+SEVERITY_OK = "ok"
+
 
 class StoreStatus(NamedTuple):
     store: str
@@ -56,6 +63,21 @@ class StoreStatus(NamedTuple):
         วันที่ขาดย้อนหลังยังแสดงไว้เป็นข้อมูลประกอบ แต่ไม่ทำให้ขึ้นเตือน
         """
         return self.days_behind >= max(MIN_BEHIND_DAYS, self.expected_gap + 1)
+
+    @property
+    def severity(self) -> str:
+        """แยก "หยุดยาว" ออกจาก "ช้ากว่าปกติ" — สองอย่างนี้ต้องตามคนละแบบ
+
+        ตอนขยายการดึงข้อมูลไปทุกหมวด คลังในหน้านี้เพิ่มจาก 14 เป็น 21 และเข้าเกณฑ์เตือน
+        พร้อมกัน 14 คลัง ซึ่งอ่านแล้วเหมือนระบบร้องหมาป่า ทั้งที่ตรวจดูแล้วมีไม่กี่คลัง
+        ที่หยุดยาวจริง ๆ ส่วนที่เหลือช้ากว่าปกติแค่หนึ่งถึงสองวันทำการ
+
+        เกณฑ์ "หนึ่งสัปดาห์ทำการ" เป็นเส้นที่เราเลือกเอง เพราะอธิบายได้ในประโยคเดียว
+        **ไม่ใช่กติกาของโรงพยาบาล** หน้าจอต้องบอกข้อนี้ไว้เสมอ
+        """
+        if not self.needs_attention:
+            return SEVERITY_OK
+        return SEVERITY_STOPPED if self.days_behind >= STOPPED_DAYS else SEVERITY_LATE
 
     @property
     def reason(self) -> str:
@@ -167,4 +189,7 @@ def collect(connection, window_days: int = 90, as_of: str | None = None) -> dict
         "working_days": len(working_keys),
         "stores": result,
         "needs_attention": [item for item in result if item.needs_attention],
+        "stopped": [item for item in result if item.severity == SEVERITY_STOPPED],
+        "late": [item for item in result if item.severity == SEVERITY_LATE],
+        "stopped_days": STOPPED_DAYS,
     }

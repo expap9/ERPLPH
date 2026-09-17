@@ -110,6 +110,49 @@ class ManualStoreTests(unittest.TestCase):
         self.assertIn("ปกติคลังนี้บันทึกทุก ๆ 1 วันทำการ", entry.reason)
 
 
+class SeverityTests(unittest.TestCase):
+    """เกิดหลังขยายการดึงไปทุกหมวด แล้วมี 14 จาก 21 คลังขึ้นเตือนพร้อมกัน
+
+    ถ้าไม่แยก "หยุดยาว" ออกจาก "ช้ากว่าปกติ" หน้าจอจะอ่านเหมือนระบบร้องหมาป่า
+    ทั้งที่คลังที่หยุดจริงมีไม่กี่คลัง
+    """
+
+    def report(self, quiet_days: int):
+        days = working_days()
+        rows = import_rows("I2", days) + import_rows("O5", days[:-quiet_days])
+        return cut_status.collect(build(rows), window_days=WINDOW)
+
+    def store(self, quiet_days: int):
+        return next(item for item in self.report(quiet_days)["stores"] if item.store == "O5")
+
+    def test_a_store_a_couple_of_days_behind_is_late_not_stopped(self):
+        entry = self.store(2)
+        self.assertEqual(entry.days_behind, 2)
+        self.assertEqual(entry.severity, cut_status.SEVERITY_LATE)
+
+    def test_a_store_behind_a_full_working_week_counts_as_stopped(self):
+        entry = self.store(cut_status.STOPPED_DAYS)
+        self.assertEqual(entry.severity, cut_status.SEVERITY_STOPPED)
+
+    def test_a_store_that_is_current_has_no_severity(self):
+        days = working_days()
+        report = cut_status.collect(build(import_rows("I2", days)), window_days=WINDOW)
+        self.assertEqual(report["stores"][0].severity, cut_status.SEVERITY_OK)
+
+    def test_the_two_kinds_are_counted_separately_for_the_headline(self):
+        report = self.report(2)
+        self.assertEqual([item.store for item in report["late"]], ["O5"])
+        self.assertEqual(report["stopped"], [])
+        self.assertEqual(report["stopped_days"], cut_status.STOPPED_DAYS)
+
+    def test_every_flagged_store_lands_in_exactly_one_of_the_two_lists(self):
+        report = self.report(cut_status.STOPPED_DAYS)
+        both = {item.store for item in report["stopped"]} & {item.store for item in report["late"]}
+        self.assertEqual(both, set())
+        self.assertEqual(len(report["stopped"]) + len(report["late"]),
+                         len(report["needs_attention"]))
+
+
 class ReportShapeTests(unittest.TestCase):
     def test_stores_needing_attention_come_first(self):
         days = working_days()
