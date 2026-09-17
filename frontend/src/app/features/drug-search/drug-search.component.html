@@ -1,0 +1,1335 @@
+<div class="page">
+  <header class="page-heading"><div><div class="eyebrow">การตรวจสอบข้อมูลรายรายการ — ทุกประเภทของ ทุกคลัง</div><h1>ค้นหาและตรวจสอบข้อมูลต้นทาง</h1><p>ค้นหาด้วยชื่อ รหัส หรือชื่อผู้ขาย ได้ทั้งยา เวชภัณฑ์ พัสดุ ครุภัณฑ์ อาหาร และงานจ้าง แล้วเปิดตรวจสอบย้อนกลับได้ทุกบรรทัด</p></div></header>
+  <section class="panel search-panel">
+    <div class="search-input-wrapper" (click)="$event.stopPropagation()">
+      <input 
+        type="search" 
+        [(ngModel)]="query" 
+        (input)="onQueryInput()" 
+        (focus)="onInputFocus()" 
+        (keydown)="onKeyDown($event)" 
+        placeholder="ตัวอย่าง: albumin, กระดาษ, หมึก, 2121200" 
+        autocomplete="off"
+      >
+      @if (showSuggestions && suggestions.length > 0) {
+        <div class="simple-suggestions-box">
+          @for (item of suggestions; track item.WORKING_CODE; let i = $index) {
+            <div 
+              class="suggestion-row" 
+              [class.active]="selectedIndex === i" 
+              (click)="selectSuggestion(item)"
+            >
+              <span class="sug-code">{{ item.WORKING_CODE }}</span>
+              <span class="sug-name">{{ item.name }}</span>
+              @if (item.trade_name) {
+                <span class="sug-trade">({{ item.trade_name }})</span>
+              }
+            </div>
+          }
+        </div>
+      }
+    </div>
+    <select [(ngModel)]="group" (change)="search(1)" title="ประเภทของ">
+      <option value="">ทุกประเภทของ</option>
+      @for (option of groupOptions; track option.key) { <option [value]="option.key">{{ option.name }}</option> }
+    </select>
+    <select [(ngModel)]="status" (change)="search(1)">
+      <option value="all">ทุกสถานะ</option>
+      <option value="no_issue">มียอดคงคลังแต่ไม่พบประวัติการเบิกจ่าย</option>
+      <option value="has_stock">มียอดคงคลัง</option>
+      <option value="expiry">ใกล้หมดอายุ</option>
+    </select>
+    <button class="btn primary" (click)="search(1)">ค้นหา</button>
+  </section>
+  @if (error) { <div class="notice error">{{ error }}</div> }
+  @if (loading || detailLoading) { <div class="panel loading">กำลังอ่านข้อมูล.....</div> }
+
+  @if (!detail && documents.length && !loading) {
+    <section class="doc-results">
+      <div class="result-head">
+        <strong>พบเอกสาร {{ number(documents.length) }} ใบ ตามเลขที่ค้น</strong>
+        <span>คลิกที่ใบเพื่อดูรายละเอียดทุกบรรทัด</span>
+      </div>
+
+      @for (doc of documents; track doc.type + doc.number) {
+        <article class="doc-card" [class.open]="isDocumentOpen(doc)">
+          <button type="button" class="doc-head" (click)="toggleDocument(doc)">
+            <span class="doc-icon">{{ doc.icon }}</span>
+            <span class="doc-title">
+              <small>{{ doc.type_label }}</small>
+              <strong class="mono">{{ doc.number }}</strong>
+            </span>
+            <span class="doc-facts">
+              @if (doc.date) { <span><small>วันที่</small><b>{{ doc.date }}</b></span> }
+              <span><small>รายการยา</small><b>{{ number(doc.drug_count) }}</b></span>
+              <span><small>บรรทัด</small><b>{{ number(doc.line_count) }}</b></span>
+              <span><small>มูลค่า</small><b>{{ money(doc.value) }}</b></span>
+            </span>
+            <span class="doc-toggle">{{ isDocumentOpen(doc) ? '▲' : '▼' }}</span>
+          </button>
+
+          @if (isDocumentOpen(doc)) {
+            <!-- ใบสั่งซื้อ: สถานะการสั่งและยอดค้างรับ คือหัวใจของใบนี้ -->
+            @if (doc.type === 'po' && doc.po_tracking?.length) {
+              <div class="doc-po-summary">
+                <div><small>บริษัทผู้ขาย</small><strong>{{ doc.vendor || 'ไม่ระบุ' }}</strong></div>
+                <div><small>วันที่ออก PO</small><strong>{{ doc.po_date || '-' }}</strong></div>
+                <div><small>มูลค่าสั่งซื้อ</small><strong>{{ money(doc.order_value) }}</strong></div>
+                <div [class.doc-alert]="doc.remaining_value > 0">
+                  <small>มูลค่าที่ยังไม่ได้รับ</small><strong>{{ money(doc.remaining_value) }}</strong>
+                </div>
+              </div>
+              <div class="table-wrap">
+                <table class="doc-table">
+                  <thead><tr>
+                    <th>รหัสยา</th><th>ชื่อการค้า</th><th class="number">สั่งซื้อ</th>
+                    <th class="number">รับแล้ว</th><th class="number">ค้างรับ</th>
+                    <th class="number">ราคา/หน่วย</th><th>สถานะ</th><th>ส่งบริษัท</th>
+                  </tr></thead>
+                  <tbody>
+                    @for (t of doc.po_tracking; track t.working_code) {
+                      <tr>
+                        <td><a class="mono drug-link" (click)="open(t.working_code)">{{ t.working_code }}</a></td>
+                        <td>{{ t.trade_name || '-' }}</td>
+                        <td class="number">{{ number(t.order_qty) }} {{ t.unit }}</td>
+                        <td class="number">{{ number(t.received_qty) }}</td>
+                        <td class="number" [class.doc-alert-text]="t.remaining_qty > 0">{{ number(t.remaining_qty) }}</td>
+                        <td class="number">{{ money(t.unit_price) }}</td>
+                        <td>{{ poStatusLabel(t.status) }}</td>
+                        <td>{{ t.is_sent_to_vendor ? ('ส่งแล้ว ' + (t.sent_to_vendor_date || '')) : 'ยังไม่ส่ง' }}</td>
+                      </tr>
+                    }
+                  </tbody>
+                </table>
+              </div>
+            }
+
+            @for (section of doc.sections; track section.source) {
+              <div class="doc-section">
+                <div class="doc-section-head">
+                  <strong>{{ section.label }}</strong>
+                  <span>{{ number(section.line_count) }} บรรทัด · {{ number(section.drugs) }} รายการยา · {{ money(section.value) }}</span>
+                </div>
+                <div class="table-wrap">
+                  <table class="doc-table">
+                    <thead><tr>
+                      <th>วันที่</th><th>รหัสยา</th><th>ชื่อยา</th><th>รุ่นการผลิต</th>
+                      @if (section.source === 'distribution') { <th>หน่วยเบิก</th> }
+                      @if (section.source === 'receipt') { <th>ใบ PO</th><th>ผู้ขาย</th> }
+                      @if (section.source === 'inventory') { <th>วันหมดอายุ</th> }
+                      <th class="number">จำนวน</th><th class="number">มูลค่า</th>
+                      @if (section.source === 'distribution') { <th>ผลสอบทาน</th> }
+                      <th class="number">แถวต้นทาง</th>
+                    </tr></thead>
+                    <tbody>
+                      @for (line of section.lines; track line.source_line) {
+                        <tr>
+                          <td class="mono">{{ line.date || '-' }}</td>
+                          <td><a class="mono drug-link" (click)="open(line.WORKING_CODE)">{{ line.WORKING_CODE }}</a></td>
+                          <td>{{ line.name }}</td>
+                          <td class="mono">{{ line.lot_no || '-' }}</td>
+                          @if (section.source === 'distribution') { <td>{{ line.department || '-' }}</td> }
+                          @if (section.source === 'receipt') {
+                            <td class="mono">{{ line.po_no || '-' }}</td><td>{{ line.vendor || '-' }}</td>
+                          }
+                          @if (section.source === 'inventory') { <td class="mono">{{ line.expire || '-' }}</td> }
+                          <td class="number">{{ number(line.qty) }} {{ line.unit }}</td>
+                          <td class="number">{{ money(line.value) }}</td>
+                          @if (section.source === 'distribution') {
+                            <td>
+                              @if (line.check_status === 'VERIFIED') { <span class="badge ok">ตรวจผ่าน</span> }
+                              @else { <span class="badge bad" [title]="line.check_reason">รอตรวจ</span> }
+                            </td>
+                          }
+                          <td class="number mono">{{ number(line.source_line) }}</td>
+                        </tr>
+                      }
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            } @empty {
+              <div class="doc-empty">
+                ยังไม่มีบรรทัดรับหรือจ่ายผูกกับเลขนี้ในชุดข้อมูลปัจจุบัน
+                @if (doc.type === 'po') { — เป็นใบสั่งซื้อที่ยังไม่ได้รับของ }
+              </div>
+            }
+          }
+        </article>
+      }
+    </section>
+  }
+
+  @if (!detail && results && !loading && !documents.length) {
+    <div class="result-head"><strong>พบ {{ number(results.total) }} รายการ</strong><span>ข้อมูล ณ {{ date(results.as_of) }}</span></div>
+    <section class="result-grid">@for (item of results.items; track item.WORKING_CODE) { <button class="result-card" (click)="open(item.WORKING_CODE)"><div><span class="mono code">{{ item.group || "" }} · รหัส {{ item.WORKING_CODE }}</span><h2>{{ item.name }}</h2><p>{{ item.trade_name || 'ไม่ระบุชื่อการค้า' }}</p></div><div class="result-metrics"><span><small>มูลค่าคงคลัง</small><strong>{{ money(item.stock_value) }}</strong></span><span><small>จำนวนคงคลังตามข้อมูลต้นทาง</small><strong>{{ quantities(item.stock_quantities) }}</strong></span><span><small>ข้อมูลรับ / ข้อมูลจ่าย</small><strong>{{ number(item.receipt_rows) }} / {{ number(item.issue_rows) }} บรรทัด</strong></span></div>@if(item.has_stock_no_issue){<span class="badge bad">มียอดคงคลังแต่ไม่พบประวัติการเบิกจ่าย</span>}</button> } @empty { <div class="panel empty">ไม่พบข้อมูลตามคำค้น</div> }</section>
+    <div class="pagination"><button class="btn" [disabled]="results.page<=1" (click)="search(results.page-1)">ก่อนหน้า</button><span>หน้า {{ number(results.page) }} / {{ number(results.pages) }}</span><button class="btn" [disabled]="results.page>=results.pages" (click)="search(results.page+1)">ถัดไป</button></div>
+  }
+
+  @if (detail) {
+    @if (detail.summary.unit_pending) {
+      <div class="notice error">ยังไม่คำนวณ MOS เพราะหน่วยจ่ายหรืออัตราแปลงหน่วยไม่ครบ ประวัติจ่ายยังแสดงจำนวนและหน่วยตามไฟล์ไว้ตรวจสอบ อ่านสาเหตุและหน่วยที่โรงพยาบาลยืนยันด้านล่าง หากเป็นไฟล์เก่าที่ไม่เก็บหน่วยจ่ายจริงจึงต้องดึงข้อมูลใหม่</div>
+    }
+    <div class="detail-nav-bar">
+      <button class="btn ghost back-btn" (click)="goBack()">← กลับไปที่หน้าก่อนหน้านี้</button>
+      <div class="quick-jump-bar">
+        <span class="jump-label">ทางลัด:</span>
+        <button type="button" class="jump-btn" (click)="scrollToSection('section-procurement')">🏢 ข้อมูลผู้ขาย</button>
+        <button type="button" class="jump-btn" (click)="scrollToSection('section-kpi')">📊 มูลค่า & MOS</button>
+        <button type="button" class="jump-btn" (click)="scrollToSection('section-movement')">📅 รับ-จ่ายรายเดือน</button>
+        <button type="button" class="jump-btn" (click)="scrollToSection('section-po')">📦 ติดตามใบ PO</button>
+      </div>
+    </div>
+    <section class="panel detail-head"><div><span class="mono code">{{ detail.group || "" }} · หมวด {{ detail.main_category || "-" }} · รหัสโรงพยาบาล {{ detail.code }}</span><h2>{{ detail.name }}</h2><p><strong>ชื่อการค้า:</strong> {{ detail.trade_names.join(' / ') || '-' }} · <strong>รหัสสินค้าตามผู้ขาย:</strong> {{ detail.tpuids.join(' / ') || '-' }} · <strong>ผู้ขาย:</strong> {{ detail.vendors.join(' / ') || '-' }}</p></div>@if (!detail.read_only) { <a class="btn primary" [href]="'api/drugs/'+detail.code+'/evidence.zip'">ดาวน์โหลดชุดข้อมูลอ้างอิง</a> }</section>
+
+    <!-- กรอบข้อมูลผู้ขายและการจัดซื้อ (Prominent Vendor & Procurement Card) -->
+    <section class="panel vendor-procurement-card" id="section-procurement">
+      <div class="procurement-card-header">
+        <div class="procurement-title-area">
+          <div class="procurement-badge-tag">🏢 ข้อมูลผู้ขายและการจัดซื้อ (Procurement Master)</div>
+          <h2>ข้อมูลบริษัทผู้ขายและการจัดซื้อยา</h2>
+          <p class="procurement-subtitle">วิเคราะห์ข้อมูลรับยาย้อนหลัง 1 ปี พร้อมจำค่าบริษัทหลักและบันทึกเงื่อนไขจัดซื้อถาวร</p>
+        </div>
+        @if (detail.procurement_info?.primary_vendor) {
+          <div class="primary-vendor-spotlight">
+            <div class="spotlight-label">
+              <span>★ บริษัทหลักปัจจุบัน</span>
+              <span class="spotlight-badge" [class.manual]="detail.procurement_info.primary_vendor.is_manual">
+                {{ detail.procurement_info.primary_vendor.is_manual ? 'งานจัดซื้อกำหนดเอง' : 'แนะนำอัตโนมัติ (ซื้อบ่อยสุด)' }}
+              </span>
+            </div>
+            <div class="spotlight-name">{{ detail.procurement_info.primary_vendor.vendor_name || 'ยังไม่กำหนด' }}</div>
+            <div class="spotlight-meta">
+              <span><strong>ชื่อการค้า:</strong> {{ detail.procurement_info.primary_vendor.trade_name || detail.trade_names[0] || '-' }}</span>
+              <span><strong>รหัสสินค้า (TPUID):</strong> {{ detail.procurement_info.primary_vendor.tpuid || detail.tpuids[0] || '-' }}</span>
+              @if (detail.procurement_info.primary_vendor.supplier_code) {
+                <span><strong>รหัสผู้ขาย:</strong> {{ detail.procurement_info.primary_vendor.supplier_code }}</span>
+              }
+            </div>
+          </div>
+        }
+      </div>
+
+      <!-- กล่องบันทึกข้อความ Free Text ของงานจัดซื้อ -->
+      <div class="procurement-note-box">
+        <div class="note-box-header">
+          <label for="procNote">📝 เงื่อนไขและบันทึกช่วยจำงานจัดซื้อ (บันทึกเก็บถาวร เช่น โปรโมชั่น 10 แถม 1, เงื่อนไขส่งมอบ, ตรวจใบสั่งซื้อ):</label>
+          <button class="btn primary note-save-btn" (click)="saveProcurementNote()" [disabled]="procurementSaving">
+            {{ procurementSaving ? 'กำลังบันทึก…' : '💾 บันทึกเงื่อนไขจัดซื้อ' }}
+          </button>
+        </div>
+        <div class="note-input-wrap">
+          <textarea id="procNote" [(ngModel)]="procurementNote" rows="2" placeholder="พิมพ์ข้อความบันทึก เช่น บ. นี้ ซื้อ 10 แถม 1 งานจัดซื้อจะได้เช็คใบสั่งซื้อถูก / ส่วนลดพิเศษ / กำหนดส่งมอบ"></textarea>
+        </div>
+        @if (procurementMessage) {
+          <div class="procurement-alert success">{{ procurementMessage }}</div>
+        }
+      </div>
+
+      <!-- ตารางบริษัทที่มีข้อมูลซื้อย้อนหลัง 1 ปี (Collapsible) -->
+      <div class="past-vendors-area">
+        <div class="area-head collapsible-head" (click)="showPastVendors = !showPastVendors">
+          <div>
+            <h3>{{ showPastVendors ? '▼' : '▶' }} ประวัติการจัดซื้อย้อนหลัง 1 ปี (แยกตามบริษัทผู้ขาย)</h3>
+            <span class="subtext">พบประวัติการซื้อ {{ detail.procurement_info?.past_year_vendors?.length || 0 }} บริษัท</span>
+          </div>
+          <button type="button" class="btn sm secondary">
+            {{ showPastVendors ? 'ย่อเก็บ ▲' : 'คลี่ดูตารางผู้ขาย (' + (detail.procurement_info?.past_year_vendors?.length || 0) + ' บริษัท) ▼' }}
+          </button>
+        </div>
+        @if (showPastVendors) {
+          <div class="table-wrap">
+            <table class="vendor-table">
+              <thead>
+                <tr>
+                  <th>บริษัทผู้ขาย</th>
+                  <th>รหัสผู้ขาย</th>
+                  <th>ชื่อการค้า</th>
+                  <th>รหัสสินค้า (TPUID)</th>
+                  <th class="number">จำนวนครั้งที่ซื้อ</th>
+                  <th class="number">ปริมาณรับรวม</th>
+                  <th class="number">ราคารับล่าสุด</th>
+                  <th>วันที่ซื้อล่าสุด</th>
+                  <th class="center">สถานะ / การกำหนดบริษัทหลัก</th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (v of detail.procurement_info?.past_year_vendors; track v.vendor_name) {
+                  <tr [class.highlight-primary]="v.is_primary">
+                    <td>
+                      <strong class="vendor-name-text">{{ v.vendor_name }}</strong>
+                      @if (v.is_primary) {
+                        <span class="pill-primary">★ บริษัทหลัก</span>
+                      }
+                    </td>
+                    <td><code>{{ v.supplier_code || '-' }}</code></td>
+                    <td>{{ v.trade_name || '-' }}</td>
+                    <td><code>{{ v.tpuid || '-' }}</code></td>
+                    <td class="number"><strong>{{ number(v.receipt_count) }}</strong> ครั้ง</td>
+                    <td class="number text-emerald">{{ actual(v.total_qty) }} {{ v.unit || '' }}</td>
+                    <td class="number text-cyan">{{ money(v.latest_unit_cost) }}</td>
+                    <td>{{ date(v.latest_date) }}</td>
+                    <td class="center">
+                      @if (v.is_primary) {
+                        <span class="badge emerald font-bold">✓ กำหนดเป็นบริษัทหลักอยู่</span>
+                      } @else {
+                        <button class="btn sm secondary" (click)="setPrimaryVendor(v)" [disabled]="procurementSaving">
+                          เลือกเป็นบริษัทหลัก
+                        </button>
+                      }
+                    </td>
+                  </tr>
+                } @empty {
+                  <tr>
+                    <td colspan="9" class="empty-cell">ไม่พบข้อมูลประวัติการรับยาของบริษัทผู้ขายในช่วง 1 ปีที่ผ่านมา</td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+
+          <!-- ส่วนเลือกบริษัทอื่นจากฐานข้อมูลระบบ (Master Vendors) -->
+          @if (detail.procurement_info?.system_vendors?.length) {
+            <div class="system-vendor-picker">
+              <div class="picker-label">
+                <span>🔍 หากต้องการเลือกบริษัทอื่นจากฐานข้อมูลระบบโรงพยาบาล:</span>
+                <small>(มีข้อมูลผู้ขายในระบบ {{ detail.procurement_info.system_vendors.length }} บริษัท)</small>
+              </div>
+              <div class="picker-controls">
+                <select [(ngModel)]="selectedSystemVendor" class="picker-select">
+                  <option value="">-- เลือกรายชื่อบริษัทผู้ขายในระบบ --</option>
+                  @for (sv of detail.procurement_info.system_vendors; track sv.vendor_name) {
+                    <option [value]="sv.vendor_name">{{ sv.vendor_name }} {{ sv.vendor_code ? '(' + sv.vendor_code + ')' : '' }}</option>
+                  }
+                </select>
+                <button class="btn sm" (click)="setSystemVendorAsPrimary()" [disabled]="!selectedSystemVendor || procurementSaving">
+                  กำหนดเป็นบริษัทหลัก
+                </button>
+              </div>
+            </div>
+          }
+        }
+      </div>
+    </section>
+
+    <section class="grid-5" id="section-kpi">
+      <article class="kpi clickable-kpi-card" (click)="openKpiModal('inventory')" title="คลิกเพื่อดูกราฟแนวโน้มคงคลังรายเดือน">
+        <span class="kpi-head-row">
+          <span>มูลค่าคงคลัง</span>
+          <span class="kpi-click-badge">📈 ดูกราฟ</span>
+        </span>
+        <strong>{{ quantities(detail.summary.stock_quantities) }}</strong>
+        <small>{{ money(detail.summary.stock_value) }} · {{ number(detail.summary.stock_lots) }} รุ่นการผลิต</small>
+      </article>
+      <article class="kpi emerald clickable-kpi-card" (click)="openKpiModal('receipt')" title="คลิกเพื่อดูกราฟรับยารายเดือนและล็อตที่รับ">
+        <span class="kpi-head-row">
+          <span>ข้อมูลรับยา</span>
+          <span class="kpi-click-badge">📥 ดูกราฟ</span>
+        </span>
+        <strong>{{ quantities(detail.summary.receipt_quantities) }} · {{ money(detail.summary.receipt_value) }}</strong>
+        <small>{{ number(detail.summary.receipt_rows_raw) }} บรรทัด</small>
+      </article>
+      <article class="kpi clickable-kpi-card" [class.rose]="!detail.summary.issue_rows_raw" (click)="openKpiModal('distribution')" title="คลิกเพื่อดูกราฟจ่ายยา แผนกที่เบิก และตรวจสอบทุจริต">
+        <span class="kpi-head-row">
+          <span>ข้อมูลจ่ายยา</span>
+          <span class="kpi-click-badge">🔍 ตรวจสอบ</span>
+        </span>
+        <strong>{{ quantities(detail.summary.issue_quantities) }} · {{ money(detail.summary.issue_value) }}</strong>
+        <small>{{ number(detail.summary.issue_rows_raw) }} บรรทัด</small>
+      </article>
+      <article class="kpi clickable-kpi-card" (click)="openKpiModal('issue_rate')" title="คลิกเพื่อดูกราฟแนวโน้มอัตราการจ่ายยาเฉลี่ย">
+        <span class="kpi-head-row">
+          <span>อัตราการจ่ายยาเฉลี่ยต่อเดือน</span>
+          <span class="kpi-click-badge">📉 แนวโน้ม</span>
+        </span>
+        <strong>{{ quantities(detail.summary.avg_monthly_issue_quantities_3m) }}</strong>
+        <small>{{ money(detail.summary.avg_monthly_issue_value_3m) }} · ข้อมูลย้อนหลัง 3 เดือน</small>
+      </article>
+      <article class="kpi amber clickable-kpi-card" (click)="openKpiModal('mos')" title="คลิกเพื่อดูกราฟ MOS รายเดือนและเกณฑ์ควบคุม">
+        <span class="kpi-head-row">
+          <span>จำนวนเดือนสำรอง (MOS)</span>
+          <span class="kpi-click-badge">⏱️ ดูกราฟ</span>
+        </span>
+        <strong>{{ detail.summary.months_on_hand===null ? 'ไม่สามารถคำนวณได้' : number(detail.summary.months_on_hand,1)+' เดือน' }}</strong>
+        <small>{{ detail.summary.days_on_hand===null ? 'ไม่พบอัตราการเบิกจ่ายสำหรับคำนวณ' : 'เทียบเท่า '+number(detail.summary.days_on_hand,1)+' วัน' }}</small>
+      </article>
+    </section>
+
+    <section class="panel calculation-explanation">
+      <div class="panel-head collapsible-head" (click)="showCalculation = !showCalculation">
+        <div>
+          <h2>{{ showCalculation ? '▼' : '▶' }} วิธีคำนวณจำนวนเดือนสำรองของยารายการนี้</h2>
+          <p><strong>จำนวนเดือนสำรอง = จำนวนคงคลังที่ปรับให้อยู่ในหน่วยเปรียบเทียบเดียวกัน ÷ ปริมาณเบิกจ่ายเฉลี่ยต่อ 30 วัน</strong></p>
+        </div>
+        <button type="button" class="btn sm secondary">
+          {{ showCalculation ? 'ย่อเก็บ ▲' : 'คลี่ดูรายละเอียด ▼' }}
+        </button>
+      </div>
+      @if (showCalculation) {
+        <div class="panel-body">
+          <p>{{ detail.source_notes.calculation }}</p>
+          <p class="text-amber">{{ detail.source_notes.calculation_limit }}</p>
+        </div>
+      }
+    </section>
+
+    <section class="panel">
+      <div class="panel-head collapsible-head" (click)="showFacts = !showFacts">
+        <div>
+          <h2>{{ showFacts ? '▼' : '▶' }} ผลการตรวจสอบเบื้องต้นจากข้อมูล</h2>
+          <p>แสดงสิ่งที่ตรวจพบจากข้อมูลต้นทาง โดยแยกออกจากสาเหตุที่เจ้าหน้าที่ผู้รับผิดชอบต้องตรวจสอบและชี้แจง</p>
+        </div>
+        <button type="button" class="btn sm secondary">
+          {{ showFacts ? 'ย่อเก็บ ▲' : 'คลี่ดูรายละเอียด (' + (detail.facts?.length || 0) + ' ข้อสังเกต) ▼' }}
+        </button>
+      </div>
+      @if (showFacts) {
+        <div class="panel-body fact-grid">
+          @for (fact of detail.facts; track fact.title) {
+            <article [class]="'fact ' + fact.severity">
+              <h3>{{ fact.title }}</h3>
+              <p>{{ fact.evidence }}</p>
+              <small>วิธีตรวจสอบ: {{ fact.source }}</small>
+            </article>
+          } @empty {
+            <div class="empty">ไม่พบข้อสังเกตตามหลักเกณฑ์ที่กำหนด</div>
+          }
+        </div>
+      }
+    </section>
+
+    <section class="panel" id="section-movement">
+      <div class="panel-head">
+        <div>
+          <h2>เปรียบเทียบการรับและการจ่ายรายเดือน</h2>
+          <p>จำนวนและหน่วยนับในตารางแสดงตามข้อมูลต้นทางโดยไม่มีการแปลงหน่วย พร้อมราคาต่อหน่วย รายละเอียดใบ PO และ Lot ที่รับในแต่ละงวด</p>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table class="movement-table">
+          <thead>
+            <tr>
+              <th>งวด</th>
+              <th>ใบ PO ที่สั่งซื้อ</th>
+              <th>LOT ที่ได้รับมา</th>
+              <th class="number">จำนวนรับตามข้อมูลต้นทาง</th>
+              <th class="number" title="หน่วยกล่องใหญ่ (BX....)"></th>
+              <th class="number">ราคาต่อหน่วย (รับ)</th>
+              <th class="number">มูลค่ารับ</th>
+              <th class="number">จำนวนจ่ายตามข้อมูลต้นทาง</th>
+              <th class="number" title="หน่วยกล่องใหญ่ (BX....)"></th>
+              <th class="number">ราคาต่อหน่วย (จ่าย)</th>
+              <th class="number">มูลค่าจ่าย</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (row of detail.monthly_movement; track row.period) {
+              <tr>
+                <td><strong>{{ period(row.period) }}</strong></td>
+                <td>
+                  @if (row.receipt_items?.length) {
+                    <div class="cell-stack">
+                      @for (item of row.receipt_items; track $index) {
+                        <div class="cell-line">
+                          <code class="po-code" [title]="getPoTooltip(item)">{{ item.po_no }}</code>
+                        </div>
+                      }
+                    </div>
+                  } @else {
+                    <span class="text-muted">-</span>
+                  }
+                </td>
+                <td>
+                  @if (row.receipt_items?.length) {
+                    <div class="cell-stack">
+                      @for (item of row.receipt_items; track $index) {
+                        <div class="cell-line">
+                          <span class="mono lot-text" [title]="item.date_rcv ? 'วันที่รับ ' + date(item.date_rcv) : ''">{{ item.lot_no }}</span>
+                          @if (row.receipt_items.length > 1) {
+                            <small class="lot-breakdown">({{ actual(item.qty) }} {{ item.unit || '' }})</small>
+                          }
+                        </div>
+                      }
+                    </div>
+                  } @else {
+                    <span class="text-muted">-</span>
+                  }
+                </td>
+                <td class="number text-cyan font-bold">{{ baseQuantities(row.receipt_quantities) }}</td>
+                <td class="number text-cyan font-semibold">{{ row.receipt_box_qty || '-' }}</td>
+                <td class="number font-bold text-sky">{{ row.receipt_unit_price > 0 ? money(row.receipt_unit_price) : '-' }}</td>
+                <td class="number font-bold">{{ money(row.receipt_value) }}</td>
+                <td class="number text-emerald">{{ baseQuantities(row.issue_quantities) }}</td>
+                <td class="number text-emerald font-semibold">{{ row.issue_box_qty || '-' }}</td>
+                <td class="number text-teal">{{ row.issue_unit_price > 0 ? money(row.issue_unit_price) : '-' }}</td>
+                <td class="number">{{ money(row.issue_value) }}</td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+      <div class="source-note">{{ detail.source_notes.receipt }} {{ detail.source_notes.distribution }}</div>
+    </section>
+
+    <!-- Sub-tabs Navigation Bar -->
+    <div class="subtabs-bar" id="section-po">
+      <button 
+        type="button" 
+        class="subtab-btn" 
+        [class.active]="activeTab === 'po_status'" 
+        (click)="selectTab('po_status')"
+      >
+        <span class="subtab-icon">📦</span>
+        <span class="subtab-title">Tab 1: ข้อมูลใบ PO และ สถานะใบ PO</span>
+        @if (detail.po_tracking?.pending_count > 0) {
+          <span class="subtab-badge-pending">{{ detail.po_tracking.pending_count }} ค้างส่งมอบ</span>
+        }
+        @if (detail.po_tracking?.alerts?.length > 0) {
+          <span class="subtab-badge-alert shaking">🚨 {{ detail.po_tracking.alerts.length }}</span>
+        }
+      </button>
+
+      <button 
+        type="button" 
+        class="subtab-btn" 
+        [class.active]="activeTab === 'timeline'" 
+        (click)="selectTab('timeline')"
+      >
+        <span class="subtab-icon">⏱️</span>
+        <span class="subtab-title">Tab 2: Timeline การซื้อยาในช่วงที่ผ่านมา</span>
+      </button>
+    </div>
+
+    <!-- TAB 1: ข้อมูลใบ PO และ สถานะใบ PO -->
+    @if (activeTab === 'po_status') {
+      <div class="tab-content-fade">
+        <!-- Drug Specific PO Urgent Alert Banner -->
+        @if (detail.po_tracking?.alerts?.length) {
+          <div class="po-urgent-banner">
+            <div class="banner-bell-wrap shaking">🔔</div>
+            <div class="banner-content">
+              <strong>แจ้งเตือนด่วนสำหรับยารายการนี้ ({{ detail.po_tracking.alerts.length }} รายการ):</strong>
+              <ul>
+                @for (a of detail.po_tracking.alerts; track a.po_no) {
+                  <li>
+                    <span class="badge" [class.bad]="a.severity === 'critical'" [class.warn]="a.severity === 'urgent'">
+                      {{ a.severity === 'critical' ? '🚨 เกิน 7 วันยังไม่ได้ของ' : '⚠️ รอส่งบริษัท' }}
+                    </span>
+                    <strong>PO {{ a.po_no }}:</strong> {{ a.message }}
+                  </li>
+                }
+              </ul>
+            </div>
+          </div>
+        }
+
+        @if (poActionMessage) {
+          <div class="action-feedback-toast">
+            ✓ {{ poActionMessage }}
+          </div>
+        }
+
+        <!-- Group A: ใบ PO ที่ยังไม่ได้ของ (ป้องกันสั่งซื้อซ้ำ) -->
+        <section class="panel po-panel-pending">
+          <div class="panel-head po-panel-head">
+            <div>
+              <h2>ใบ PO ที่ยังไม่ได้ของ (รอดำเนินการ / ป้องกันการสั่งซื้อซ้ำ)</h2>
+              <p>ติดตามสถานะการลงนามของผู้อำนวยการ การส่งข้อมูลให้บริษัท และการนัดหมายส่งมอบยา เพื่อป้องกันการออก PO ซ้ำซ้อน</p>
+            </div>
+          </div>
+
+          <div class="table-wrap">
+            <table class="po-table">
+              <thead>
+                <tr>
+                  <th>เลขที่ใบ PO</th>
+                  <th>วันที่ออก PO</th>
+                  <th>บริษัทผู้ขาย / ยี่ห้อ</th>
+                  <th class="number">จำนวนสั่งซื้อ</th>
+                  <th class="number">ราคา/หน่วย</th>
+                  <th class="number">มูลค่ารวม</th>
+                  <th>สถานะใบ PO</th>
+                  <th>ส่งข้อมูลให้บริษัทแล้ว</th>
+                  <th>บันทึกรายละเอียด (Free Text)</th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (po of detail.po_tracking?.pending_pos; track (po.po_no + '_' + po.working_code)) {
+                  <tr [class.highlight-urgent]="(po.status === 'director_approved' && !po.is_sent_to_vendor) || po.status === 'partially_received'" [class.highlight-overdue]="po.is_sent_to_vendor && po.days_since_sent >= 7">
+                    <td>
+                      <code class="po-code-prominent" [title]="getPoTooltip(po)">{{ po.po_no }}</code>
+                      @if (po.status === 'partially_received' || (po.received_qty > 0 && po.remaining_qty > 0)) {
+                        <span class="badge warn tag-shake">⚠️ รับบางส่วน (ค้าง {{ number(po.remaining_qty, 0) }})</span>
+                      } @else if (po.is_sent_to_vendor && po.days_since_sent >= 7) {
+                        <span class="badge bad tag-shake">🚨 ค้างส่งมอบ {{ po.days_since_sent }} วัน</span>
+                      } @else if (po.status === 'director_approved' && !po.is_sent_to_vendor) {
+                        <span class="badge warn tag-shake">⚠️ ยังไม่ส่งบริษัท</span>
+                      }
+                    </td>
+                    <td>{{ date(po.po_date) }}</td>
+                    <td>
+                      <div><strong>{{ po.vendor_name || '-' }}</strong></div>
+                      @if (po.trade_name) {
+                        <small class="text-muted">{{ po.trade_name }}</small>
+                      }
+                    </td>
+                    <td class="number font-bold text-cyan">
+                      <div>{{ number(po.order_qty, 2) }} {{ po.unit }}</div>
+                      @if (po.received_qty > 0) {
+                        <small class="text-amber" style="display:block;font-size:11px;font-weight:normal;">รับแล้ว: {{ number(po.received_qty, 0) }} | ค้าง: {{ number(po.remaining_qty, 0) }}</small>
+                      }
+                    </td>
+                    <td class="number">{{ money(po.unit_price) }}</td>
+                    <td class="number font-bold">{{ money(po.total_amount) }}</td>
+                    <td>
+                      @if (po.status === 'partially_received') {
+                        <span class="badge warn">📦 รับยาบางส่วน</span>
+                        @if (po.received_date) {
+                          <div class="status-date"><small>รับล่าสุด {{ date(po.received_date) }}</small></div>
+                        }
+                      } @else if (po.status === 'director_approved') {
+                        <span class="badge ok">✍️ ผอ. ลงนามแล้ว</span>
+                        @if (po.director_approved_date) {
+                          <div class="status-date"><small>เมื่อ {{ date(po.director_approved_date) }}</small></div>
+                        }
+                      } @else {
+                        <span class="badge warn">⏳ รอ ผอ. ลงนาม</span>
+                      }
+                    </td>
+                    <td>
+                      <label class="toggle-checkbox-label">
+                        <input 
+                          type="checkbox" 
+                          [checked]="po.is_sent_to_vendor" 
+                          (change)="togglePoDispatch(po)"
+                          [disabled]="poActionLoading"
+                        >
+                        <span>{{ po.is_sent_to_vendor ? 'ส่งบริษัทแล้ว' : 'ยังไม่ส่ง' }}</span>
+                      </label>
+                      @if (po.is_sent_to_vendor && po.sent_to_vendor_date) {
+                        <div class="status-date"><small>{{ date(po.sent_to_vendor_date) }} ({{ po.days_since_sent || 0 }} วันก่อน)</small></div>
+                      }
+                    </td>
+                    <td class="note-input-cell">
+                      @if (isEditingNote(po)) {
+                        <div class="note-edit-wrap">
+                          <input
+                            type="text"
+                            [(ngModel)]="po.sent_to_vendor_note"
+                            placeholder="เช่น ส่งให้ผู้แทนทาง Line แล้ว นัดส่ง 15 ก.ย."
+                            (keyup.enter)="savePoNote(po)"
+                            class="po-note-input"
+                          >
+                          <button type="button" class="btn btn-sm btn-outline" (click)="savePoNote(po)" title="บันทึกหมายเหตุ">
+                            บันทึก
+                          </button>
+                        </div>
+                      } @else {
+                        <div class="note-edit-wrap">
+                          <span class="po-note-text">{{ po.sent_to_vendor_note }}</span>
+                          <button type="button" class="btn btn-sm btn-outline" (click)="editPoNote(po)" title="แก้ไขหมายเหตุ">
+                            แก้ไข
+                          </button>
+                        </div>
+                      }
+                    </td>
+                  </tr>
+                } @empty {
+                  <tr>
+                    <td colspan="9" class="empty-cell">
+                      ไม่มีใบ PO ที่รอดำเนินการหรือค้างส่งมอบ (ไม่พบความเสี่ยงในการออก PO ซ้ำ)
+                    </td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <!-- Group B: ใบ PO ที่ได้ของแล้ว ตรวจรับเข้าคลังแล้ว -->
+        <section class="panel">
+          <div class="panel-head">
+            <div>
+              <h2>ใบ PO ที่ได้ของแล้ว ตรวจรับเข้าคลังแล้ว (ประวัติการจัดซื้อและตรวจรับ)</h2>
+              <p>รวบรวมประวัติใบสั่งซื้อที่ตรวจรับเข้าคลังเรียบร้อยแล้วทั้งหมด พร้อมเลขที่ใบรับ วันที่ตรวจรับ และ Lot ที่ได้รับ</p>
+            </div>
+            <div>
+              <span class="badge ok font-bold">ตรวจรับแล้ว {{ number(detail.po_tracking?.received_count || 0) }} ใบ</span>
+            </div>
+          </div>
+
+          <div class="table-wrap">
+            <table class="po-table">
+              <thead>
+                <tr>
+                  <th>เลขที่ใบ PO</th>
+                  <th>วันที่ตรวจรับเข้าคลัง</th>
+                  <th>เลขที่ใบรับ (RCV_NO)</th>
+                  <th>LOT ที่ได้รับ</th>
+                  <th>บริษัทผู้ขาย</th>
+                  <th class="number">จำนวนรับ</th>
+                  <th class="number">ราคาต่อหน่วย</th>
+                  <th class="number">มูลค่ารวม</th>
+                  <th class="center">สถานะ</th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (po of detail.po_tracking?.received_pos; track po.po_no) {
+                  <tr>
+                    <td>
+                      <code class="po-code" [title]="getPoTooltip(po)">{{ po.po_no }}</code>
+                    </td>
+                    <td>{{ date(po.received_date || po.po_date) }}</td>
+                    <td>
+                      <code class="rcv-code">{{ po.received_rcv_no || '-' }}</code>
+                    </td>
+                    <td>
+                      <span class="mono lot-text">{{ po.received_lot_no || '-' }}</span>
+                    </td>
+                    <td>{{ po.vendor_name || '-' }}</td>
+                    <td class="number font-bold text-cyan">{{ number(po.order_qty, 2) }} {{ po.unit }}</td>
+                    <td class="number font-bold text-sky">{{ money(po.unit_price) }}</td>
+                    <td class="number font-bold">{{ money(po.total_amount) }}</td>
+                    <td class="center">
+                      <span class="pill-received">✓ ตรวจรับเข้าคลังแล้ว</span>
+                    </td>
+                  </tr>
+                } @empty {
+                  <tr>
+                    <td colspan="9" class="empty-cell">ยังไม่มีประวัติการตรวจรับใบ PO สำหรับยานี้</td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+    }
+
+    <!-- TAB 2: Timeline การซื้อยาในช่วงที่ผ่านมา -->
+    @if (activeTab === 'timeline') {
+      <div class="tab-content-fade">
+        <section class="panel">
+          <div class="panel-head">
+            <div>
+              <h2>Timeline การซื้อยาและการเคลื่อนไหวในช่วงที่ผ่านมา</h2>
+              <p>ลำดับเหตุการณ์การออก PO, การลงนาม, การส่งข้อมูลให้บริษัท (พร้อมบันทึก Free text), การตรวจรับ และการจ่ายยา</p>
+            </div>
+          </div>
+          <div class="panel-body timeline">
+            @for (event of detail.timeline; track $index) {
+              <article [class.timeline-po-event]="event.kind === 'po'">
+                <time>{{ event.date_precision === 'month' ? period(event.date) : date(event.date) }}</time>
+                <div>
+                  <h3>
+                    @if (event.kind === 'po') { <span class="event-icon">📦</span> }
+                    @if (event.kind === 'receipt') { <span class="event-icon">📥</span> }
+                    @if (event.kind === 'distribution') { <span class="event-icon">📤</span> }
+                    @if (event.kind === 'inventory') { <span class="event-icon">📊</span> }
+                    {{ event.title }} 
+                    @if (event.duplicate) { <span class="badge bad">รายการอ้างอิงซ้ำ</span> }
+                  </h3>
+                  <p>{{ event.detail }}</p>
+                  @if (event.note) {
+                    <div class="timeline-freetext-callout">
+                      💬 <strong>บันทึกเจ้าหน้าที่:</strong> {{ event.note }}
+                    </div>
+                  }
+                  <small>{{ event.reference }}</small>
+                </div>
+              </article>
+            }
+          </div>
+        </section>
+      </div>
+    }
+
+    <!-- Modal: ตรวจรับเข้าคลัง -->
+    @if (receiveModalPo) {
+      <div class="modal-backdrop" (click)="receiveModalPo = null">
+        <div class="modal-card" (click)="$event.stopPropagation()">
+          <div class="modal-head">
+            <h3>ตรวจรับยาเข้าคลัง: ใบ PO {{ receiveModalPo.po_no }}</h3>
+            <button class="close-btn" (click)="receiveModalPo = null">✕</button>
+          </div>
+          <div class="modal-body">
+            <div class="po-receive-summary">
+              <div><strong>ยา:</strong> {{ receiveModalPo.trade_name || detail.name }}</div>
+              <div><strong>ผู้ขาย:</strong> {{ receiveModalPo.vendor_name }}</div>
+              <div><strong>จำนวนสั่งซื้อ:</strong> {{ number(receiveModalPo.order_qty, 2) }} {{ receiveModalPo.unit }}</div>
+            </div>
+            <div class="form-group">
+              <label>เลขที่ใบรับ (RCV_NO)</label>
+              <input type="text" [(ngModel)]="receiveData.rcv_no" placeholder="เช่น MRC6908-0155" class="form-input mono">
+            </div>
+            <div class="form-group">
+              <label>รุ่นการผลิตที่ได้รับ (LOT NO)</label>
+              <input type="text" [(ngModel)]="receiveData.lot_no" placeholder="เช่น 0526005" class="form-input mono">
+            </div>
+            <div class="form-group">
+              <label>วันที่ตรวจรับ</label>
+              <input type="date" [(ngModel)]="receiveData.rcv_date" class="form-input">
+            </div>
+          </div>
+          <div class="modal-foot">
+            <button type="button" class="btn" (click)="receiveModalPo = null">ยกเลิก</button>
+            <button type="button" class="btn btn-receive" [disabled]="poActionLoading" (click)="submitReceivePo()">
+              ยืนยันการตรวจรับเข้าคลัง
+            </button>
+          </div>
+        </div>
+      </div>
+    }
+
+    <!-- ============================================================= -->
+    <!-- Modal: เจาะลึกและวิเคราะห์กราฟ 5 มิติ (KPI Drilldown Modal)   -->
+    <!-- ============================================================= -->
+    @if (activeKpiModal) {
+      <div class="modal-backdrop kpi-modal-backdrop" (click)="closeKpiModal()">
+        <div class="modal-card kpi-modal-card" (click)="$event.stopPropagation()">
+          <div class="modal-head kpi-modal-head">
+            <div class="kpi-modal-title-group">
+              <div class="kpi-modal-badge">📊 การวิเคราะห์เจาะลึก 5 มิติ</div>
+              <h3>{{ detail.name }}</h3>
+              <div class="kpi-modal-sub">รหัสยา: <span class="mono">{{ detail.code }}</span> · หน่วยมาตรฐาน: <strong>{{ drugUnit }}</strong></div>
+            </div>
+            <button class="close-btn" (click)="closeKpiModal()" title="ปิดหน้าต่าง">✕</button>
+          </div>
+
+          <!-- Navigation Tabs across 5 dimensions -->
+          <div class="kpi-modal-nav">
+            <button type="button" class="kpi-tab-btn" [class.active]="activeKpiModal === 'inventory'" (click)="selectKpiTab('inventory')">
+              📦 คงคลังรายเดือน
+            </button>
+            <button type="button" class="kpi-tab-btn" [class.active]="activeKpiModal === 'receipt'" (click)="selectKpiTab('receipt')">
+              📥 รับยารายเดือน
+            </button>
+            <button type="button" class="kpi-tab-btn" [class.active]="activeKpiModal === 'distribution'" (click)="selectKpiTab('distribution')">
+              📤 จ่ายยา & ตรวจสอบทุจริต
+              @if (auditSignals?.overall_risk === 'warning') {
+                <span class="audit-dot-badge">⚠️</span>
+              }
+            </button>
+            <button type="button" class="kpi-tab-btn" [class.active]="activeKpiModal === 'issue_rate'" (click)="selectKpiTab('issue_rate')">
+              📈 อัตราจ่ายเฉลี่ย
+            </button>
+            <button type="button" class="kpi-tab-btn" [class.active]="activeKpiModal === 'mos'" (click)="selectKpiTab('mos')">
+              ⏱️ MOS รายเดือน
+            </button>
+          </div>
+
+          <div class="modal-body kpi-modal-body">
+            <!-- 1. TAB: คงคลังรายเดือน (Inventory Line Chart) -->
+            @if (activeKpiModal === 'inventory') {
+              <div class="kpi-view-container">
+                <div class="kpi-view-header">
+                  <div>
+                    <h4>📈 แนวโน้มยอดคงคลังรายเดือน (Monthly Inventory Balance)</h4>
+                    <p class="kpi-view-desc">แสดงการเคลื่อนไหวยกยอดคงคลังสิ้นเดือนย้อนหลัง ชี้ที่จุดเพื่อดูยอดยกมา รับเข้า จ่ายออก</p>
+                  </div>
+                  <div class="kpi-metric-toggle">
+                    <button type="button" class="toggle-btn" [class.active]="kpiMetric === 'qty'" (click)="kpiMetric = 'qty'">จำนวน ({{ drugUnit }})</button>
+                    <button type="button" class="toggle-btn" [class.active]="kpiMetric === 'value'" (click)="kpiMetric = 'value'">มูลค่า (บาท)</button>
+                  </div>
+                </div>
+
+                <!-- SVG Line Chart -->
+                <div class="kpi-chart-wrapper">
+                  <svg [attr.viewBox]="'0 0 ' + kpiSvgW + ' ' + kpiSvgH" class="kpi-svg">
+                    <defs>
+                      <linearGradient id="stockAreaGrad" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stop-color="#38bdf8" stop-opacity="0.35"/>
+                        <stop offset="100%" stop-color="#38bdf8" stop-opacity="0.02"/>
+                      </linearGradient>
+                    </defs>
+
+                    <!-- Horizontal Grid Lines -->
+                    @for (line of stockGridLines; track line.y) {
+                      <line [attr.x1]="kpiPlotLeft" [attr.y1]="line.y" [attr.x2]="kpiPlotRight" [attr.y2]="line.y" class="kpi-grid-line" />
+                      <text [attr.x]="kpiPlotLeft - 8" [attr.y]="line.y + 4" class="kpi-grid-label">{{ line.label }}</text>
+                    }
+
+                    <!-- Baseline Y=0 -->
+                    <line [attr.x1]="kpiPlotLeft" [attr.y1]="kpiPlotBottom" [attr.x2]="kpiPlotRight" [attr.y2]="kpiPlotBottom" class="kpi-axis-line" />
+                    <text [attr.x]="kpiPlotLeft - 8" [attr.y]="kpiPlotBottom + 4" class="kpi-grid-label">0</text>
+
+                    <!-- Area fill under line -->
+                    @if (stockAreaPath) {
+                      <path [attr.d]="stockAreaPath" fill="url(#stockAreaGrad)" />
+                    }
+
+                    <!-- Main Line -->
+                    @if (stockLinePath) {
+                      <path [attr.d]="stockLinePath" class="kpi-line-stock" />
+                    }
+
+                    <!-- Points & Hover Tooltips -->
+                    @for (pt of stockPoints; track pt.period) {
+                      <g class="kpi-data-point-group" (mouseenter)="setKpiHover(pt)" (mouseleave)="clearKpiHover()">
+                        <circle [attr.cx]="pt.cx" [attr.cy]="pt.cy" r="5" class="kpi-point-circle" />
+                        <text [attr.x]="pt.cx" [attr.y]="kpiPlotBottom + 16" class="kpi-x-label">{{ pt.label }}</text>
+                      </g>
+                    }
+                  </svg>
+                </div>
+
+                <!-- Interactive Hover Detail Card -->
+                <div class="kpi-hover-card" [class.active]="activeKpiHover">
+                  @if (activeKpiHover) {
+                    <div class="hover-grid">
+                      <div><small>งวดเดือน</small><strong>{{ period(activeKpiHover.period) }}</strong></div>
+                      <div><small>คงคลังสิ้นเดือน</small><strong>{{ number(activeKpiHover.stock_qty, 2) }} {{ drugUnit }}</strong></div>
+                      <div><small>มูลค่าคงคลัง</small><strong>{{ money(activeKpiHover.stock_value) }}</strong></div>
+                      <div><small>รับเข้าเดือนนี้</small><span class="text-emerald">+{{ number(activeKpiHover.receipt_qty, 2) }} {{ drugUnit }}</span></div>
+                      <div><small>จ่ายออกเดือนนี้</small><span class="text-rose">-{{ number(activeKpiHover.issue_qty, 2) }} {{ drugUnit }}</span></div>
+                      <div><small>การเปลี่ยนแปลง</small><strong [class.text-emerald]="activeKpiHover.stock_change_qty >= 0" [class.text-rose]="activeKpiHover.stock_change_qty < 0">{{ activeKpiHover.stock_change_qty >= 0 ? '+' : '' }}{{ number(activeKpiHover.stock_change_qty, 2) }}</strong></div>
+                    </div>
+                  } @else {
+                    <div class="hover-hint">💡 เลื่อนเมาส์ชี้บนจุดของกราฟเพื่อดูสถิติยอดยกมา รับเข้า และจ่ายออกในแต่ละเดือน</div>
+                  }
+                </div>
+
+                <!-- Reconciliation Summary Table -->
+                <div class="kpi-sub-section">
+                  <h5>📋 ตารางสรุปการกระทบยอดคงคลังรายเดือน (Reconciliation Table)</h5>
+                  <div class="kpi-table-wrap">
+                    <table class="kpi-mini-table">
+                      <thead>
+                        <tr>
+                          <th>งวดเดือน</th>
+                          <th class="number">รับเข้า (Qty)</th>
+                          <th class="number">มูลค่ารับ</th>
+                          <th class="number">จ่ายออก (Qty)</th>
+                          <th class="number">มูลค่าจ่าย</th>
+                          <th class="number">คงคลังสิ้นงวด (Qty)</th>
+                          <th class="number">มูลค่าคงคลัง</th>
+                          <th class="number">MOS สิ้นเดือน</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        @for (m of monthlyTrend; track m.period) {
+                          <tr [class.highlight-row]="activeKpiHover?.period === m.period" (mouseenter)="setKpiHover(m)">
+                            <td class="mono font-semibold">{{ period(m.period) }}</td>
+                            <td class="number text-emerald">{{ m.receipt_qty > 0 ? ('+' + number(m.receipt_qty, 2)) : '-' }}</td>
+                            <td class="number text-muted">{{ m.receipt_value > 0 ? money(m.receipt_value) : '-' }}</td>
+                            <td class="number text-rose">{{ m.issue_qty > 0 ? ('-' + number(m.issue_qty, 2)) : '-' }}</td>
+                            <td class="number text-muted">{{ m.issue_value > 0 ? money(m.issue_value) : '-' }}</td>
+                            <td class="number font-bold text-sky">{{ number(m.stock_qty, 2) }} {{ drugUnit }}</td>
+                            <td class="number">{{ money(m.stock_value) }}</td>
+                            <td class="number">
+                              @if (m.mos !== null) {
+                                <span class="badge" [style.background]="getMosBarColor(m.mos)" style="color: #0f172a; font-weight: bold;">
+                                  {{ number(m.mos, 2) }} ด.
+                                </span>
+                              } @else {
+                                <span class="text-muted">-</span>
+                              }
+                            </td>
+                          </tr>
+                        }
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            }
+
+            <!-- 2. TAB: รับยารายเดือน (Receipts Bar Chart) -->
+            @if (activeKpiModal === 'receipt') {
+              <div class="kpi-view-container">
+                <div class="kpi-view-header">
+                  <div>
+                    <h4>📥 ประวัติการรับยาเข้าคลังรายเดือน (Monthly Receipts)</h4>
+                    <p class="kpi-view-desc">แสดงปริมาณและมูลค่าการรับยาในแต่ละงวด คลิกที่แท่งเดือนเพื่อกรองดูรายการใบรับ (RCV/PO)</p>
+                  </div>
+                  <div class="kpi-metric-toggle">
+                    <button type="button" class="toggle-btn" [class.active]="kpiMetric === 'qty'" (click)="kpiMetric = 'qty'">จำนวน ({{ drugUnit }})</button>
+                    <button type="button" class="toggle-btn" [class.active]="kpiMetric === 'value'" (click)="kpiMetric = 'value'">มูลค่า (บาท)</button>
+                  </div>
+                </div>
+
+                <!-- SVG Bar Chart -->
+                <div class="kpi-chart-wrapper">
+                  <svg [attr.viewBox]="'0 0 ' + kpiSvgW + ' ' + kpiSvgH" class="kpi-svg">
+                    @for (line of receiptGridLines; track line.y) {
+                      <line [attr.x1]="kpiPlotLeft" [attr.y1]="line.y" [attr.x2]="kpiPlotRight" [attr.y2]="line.y" class="kpi-grid-line" />
+                      <text [attr.x]="kpiPlotLeft - 8" [attr.y]="line.y + 4" class="kpi-grid-label">{{ line.label }}</text>
+                    }
+                    <line [attr.x1]="kpiPlotLeft" [attr.y1]="kpiPlotBottom" [attr.x2]="kpiPlotRight" [attr.y2]="kpiPlotBottom" class="kpi-axis-line" />
+                    <text [attr.x]="kpiPlotLeft - 8" [attr.y]="kpiPlotBottom + 4" class="kpi-grid-label">0</text>
+
+                    @for (bar of receiptBars; track bar.period) {
+                      <g class="kpi-bar-group" (click)="toggleReceiptMonth(bar.period)" (mouseenter)="setKpiHover(bar)" (mouseleave)="clearKpiHover()">
+                        <rect [attr.x]="bar.barX" [attr.y]="bar.barY" [attr.width]="bar.barW" [attr.height]="bar.barH"
+                              [class.bar-selected]="selectedReceiptMonth === bar.period"
+                              class="kpi-bar-receipt" rx="3" />
+                        <text [attr.x]="bar.cx" [attr.y]="kpiPlotBottom + 16" class="kpi-x-label" [class.bold]="selectedReceiptMonth === bar.period">{{ bar.label }}</text>
+                      </g>
+                    }
+                  </svg>
+                </div>
+
+                <!-- Hover Details -->
+                <div class="kpi-hover-card" [class.active]="activeKpiHover || selectedReceiptMonth">
+                  @if (activeKpiHover) {
+                    <div class="hover-grid">
+                      <div><small>งวดเดือน</small><strong>{{ period(activeKpiHover.period) }}</strong></div>
+                      <div><small>จำนวนรับ</small><strong class="text-emerald">{{ number(activeKpiHover.receipt_qty, 2) }} {{ drugUnit }}</strong></div>
+                      <div><small>มูลค่ารับรวม</small><strong>{{ money(activeKpiHover.receipt_value) }}</strong></div>
+                      <div><small>ราคาต่อหน่วยเฉลี่ย</small><strong>{{ activeKpiHover.receipt_qty > 0 ? money(activeKpiHover.receipt_value / activeKpiHover.receipt_qty) : '-' }}</strong></div>
+                      <div><small>สถานะการคลิก</small><span>{{ selectedReceiptMonth === activeKpiHover.period ? '✓ กำลังกรองงวดนี้' : 'คลิกเพื่อกรองตารางด้านล่าง' }}</span></div>
+                    </div>
+                  } @else {
+                    <div class="hover-hint">💡 ชี้เมาส์ที่แท่งเพื่อดูยอด หรือคลิกแท่งเพื่อกรองเฉพาะใบรับของเดือนนั้น</div>
+                  }
+                </div>
+
+                <!-- Receipts Table -->
+                <div class="kpi-sub-section">
+                  <div class="section-title-row">
+                    <h5>📋 รายการใบรับยาเข้าคลัง {{ selectedReceiptMonth ? ('(เฉพาะงวด ' + period(selectedReceiptMonth) + ')') : '(ทั้งหมด)' }}</h5>
+                    @if (selectedReceiptMonth) {
+                      <button type="button" class="btn sm" (click)="selectedReceiptMonth = null">แสดงทุกงวด</button>
+                    }
+                  </div>
+                  <div class="kpi-table-wrap">
+                    <table class="kpi-mini-table">
+                      <thead>
+                        <tr>
+                          <th>วันที่รับ</th>
+                          <th>ใบรับ (RCV_NO)</th>
+                          <th>ใบ PO</th>
+                          <th>ผู้ขาย (Vendor)</th>
+                          <th>รุ่นการผลิต (Lot)</th>
+                          <th class="number">จำนวนรับ</th>
+                          <th class="number">ราคา/หน่วย</th>
+                          <th class="number">มูลค่ารวม</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        @for (item of allReceiptItems; track (item.rcv_no + item.lot_no + item.date_rcv)) {
+                          <tr>
+                            <td class="mono">{{ date(item.date_rcv) }}</td>
+                            <td class="mono font-semibold">{{ item.rcv_no || '-' }}</td>
+                            <td class="mono">{{ item.po_no || '-' }}</td>
+                            <td>{{ item.vendor_name || '-' }}</td>
+                            <td class="mono text-sky">{{ item.lot_no || '-' }}</td>
+                            <td class="number font-semibold text-emerald">{{ number(item.qty, 2) }} {{ item.unit }}</td>
+                            <td class="number">{{ money(item.unit_cost) }}</td>
+                            <td class="number font-bold">{{ money(item.value) }}</td>
+                          </tr>
+                        } @empty {
+                          <tr><td colspan="8" class="text-center text-muted">ไม่พบประวัติการรับยาตามเงื่อนไข</td></tr>
+                        }
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            }
+
+            <!-- 3. TAB: จ่ายยา & ตรวจสอบทุจริต (Distribution & Audit Analytics) -->
+            @if (activeKpiModal === 'distribution') {
+              <div class="kpi-view-container">
+                <!-- Audit & Fraud Alert Banner -->
+                <div class="audit-summary-box" [class.border-amber]="auditSignals.overall_risk === 'warning'" [class.border-emerald]="auditSignals.overall_risk === 'normal'">
+                  <div class="audit-header">
+                    <div class="audit-status-badge" [class.badge-amber]="auditSignals.overall_risk === 'warning'" [class.badge-emerald]="auditSignals.overall_risk === 'normal'">
+                      {{ auditSignals.overall_risk === 'warning' ? '⚠️ ตรวจพบข้อสังเกต / ควรเฝ้าระวัง' : '✓ แบบแผนการเบิกจ่ายปกติ' }}
+                    </div>
+                    <strong>ระบบตรวจสอบรอบด้านเพื่อความโปร่งใสและเฝ้าระวังทุจริต</strong>
+                  </div>
+                  <ul class="audit-findings-list">
+                    @for (finding of auditSignals.findings; track finding) {
+                      <li>{{ finding }}</li>
+                    }
+                  </ul>
+                  <div class="audit-kpi-pills">
+                    <div class="audit-pill"><small>เบิกจ่ายทั้งหมด:</small> <strong>{{ number(auditSignals.total_issues) }} ครั้ง</strong></div>
+                    <div class="audit-pill"><small>หน่วยงานที่เบิก:</small> <strong>{{ number(auditSignals.total_departments) }} หน่วยงาน</strong></div>
+                    <div class="audit-pill" [class.alert]="auditSignals.off_hours_count > 0"><small>เบิกนอกเวลาทำการ:</small> <strong>{{ number(auditSignals.off_hours_count) }} ครั้ง</strong></div>
+                    <div class="audit-pill" [class.alert]="auditSignals.unverified_cost_count > 0"><small>ต้นทุน/ล็อตยังรอสอบทาน:</small> <strong>{{ number(auditSignals.unverified_cost_count) }} แถว</strong></div>
+                  </div>
+                </div>
+
+                <!-- Monthly Issue Bar Chart -->
+                <div class="kpi-view-header mt-4">
+                  <div>
+                    <h4>📤 แนวโน้มการจ่ายยารายเดือน (Monthly Issue Trend)</h4>
+                    <p class="kpi-view-desc">แท่งสีส้มพร้อมไอคอน ⚠️ คือเดือนที่ยอดจ่ายพุ่งสูงผิดปกติเกินเกณฑ์เฉลี่ย (Spike)</p>
+                  </div>
+                  <div class="kpi-metric-toggle">
+                    <button type="button" class="toggle-btn" [class.active]="kpiMetric === 'qty'" (click)="kpiMetric = 'qty'">จำนวน ({{ drugUnit }})</button>
+                    <button type="button" class="toggle-btn" [class.active]="kpiMetric === 'value'" (click)="kpiMetric = 'value'">มูลค่า (บาท)</button>
+                  </div>
+                </div>
+
+                <div class="kpi-chart-wrapper">
+                  <svg [attr.viewBox]="'0 0 ' + kpiSvgW + ' ' + kpiSvgH" class="kpi-svg">
+                    @for (line of issueGridLines; track line.y) {
+                      <line [attr.x1]="kpiPlotLeft" [attr.y1]="line.y" [attr.x2]="kpiPlotRight" [attr.y2]="line.y" class="kpi-grid-line" />
+                      <text [attr.x]="kpiPlotLeft - 8" [attr.y]="line.y + 4" class="kpi-grid-label">{{ line.label }}</text>
+                    }
+                    <line [attr.x1]="kpiPlotLeft" [attr.y1]="kpiPlotBottom" [attr.x2]="kpiPlotRight" [attr.y2]="kpiPlotBottom" class="kpi-axis-line" />
+                    <text [attr.x]="kpiPlotLeft - 8" [attr.y]="kpiPlotBottom + 4" class="kpi-grid-label">0</text>
+
+                    @for (bar of issueBars; track bar.period) {
+                      <g class="kpi-bar-group" (mouseenter)="setKpiHover(bar)" (mouseleave)="clearKpiHover()">
+                        <rect [attr.x]="bar.barX" [attr.y]="bar.barY" [attr.width]="bar.barW" [attr.height]="bar.barH"
+                              [class.bar-spike]="bar.is_spike"
+                              class="kpi-bar-issue" rx="3" />
+                        @if (bar.is_spike) {
+                          <text [attr.x]="bar.cx" [attr.y]="bar.barY - 6" text-anchor="middle" font-size="11" fill="#f43f5e">⚠️</text>
+                        }
+                        <text [attr.x]="bar.cx" [attr.y]="kpiPlotBottom + 16" class="kpi-x-label">{{ bar.label }}</text>
+                      </g>
+                    }
+                  </svg>
+                </div>
+
+                <!-- Department Breakdown (จ่ายไปที่ไหน) -->
+                <div class="kpi-sub-section mt-4">
+                  <div class="section-title-row">
+                    <div>
+                      <h5>🏥 จ่ายไปที่ไหน: การกระจายยาแยกตามหน่วยเบิก (Department Usage)</h5>
+                      <p class="text-muted text-sm">ตรวจสอบสัดส่วนการเบิกของแต่ละแผนก เพื่อดูความกระจุกตัวหรือความถี่ในการเบิกซ้ำ</p>
+                    </div>
+                    <div class="search-box-wrap">
+                      <input type="text" [(ngModel)]="kpiDeptSearch" placeholder="🔍 ค้นหาชื่อแผนก/รหัสหน่วยเบิก..." class="dept-filter-input">
+                    </div>
+                  </div>
+
+                  <div class="kpi-table-wrap">
+                    <table class="kpi-mini-table">
+                      <thead>
+                        <tr>
+                          <th>ชื่อหน่วยเบิก / แผนก</th>
+                          <th class="number">จำนวนจ่ายรวม</th>
+                          <th class="number">มูลค่ารวม</th>
+                          <th>สัดส่วนการใช้ (% Share)</th>
+                          <th class="number">จำนวนครั้งที่เบิก</th>
+                          <th>เบิกล่าสุด</th>
+                          <th>สัญญาณตรวจสอบ (Audit Flags)</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        @for (dept of filteredDepartments; track dept.dept_code) {
+                          <tr>
+                            <td>
+                              <strong>{{ dept.dept_name }}</strong>
+                              @if (dept.dept_code) { <span class="mono text-xs text-muted"> ({{ dept.dept_code }})</span> }
+                            </td>
+                            <td class="number font-bold text-sky">{{ number(dept.total_qty, 2) }} {{ drugUnit }}</td>
+                            <td class="number">{{ money(dept.total_value) }}</td>
+                            <td>
+                              <div class="dept-progress-wrap">
+                                <div class="dept-progress-bar" [style.width]="dept.percent + '%'" [class.bg-rose]="dept.percent >= 50" [class.bg-amber]="dept.percent >= 30 && dept.percent < 50"></div>
+                                <span class="dept-progress-label">{{ dept.percent }}%</span>
+                              </div>
+                            </td>
+                            <td class="number font-semibold">{{ number(dept.req_count) }} ครั้ง</td>
+                            <td class="mono text-sm">{{ dept.latest_date ? date(dept.latest_date) : '-' }}</td>
+                            <td>
+                              @for (flag of dept.anomalies; track flag) {
+                                <span class="badge badge-rose text-xs mr-1">{{ flag }}</span>
+                              } @empty {
+                                <span class="badge badge-emerald text-xs">ปกติ</span>
+                              }
+                            </td>
+                          </tr>
+                        } @empty {
+                          <tr><td colspan="7" class="text-center text-muted">ไม่พบข้อมูลหน่วยงานตามคำค้นหา</td></tr>
+                        }
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            }
+
+            <!-- 4. TAB: อัตราการจ่ายยาเฉลี่ย (Issue Rate Trend) -->
+            @if (activeKpiModal === 'issue_rate') {
+              <div class="kpi-view-container">
+                <div class="kpi-view-header">
+                  <div>
+                    <h4>📈 แนวโน้มอัตราการจ่ายยาเฉลี่ยต่อเดือน (Issue Rate & Moving Averages)</h4>
+                    <p class="kpi-view-desc">เส้นทึบแสดงอัตราจ่ายจริงรายเดือน เทียบกับเส้นประสีฟ้า (Moving Average 3 เดือน) เพื่อดูการเปลี่ยนแปลงของอุปสงค์</p>
+                  </div>
+                  <div class="rate-legend">
+                    <span class="legend-item"><span class="legend-line solid-sky"></span> ยอดจ่ายจริงรายเดือน</span>
+                    <span class="legend-item"><span class="legend-line dashed-sky"></span> ค่าเฉลี่ยเคลื่อนที่ 3 เดือน (3M MA)</span>
+                  </div>
+                </div>
+
+                <!-- SVG Line Chart for Rate -->
+                <div class="kpi-chart-wrapper">
+                  <svg [attr.viewBox]="'0 0 ' + kpiSvgW + ' ' + kpiSvgH" class="kpi-svg">
+                    @for (line of rateGridLines; track line.y) {
+                      <line [attr.x1]="kpiPlotLeft" [attr.y1]="line.y" [attr.x2]="kpiPlotRight" [attr.y2]="line.y" class="kpi-grid-line" />
+                      <text [attr.x]="kpiPlotLeft - 8" [attr.y]="line.y + 4" class="kpi-grid-label">{{ line.label }}</text>
+                    }
+                    <line [attr.x1]="kpiPlotLeft" [attr.y1]="kpiPlotBottom" [attr.x2]="kpiPlotRight" [attr.y2]="kpiPlotBottom" class="kpi-axis-line" />
+                    <text [attr.x]="kpiPlotLeft - 8" [attr.y]="kpiPlotBottom + 4" class="kpi-grid-label">0</text>
+
+                    @if (rateMa3Path) {
+                      <path [attr.d]="rateMa3Path" class="kpi-line-ma3" />
+                    }
+                    @if (rateActualPath) {
+                      <path [attr.d]="rateActualPath" class="kpi-line-rate" />
+                    }
+
+                    @for (pt of ratePoints; track pt.period) {
+                      <g class="kpi-data-point-group" (mouseenter)="setKpiHover(pt)" (mouseleave)="clearKpiHover()">
+                        <circle [attr.cx]="pt.cx" [attr.cy]="pt.actualY" r="4.5" class="kpi-point-circle-rate" />
+                        <text [attr.x]="pt.cx" [attr.y]="kpiPlotBottom + 16" class="kpi-x-label">{{ pt.label }}</text>
+                      </g>
+                    }
+                  </svg>
+                </div>
+
+                <!-- Hover Details -->
+                <div class="kpi-hover-card" [class.active]="activeKpiHover">
+                  @if (activeKpiHover) {
+                    <div class="hover-grid">
+                      <div><small>งวดเดือน</small><strong>{{ period(activeKpiHover.period) }}</strong></div>
+                      <div><small>ยอดจ่ายจริงในเดือน</small><strong class="text-sky">{{ number(activeKpiHover.issue_qty, 2) }} {{ drugUnit }}</strong></div>
+                      <div><small>ค่าเฉลี่ยเคลื่อนที่ 3 เดือน</small><strong class="text-emerald">{{ number(activeKpiHover.moving_avg_issue_3m, 2) }} {{ drugUnit }}</strong></div>
+                      <div><small>ค่าเฉลี่ย 6 เดือน</small><strong>{{ number(activeKpiHover.moving_avg_issue_6m, 2) }} {{ drugUnit }}</strong></div>
+                      <div><small>แนวโน้มเทียบกับ 3M MA</small>
+                        <strong [class.text-rose]="activeKpiHover.issue_qty > activeKpiHover.moving_avg_issue_3m" [class.text-emerald]="activeKpiHover.issue_qty <= activeKpiHover.moving_avg_issue_3m">
+                          {{ activeKpiHover.issue_qty > activeKpiHover.moving_avg_issue_3m ? '↗ สูงกว่าค่าเฉลี่ย' : '↘ ต่ำกว่า/เท่ากับค่าเฉลี่ย' }}
+                        </strong>
+                      </div>
+                    </div>
+                  } @else {
+                    <div class="hover-hint">💡 เลื่อนเมาส์ชี้บนจุดของกราฟเพื่อดูเปรียบเทียบอัตราจ่ายจริงกับค่าเฉลี่ยเคลื่อนที่ 3 เดือน</div>
+                  }
+                </div>
+
+                <!-- Insights Box -->
+                <div class="kpi-summary-pills-row mt-4">
+                  <div class="kpi-insight-card">
+                    <span class="insight-label">อัตราจ่ายเฉลี่ยย้อนหลัง 3 เดือน</span>
+                    <strong class="insight-val">{{ quantities(detail.summary.avg_monthly_issue_quantities_3m) }}</strong>
+                    <small class="text-muted">มูลค่าเฉลี่ย {{ money(detail.summary.avg_monthly_issue_value_3m) }}/เดือน</small>
+                  </div>
+                  <div class="kpi-insight-card">
+                    <span class="insight-label">ความสม่ำเสมอของอุปสงค์</span>
+                    <strong class="insight-val text-emerald">ความต้องการใช้ต่อเนื่อง</strong>
+                    <small class="text-muted">มีบันทึกการเบิกจ่ายทุกเดือนในรอบการวิเคราะห์</small>
+                  </div>
+                  <div class="kpi-insight-card">
+                    <span class="insight-label">สถานะการสำรองเทียบกับอัตราจ่าย</span>
+                    <strong class="insight-val text-sky">{{ detail.summary.months_on_hand !== null ? (number(detail.summary.months_on_hand, 1) + ' เดือน') : 'N/A' }}</strong>
+                    <small class="text-muted">คำนวณจากคงคลังปัจจุบัน ÷ อัตราจ่าย</small>
+                  </div>
+                </div>
+              </div>
+            }
+
+            <!-- 5. TAB: MOS รายเดือน (Monthly MOS Bar Chart) -->
+            @if (activeKpiModal === 'mos') {
+              <div class="kpi-view-container">
+                <div class="kpi-view-header">
+                  <div>
+                    <h4>⏱️ แนวโน้มจำนวนเดือนสำรองรายเดือน (Monthly MOS Trend)</h4>
+                    <p class="kpi-view-desc">
+                      แสดงระดับคงคลังสำรองในแต่ละเดือนเทียบกับเกณฑ์ควบคุมมาตรฐาน: 
+                      <span class="text-emerald font-semibold">เส้นเขียว = เกณฑ์ขั้นต่ำ 1.0 เดือน (30 วัน)</span> · 
+                      <span class="text-amber font-semibold">เส้นส้ม = เกณฑ์ควบคุมสูงสุด 1.5 เดือน (45 วัน)</span>
+                    </p>
+                  </div>
+                  <div class="mos-status-legend">
+                    <span class="mos-legend-dot" style="background: #ef4444;"></span> วิกฤต (&lt;0.5)
+                    <span class="mos-legend-dot" style="background: #f97316;"></span> ยาขาด (&lt;1.0)
+                    <span class="mos-legend-dot" style="background: #10b981;"></span> เหมาะสม (1.0-1.5)
+                    <span class="mos-legend-dot" style="background: #f59e0b;"></span> เฝ้าระวัง (1.5-2.0)
+                    <span class="mos-legend-dot" style="background: #ec4899;"></span> เกินเกณฑ์ (&gt;2.0)
+                  </div>
+                </div>
+
+                <!-- SVG Bar Chart with Control Lines -->
+                <div class="kpi-chart-wrapper">
+                  <svg [attr.viewBox]="'0 0 ' + kpiSvgW + ' ' + kpiSvgH" class="kpi-svg">
+                    @for (line of mosGridLines; track line.y) {
+                      <line [attr.x1]="kpiPlotLeft" [attr.y1]="line.y" [attr.x2]="kpiPlotRight" [attr.y2]="line.y" class="kpi-grid-line" />
+                      <text [attr.x]="kpiPlotLeft - 8" [attr.y]="line.y + 4" class="kpi-grid-label">{{ line.label }}</text>
+                    }
+
+                    <line [attr.x1]="kpiPlotLeft" [attr.y1]="kpiPlotBottom" [attr.x2]="kpiPlotRight" [attr.y2]="kpiPlotBottom" class="kpi-axis-line" />
+                    <text [attr.x]="kpiPlotLeft - 8" [attr.y]="kpiPlotBottom + 4" class="kpi-grid-label">0 ด.</text>
+
+                    <!-- Control Line 1: 1.0 Month -->
+                    <line [attr.x1]="kpiPlotLeft" [attr.y1]="mosTarget1_0_Y" [attr.x2]="kpiPlotRight" [attr.y2]="mosTarget1_0_Y" class="kpi-control-line target-1-0" />
+                    <text [attr.x]="kpiPlotRight - 90" [attr.y]="mosTarget1_0_Y - 5" class="kpi-control-label green">เกณฑ์ 1.0 ด.</text>
+
+                    <!-- Control Line 2: 1.5 Months -->
+                    <line [attr.x1]="kpiPlotLeft" [attr.y1]="mosControl1_5_Y" [attr.x2]="kpiPlotRight" [attr.y2]="mosControl1_5_Y" class="kpi-control-line control-1-5" />
+                    <text [attr.x]="kpiPlotRight - 90" [attr.y]="mosControl1_5_Y - 5" class="kpi-control-label orange">ควบคุม 1.5 ด.</text>
+
+                    @for (bar of mosBars; track bar.period) {
+                      <g class="kpi-bar-group" (mouseenter)="setKpiHover(bar)" (mouseleave)="clearKpiHover()">
+                        @if (bar.hasMos) {
+                          <rect [attr.x]="bar.barX" [attr.y]="bar.barY" [attr.width]="bar.barW" [attr.height]="bar.barH"
+                                [attr.fill]="bar.color" rx="3" class="kpi-bar-mos" />
+                          <text [attr.x]="bar.cx" [attr.y]="bar.barY - 5" text-anchor="middle" font-size="10" font-weight="bold" [attr.fill]="bar.color">
+                            {{ number(bar.rawMos, 1) }}
+                          </text>
+                        } @else {
+                          <text [attr.x]="bar.cx" [attr.y]="kpiPlotBottom - 8" text-anchor="middle" font-size="10" fill="#64748b">-</text>
+                        }
+                        <text [attr.x]="bar.cx" [attr.y]="kpiPlotBottom + 16" class="kpi-x-label">{{ bar.label }}</text>
+                      </g>
+                    }
+                  </svg>
+                </div>
+
+                <!-- Hover Details -->
+                <div class="kpi-hover-card" [class.active]="activeKpiHover">
+                  @if (activeKpiHover) {
+                    <div class="hover-grid">
+                      <div><small>งวดเดือน</small><strong>{{ period(activeKpiHover.period) }}</strong></div>
+                      <div><small>MOS สิ้นเดือน</small><strong [style.color]="activeKpiHover.color">{{ activeKpiHover.hasMos ? (number(activeKpiHover.rawMos, 2) + ' เดือน') : 'N/A' }}</strong></div>
+                      <div><small>เทียบเท่าวันคงคลัง</small><strong>{{ activeKpiHover.hasMos ? ('ประมาณ ' + number(activeKpiHover.rawMos * 30, 1) + ' วัน') : '-' }}</strong></div>
+                      <div><small>สถานะการสำรอง</small><strong [style.color]="activeKpiHover.color">{{ activeKpiHover.statusText }}</strong></div>
+                      <div><small>คงคลังสิ้นเดือน</small><span>{{ number(activeKpiHover.stock_qty, 2) }} {{ drugUnit }}</span></div>
+                    </div>
+                  } @else {
+                    <div class="hover-hint">💡 เลื่อนเมาส์ชี้บนแท่งเพื่อดูจำนวนเดือนสำรอง (MOS) และจำนวนวันคงคลังในแต่ละงวด</div>
+                  }
+                </div>
+
+                <!-- Current Evaluation Note -->
+                <div class="kpi-sub-section mt-4">
+                  <div class="audit-summary-box border-emerald">
+                    <h5>💡 การประเมินสถานะคงคลังปัจจุบัน</h5>
+                    <p class="text-sm">
+                      ยารายการนี้มีอัตราคงคลังปัจจุบัน <strong>{{ detail.summary.months_on_hand !== null ? (number(detail.summary.months_on_hand, 1) + ' เดือน') : 'ไม่สามารถคำนวณได้' }}</strong> 
+                      ({{ detail.summary.days_on_hand !== null ? ('เทียบเท่า ' + number(detail.summary.days_on_hand, 1) + ' วัน') : '-' }})
+                      @if (detail.summary.months_on_hand !== null) {
+                        @if (detail.summary.months_on_hand > 1.5) {
+                          <span class="text-rose"> — สถานะ: <strong>สูงกว่าเกณฑ์ควบคุม 1.5 เดือน</strong> ควรชะลอการสั่งซื้อและติดตามการเบิกใช้</span>
+                        } @else if (detail.summary.months_on_hand < 1.0) {
+                          <span class="text-amber"> — สถานะ: <strong>ต่ำกว่าเกณฑ์ 1.0 เดือน</strong> ควรตรวจนับยอดจริงและวางแผนออกใบสั่งซื้อ</span>
+                        } @else {
+                          <span class="text-emerald"> — สถานะ: <strong>อยู่ในเกณฑ์ควบคุมเหมาะสม (1.0 - 1.5 เดือน)</strong></span>
+                        }
+                      }
+                    </p>
+                  </div>
+                </div>
+              </div>
+            }
+          </div>
+
+          <div class="modal-foot kpi-modal-foot">
+            <div class="text-muted text-xs">
+              💡 ข้อมูลประมวลผลจากฐานข้อมูลโรงพยาบาล ข้อมูลรับ ข้อมูลจ่ายรายล็อต และข้อมูลคงคลัง
+            </div>
+            <button type="button" class="btn" (click)="closeKpiModal()">ปิดหน้าต่าง</button>
+          </div>
+        </div>
+      </div>
+    }
+  }
+</div>

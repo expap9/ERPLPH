@@ -1,0 +1,327 @@
+<div class="page">
+  <header class="page-heading">
+    <div>
+      <div class="eyebrow">ระบบบริหารงบประมาณและแผนการจัดซื้อเวชภัณฑ์</div>
+      <h1>แผนการจัดซื้อยา ประจำปีงบประมาณ {{ data?.fiscal_year }}</h1>
+      <p class="subtitle">
+        {{ data?.period_label }}
+        · คำนวณจากไฟล์แผนจัดซื้อที่ปลอดภัย เปรียบเทียบกับรายการรับยาจริง (RECEIPT)
+      </p>
+    </div>
+    <div class="heading-actions">
+      <span class="file-lock-badge">
+        🔒 แฟ้มแผน: {{ data?.plan_file_name || 'annual_procurement_plan.xlsx' }}
+      </span>
+      <button class="btn secondary" (click)="load()" [disabled]="loading">
+        {{ loading ? 'กำลังประมวลผล…' : '🔄 ปรับปรุงข้อมูล' }}
+      </button>
+      @if (planFile?.can_upload) {
+        <button class="btn primary" (click)="showPlanManager = !showPlanManager">
+          {{ showPlanManager ? 'ปิดหน้าจัดการแผน' : '📤 ตั้งค่าแผนประจำปี' }}
+        </button>
+      }
+    </div>
+  </header>
+
+  @if (showPlanManager && planFile?.can_upload) {
+    <section class="panel plan-manager">
+      <div class="panel-head">
+        <div>
+          <h2>ตั้งค่าแผนการจัดซื้อประจำปีงบประมาณ</h2>
+          <p>
+            อัปโหลดแฟ้ม Excel ของแผนที่อนุมัติแล้ว ระบบจะตรวจความถูกต้องก่อนติดตั้ง
+            และเก็บแผนเดิมไว้ทุกครั้งเพื่อกู้คืนได้ — จำกัดเฉพาะบัญชีที่กำหนดไว้ที่ procurement_plan_admins ใน config.json
+          </p>
+        </div>
+      </div>
+
+      <div class="plan-current">
+        <div><small>แฟ้มที่ใช้อยู่</small><strong>{{ planFile?.plan?.name }}</strong></div>
+        <div><small>จำนวนรายการ</small><strong>{{ number(planFile?.plan?.rows || 0) }}</strong></div>
+        <div><small>แก้ไขล่าสุด</small><strong>{{ planFile?.plan?.modified || '-' }}</strong></div>
+        <div><small>ผู้ใช้ที่ล็อกอิน</small><strong>{{ planFile?.username || '-' }}</strong></div>
+      </div>
+
+      <div class="plan-upload">
+        <label class="plan-file-pick">
+          <input type="file" accept=".xlsx,.xlsm" (change)="pickPlanFile($event)">
+          <span>{{ planFileName || 'เลือกแฟ้มแผน (.xlsx)' }}</span>
+        </label>
+        <button class="btn primary" (click)="uploadPlan()" [disabled]="!planUpload || planBusy">
+          {{ planBusy ? 'กำลังตรวจและติดตั้ง…' : 'ตรวจสอบและติดตั้งแผนนี้' }}
+        </button>
+      </div>
+
+      @if (planMessage) { <div class="notice info">{{ planMessage }}</div> }
+      @if (planError) { <div class="notice error">{{ planError }}</div> }
+
+      <div class="plan-columns">
+        <strong>คอลัมน์ที่แฟ้มต้องมี:</strong>
+        @for (c of planFile?.expected_columns || []; track c) { <code>{{ c }}</code> }
+        <p>บังคับอย่างน้อย <code>WORKING_CODE</code> และ <code>TARGET_BUDGET</code> · คอลัมน์ Q1–Q4 ใช้แยกงบรายไตรมาส</p>
+      </div>
+
+      @if (planFile?.backups?.length) {
+        <div class="plan-history">
+          <strong>แผนเดิมที่เก็บไว้</strong>
+          <table class="doc-table">
+            <thead><tr><th>แฟ้ม</th><th>บันทึกเมื่อ</th><th class="number">ขนาด</th><th></th></tr></thead>
+            <tbody>
+              @for (b of planFile.backups; track b.name) {
+                <tr>
+                  <td class="mono">{{ b.name }}</td>
+                  <td>{{ b.saved_at }}</td>
+                  <td class="number">{{ number(b.size_bytes) }} bytes</td>
+                  <td><button class="btn btn-sm" (click)="restorePlan(b.name)" [disabled]="planBusy">กู้คืน</button></td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+      }
+    </section>
+  }
+
+  @if (error) {
+    <div class="notice error">{{ error }}</div>
+  }
+
+  @if (loading && !data) {
+    <div class="panel loading">กำลังประมวลผลแผนการจัดซื้อยาและข้อมูลการรับยาจริง…</div>
+  }
+
+  @if (data) {
+    <!-- 1. KPI Summary Cards -->
+    <section class="kpi-grid">
+      <article class="kpi-card budget">
+        <span class="kpi-label">งบประมาณตามแผนรวม</span>
+        <strong class="kpi-value">฿{{ money(data.summary.total_plan_budget) }}</strong>
+        <span class="kpi-detail">จำนวนยาตามแผน {{ number(data.summary.total_plan_drugs) }} รายการ</span>
+      </article>
+
+      <article class="kpi-card actual">
+        <span class="kpi-label">มูลค่าจัดซื้อจริง (สะสม)</span>
+        <strong class="kpi-value">฿{{ money(data.summary.actual_purchased_value) }}</strong>
+        <span class="kpi-detail">มียาที่มีการสั่งซื้อจริง {{ number(data.summary.purchased_drugs) }} รายการ</span>
+      </article>
+
+      <article class="kpi-card remaining">
+        <span class="kpi-label">งบประมาณคงเหลือจากแผน</span>
+        <strong class="kpi-value" [class.negative]="data.summary.remaining_budget < 0">
+          ฿{{ money(data.summary.remaining_budget) }}
+        </strong>
+        <span class="kpi-detail">
+          {{ data.summary.remaining_budget >= 0 ? 'คงเหลือในกรอบงบประมาณ' : 'จัดซื้อเกินกรอบงบประมาณ' }}
+        </span>
+      </article>
+
+      <article class="kpi-card percent">
+        <span class="kpi-label">ร้อยละการจัดซื้อตามแผน</span>
+        <strong class="kpi-value">{{ data.summary.percent_purchased }}%</strong>
+        <div class="kpi-progress">
+          <div class="kpi-bar" [style.width.%]="data.summary.percent_purchased > 100 ? 100 : data.summary.percent_purchased"></div>
+        </div>
+      </article>
+    </section>
+
+    <!-- 2. Quarterly Plan vs Actual Breakdown -->
+    <section class="panel quarterly-section">
+      <div class="panel-head">
+        <div>
+          <h2>ความคืบหน้าการจัดซื้อยาแยกรายไตรมาส (Q1 – Q4)</h2>
+          <p>เปรียบเทียบงบประมาณตามแผนและยอดการจัดซื้อจริงในแต่ละช่วงเวลา</p>
+        </div>
+      </div>
+
+      <div class="quarterly-grid">
+        @for (q of data.quarterly; track q.quarter) {
+          <div class="quarter-card">
+            <div class="quarter-header">
+              <span class="quarter-badge">{{ q.quarter }}</span>
+              <strong>{{ q.label }}</strong>
+            </div>
+            <div class="quarter-metrics">
+              <div>
+                <small>แผนงบประมาณ</small>
+                <span>฿{{ money(q.plan_budget) }}</span>
+              </div>
+              <div>
+                <small>จัดซื้อจริง</small>
+                <strong>฿{{ money(q.actual_value) }}</strong>
+              </div>
+            </div>
+            <div class="quarter-footer">
+              <span class="quarter-percent">จัดซื้อแล้ว {{ q.percent }}%</span>
+              <div class="quarter-progress">
+                <div class="quarter-bar" [style.width.%]="q.percent > 100 ? 100 : q.percent"></div>
+              </div>
+            </div>
+          </div>
+        }
+      </div>
+    </section>
+
+    <!-- 3. Problem Dimensions & Analysis by Drug -->
+    <section class="panel problem-section">
+      <div class="panel-head">
+        <div>
+          <h2>วิเคราะห์ปัญหาการจัดซื้อรายตัวยา</h2>
+          <p>ตรวจสอบยาที่มีปัญหาตาม 5 มิติเพื่อการบริหารจัดการและการควบคุมงบประมาณ</p>
+        </div>
+        <div class="table-search">
+          <input
+            type="search"
+            [(ngModel)]="searchQuery"
+            placeholder="ค้นหาชื่อยา หรือรหัสยา…"
+          />
+        </div>
+      </div>
+
+      <!-- Problem Tabs -->
+      <nav class="problem-tabs">
+        <button
+          type="button"
+          class="tab-btn"
+          [class.active]="activeTab === 'over_procurement'"
+          (click)="activeTab = 'over_procurement'"
+        >
+          🚨 ซื้อเกินแผน
+          <span class="tab-badge" [class.alert]="data.problem_counts.over_procurement > 0">
+            {{ number(data.problem_counts.over_procurement) }}
+          </span>
+        </button>
+
+        <button
+          type="button"
+          class="tab-btn"
+          [class.active]="activeTab === 'lagging'"
+          (click)="activeTab = 'lagging'"
+        >
+          ⏳ จัดซื้อต่ำกว่าแผน
+          <span class="tab-badge">
+            {{ number(data.problem_counts.lagging) }}
+          </span>
+        </button>
+
+        <button
+          type="button"
+          class="tab-btn"
+          [class.active]="activeTab === 'price_variance'"
+          (click)="activeTab = 'price_variance'"
+        >
+          📈 ราคาไม่ตรงกับแผน
+          <span class="tab-badge warn">
+            {{ number(data.problem_counts.price_variance) }}
+          </span>
+        </button>
+
+        <button
+          type="button"
+          class="tab-btn"
+          [class.active]="activeTab === 'zero_purchase'"
+          (click)="activeTab = 'zero_purchase'"
+        >
+          ⭕ ยาที่ไม่ซื้อเลย
+          <span class="tab-badge">
+            {{ number(data.problem_counts.zero_purchase) }}
+          </span>
+        </button>
+
+        <button
+          type="button"
+          class="tab-btn"
+          [class.active]="activeTab === 'unplanned'"
+          (click)="activeTab = 'unplanned'"
+        >
+          📋 ยานอกแผน
+          <span class="tab-badge">
+            {{ number(data.problem_counts.unplanned) }}
+          </span>
+        </button>
+
+        <button
+          type="button"
+          class="tab-btn"
+          [class.active]="activeTab === 'all'"
+          (click)="activeTab = 'all'"
+        >
+          📦 ยาทั้งหมดในแผน
+          <span class="tab-badge neutral">
+            {{ number(data.all_items?.length || 0) }}
+          </span>
+        </button>
+      </nav>
+
+      <!-- Dimension Note -->
+      <div class="dimension-note">
+        💡 <strong>คำอธิบาย:</strong> {{ tabNotes[activeTab] }}
+      </div>
+
+      <!-- Drug Table -->
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>รหัสยา</th>
+              <th>ชื่อยา</th>
+              <th class="number">งบประมาณตามแผน</th>
+              <th class="number">ยอดจัดซื้อจริง</th>
+              <th class="number">งบประมาณคงเหลือ</th>
+              <th class="number">% จัดซื้อ</th>
+              <th class="number">ราคาแผน / จริง</th>
+              <th class="number">จำนวนแผน / จริง</th>
+              <th class="number">จำนวนครั้งที่รับ</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (item of currentItems; track item.WORKING_CODE) {
+              <tr>
+                <td>
+                  <a [routerLink]="['/drugs', item.WORKING_CODE]" class="mono drug-link">
+                    {{ item.WORKING_CODE }}
+                  </a>
+                </td>
+                <td>
+                  <strong>{{ item.name }}</strong>
+                </td>
+                <td class="number mono">฿{{ money(item.target_budget) }}</td>
+                <td class="number mono">
+                  <strong [class.highlight-over]="item.target_budget > 0 && item.actual_value > item.target_budget">
+                    ฿{{ money(item.actual_value) }}
+                  </strong>
+                </td>
+                <td class="number mono" [class.negative]="item.remaining_budget < 0">
+                  ฿{{ money(item.remaining_budget) }}
+                </td>
+                <td class="number">
+                  <span class="percent-tag" [class.over]="item.percent_purchased > 100" [class.low]="item.percent_purchased < 25 && item.target_budget > 0">
+                    {{ item.percent_purchased }}%
+                  </span>
+                </td>
+                <td class="number mono text-sm">
+                  <span>฿{{ money(item.unit_cost) }}</span>
+                  <br />
+                  <strong [class.text-warn]="item.unit_cost > 0 && item.actual_unit_cost > item.unit_cost * 1.05">
+                    ฿{{ money(item.actual_unit_cost) }}
+                  </strong>
+                </td>
+                <td class="number mono text-sm">
+                  <span>{{ number(item.target_qty) }}</span>
+                  <br />
+                  <strong>{{ number(item.actual_qty) }}</strong>
+                </td>
+                <td class="number">{{ number(item.receipt_rows) }}</td>
+              </tr>
+            } @empty {
+              <tr>
+                <td colspan="9" class="table-empty">
+                  ไม่พบรายการยาในเงื่อนไขนี้ @if (searchQuery) { (ผลการค้นหาคำว่า "{{ searchQuery }}") }
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    </section>
+  }
+</div>

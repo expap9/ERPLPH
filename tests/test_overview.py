@@ -235,7 +235,8 @@ class OverviewPageTests(unittest.TestCase):
 
     def test_every_page_opens_with_real_shaped_data(self):
         build_warehouse()
-        for path in ("/", "/?group=material", "/?store=2", "/?months=24", "/?group=hire",
+        for path in ("/overview", "/overview?group=material", "/overview?store=2", "/overview?months=24",
+                     "/overview?group=hire",
                      "/items?q=กระดาษ", "/items?group=equipment", "/items",
                      "/items/1000", "/items/9000", "/lists/expiring", "/lists/dormant?group=equipment",
                      "/departments", "/cut-status"):
@@ -245,13 +246,13 @@ class OverviewPageTests(unittest.TestCase):
 
     def test_the_first_page_shows_every_group_and_warns_when_receipts_are_partial(self):
         build_warehouse()
-        body = self.get("/").get_data(as_text=True)
+        body = self.get("/overview").get_data(as_text=True)
         for name in ("ยา", "พัสดุ", "ครุภัณฑ์", "งานจ้างและบริการ", "อาหารและโภชนาการ"):
             self.assertIn(name, body)
         self.assertNotIn("ยอดรับ (ยอดซื้อ/จ้าง) ยังไม่ครบ", body)
         with sqlite3.connect(warehouse_db.DB_PATH) as conn:
             conn.execute("DELETE FROM receipts WHERE store <> '2'")
-        self.assertIn("ยอดรับ (ยอดซื้อ/จ้าง) ยังไม่ครบ", self.get("/").get_data(as_text=True))
+        self.assertIn("ยอดรับ (ยอดซื้อ/จ้าง) ยังไม่ครบ", self.get("/overview").get_data(as_text=True))
 
     def test_an_unknown_item_is_a_404_page_not_a_crash(self):
         build_warehouse()
@@ -259,7 +260,7 @@ class OverviewPageTests(unittest.TestCase):
 
     def test_values_from_the_address_bar_are_refused_not_trusted(self):
         build_warehouse()
-        for path in ("/?group=ไม่มี", "/?store=' OR 1=1--", "/?months=-1",
+        for path in ("/overview?group=ไม่มี", "/overview?store=' OR 1=1--", "/overview?months=-1",
                      "/items?q=' OR '1'='1", "/items?q=" + "ก" * 500, "/lists/อะไรก็ได้"):
             with self.subTest(path=path):
                 self.assertEqual(self.get(path).status_code, 200)
@@ -267,14 +268,14 @@ class OverviewPageTests(unittest.TestCase):
             self.assertEqual(conn.execute("SELECT COUNT(*) FROM items").fetchone()[0], len(ITEMS))
 
     def test_pages_explain_a_missing_warehouse_instead_of_crashing(self):
-        for path in ("/", "/items?q=x", "/items/1000", "/lists/expiring"):
+        for path in ("/overview", "/items?q=x", "/items/1000", "/lists/expiring"):
             with self.subTest(path=path):
                 self.assertIn("ยังไม่มีคลังข้อมูล", self.get(path).get_data(as_text=True))
 
     def test_pages_never_open_the_hospital_database(self):
         build_warehouse()
         with mock.patch("database.connect", side_effect=AssertionError("ห้ามต่อฐานโรงพยาบาล")):
-            for path in ("/", "/items?q=กระดาษ", "/items/1000", "/lists/dormant"):
+            for path in ("/overview", "/items?q=กระดาษ", "/items/1000", "/lists/dormant"):
                 with self.subTest(path=path):
                     self.assertIn(self.get(path).status_code, (200, 404))
 

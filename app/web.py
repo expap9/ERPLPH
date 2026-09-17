@@ -27,7 +27,7 @@ import sqlite3
 import sys
 from urllib.parse import urlencode
 
-from flask import Flask, render_template, request
+from flask import Flask, Response, render_template, request, send_from_directory
 from markupsafe import Markup, escape
 
 BASE_DIR = Path(__file__).resolve().parents[1]
@@ -39,6 +39,7 @@ import department_usage  # noqa: E402
 import departments  # noqa: E402
 import metrics  # noqa: E402
 import overview  # noqa: E402
+import stock5_api  # noqa: E402
 import stores  # noqa: E402
 import warehouse_db  # noqa: E402
 
@@ -59,6 +60,10 @@ THAI_MONTHS = ("ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.",
                "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค.")
 
 app = Flask(__name__, template_folder=str(BASE_DIR / "templates"))
+app.register_blueprint(stock5_api.bp)
+
+#: หน้าจอ Angular ที่ยกมาจาก Stock5 (frontend/ build ออกมาที่นี่) — แบบระบบข้อ 3 "Angular เหมือน Stock5"
+ANGULAR_DIST = BASE_DIR / "app" / "angular_dist"
 
 
 def open_warehouse():
@@ -181,7 +186,7 @@ def _search_text() -> str:
 
 # --------------------------------------------------------------------------- หน้า
 
-@app.route("/")
+@app.route("/overview")
 def overview_page():
     """ภาพรวมทั้งโรงพยาบาล — เทียบได้กับหน้า Dashboard ของ Stock5"""
     months, group, store = _months(), _group(), _store()
@@ -207,7 +212,7 @@ def overview_page():
         values = {"months": months, "group": group, "store": store, **changes}
         if values["months"] == DEFAULT_MONTHS:
             values["months"] = None
-        return "/?" + query(**values)
+        return "/overview?" + query(**values)
 
     order = [found.key for found in categories.GROUPS]
     rows = sorted(table["rows"], key=lambda row: order.index(row["key"]))
@@ -356,8 +361,60 @@ def departments_page():
         deepest=len(department_usage.LEVELS), active="departments")
 
 
+def _angular_index():
+    index = ANGULAR_DIST / "index.html"
+    if not index.is_file():
+        return Response("ยังไม่ได้ build หน้าจอ — รัน build_frontend.bat", status=503,
+                        mimetype="text/plain; charset=utf-8")
+    html = index.read_text(encoding="utf-8")
+    prefix = request.script_root.rstrip("/")
+    if prefix:
+        html = html.replace('<base href="/">', f'<base href="{prefix}/">')
+    response = Response(html, mimetype="text/html")
+    # index.html ชี้ไปที่ไฟล์ bundle ชุดใหม่ทุกครั้งที่ build ถ้าเบราว์เซอร์จำไว้ หน้าจอใหม่จะไม่ขึ้น
+    response.headers["Cache-Control"] = "no-store, max-age=0"
+    return response
+
+
+@app.route("/")
+def angular_root():
+    return _angular_index()
+
+
+@app.route("/<path:asset_path>")
+def angular_assets(asset_path):
+    """ไฟล์ของหน้าจอ Angular และเส้นทางฝั่งเบราว์เซอร์ (เช่น /dashboard /drugs/1021030)"""
+    if asset_path.startswith("api/"):
+        return {"status": "error", "message": "ไม่พบ API นี้"}, 404
+    candidate = ANGULAR_DIST / asset_path
+    if candidate.is_file() and ANGULAR_DIST in candidate.resolve().parents:
+        return send_from_directory(ANGULAR_DIST, asset_path)
+    return _angular_index()
+
+
+def warm_cache():
+    """คำนวณหน้าแดชบอร์ดและทะเบียนค้นหาไว้ก่อน — ครั้งแรกใช้หลายวินาที ไม่ให้ผู้ใช้คนแรกต้องรอ"""
+    connection = open_warehouse()
+    if connection is None:
+        return
+    try:
+        stock5_api._cached(("summary", stock5_api.TARGET_DAYS, stock5_api.USAGE_MONTHS,
+                            stock5_api.EXPIRY_DAYS, None, None),
+                           lambda: stock5_api.build_summary(connection))
+        stock5_api._cached(("catalog", None, None), lambda: stock5_api.build_catalog(connection))
+    finally:
+        connection.close()
+
+
 def main():
-    app.run(host="127.0.0.1", port=8090, debug=False)
+    import threading
+    threading.Thread(target=warm_cache, daemon=True).start()
+    try:
+        from waitress import serve
+    except ImportError:
+        app.run(host="127.0.0.1", port=8090, debug=False, threaded=True)
+    else:
+        serve(app, host="127.0.0.1", port=8090, threads=8)
 
 
 if __name__ == "__main__":

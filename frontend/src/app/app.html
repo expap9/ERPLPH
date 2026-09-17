@@ -1,0 +1,157 @@
+@if (auth.checkingAuth()) {
+  <div class="auth-boot-loading">กำลังตรวจสอบสิทธิ์การใช้งาน...</div>
+} @else if (!auth.currentUser()) {
+  <router-outlet />
+} @else {
+<div class="app-frame" [class.sidebar-collapsed]="sidebarCollapsed">
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="brand-mark" (click)="toggleSidebar()" title="คลิกเพื่อย่อ/ขยายเมนู" style="cursor: pointer;">ERP</div>
+      <div class="brand-info">
+        <strong>ERPLPH ระบบข้อมูลคลังทั้งโรงพยาบาล</strong>
+        <span>ยา · เวชภัณฑ์ · พัสดุ · ครุภัณฑ์ · อาหาร · งานจ้าง</span>
+      </div>
+      <button type="button" class="sidebar-toggle-btn" (click)="toggleSidebar()" [title]="sidebarCollapsed ? 'ขยายแถบเมนู' : 'ย่อแถบเมนู'">
+        {{ sidebarCollapsed ? '▶' : '◀' }}
+      </button>
+    </div>
+
+    <nav aria-label="เมนูหลัก">
+      @for (item of navigation; track item.path) {
+        @if (item.external) {
+          <a [href]="item.path" [title]="item.label + ' (' + item.detail + ')'">
+            <span class="nav-icon">{{ item.icon }}</span>
+            <span class="nav-copy"><strong>{{ item.label }}</strong><small>{{ item.detail }}</small></span>
+          </a>
+        } @else {
+          <a [routerLink]="item.path" routerLinkActive="active" [title]="item.label + ' (' + item.detail + ')'">
+            <span class="nav-icon">{{ item.icon }}</span>
+            <span class="nav-copy"><strong>{{ item.label }}</strong><small>{{ item.detail }}</small></span>
+          </a>
+        }
+      }
+    </nav>
+  </aside>
+
+  <main class="workspace">
+    <header class="topbar">
+      <div class="topbar-left">
+        <button type="button" class="menu-hamburger-btn" (click)="toggleSidebar()" [title]="sidebarCollapsed ? 'ขยายแถบเมนูข้าง' : 'หุบแถบเมนูข้าง'">
+          <span>☰</span>
+        </button>
+        <span class="environment-dot"></span>
+        <strong>ERPLPH · ระบบข้อมูลคลังทั้งโรงพยาบาล</strong>
+      </div>
+      <div class="topbar-actions">
+        <span class="topbar-note">สำหรับใช้งานภายในโรงพยาบาล · อ่านอย่างเดียว ไม่มีส่วนส่งข้อมูลกระทรวง</span>
+
+        <!-- Logged-in user + logout -->
+        @if (auth.currentUser(); as user) {
+          <div class="auth-chip" [title]="'เข้าสู่ระบบในชื่อ ' + user.name">
+            <span class="auth-icon">👤</span>
+            <span class="auth-name">{{ user.name }}</span>
+            @if (user.username !== 'erplph') {
+              <button type="button" class="btn ghost auth-logout-btn" (click)="logout()">ออกจากระบบ</button>
+            }
+          </div>
+        }
+
+        <!-- Theme Switcher -->
+        <div class="theme-switcher" (click)="$event.stopPropagation()">
+          <button 
+            type="button" 
+            class="theme-btn" 
+            (click)="toggleThemeMenu($event)" 
+            [title]="'เลือกธีมสี (ปัจจุบัน: ' + currentThemeLabel + ')'"
+          >
+            <span class="theme-dot" [style.background]="currentThemeColor"></span>
+            <span class="theme-name">{{ currentThemeLabel }}</span>
+            <span class="theme-chevron">▾</span>
+          </button>
+
+          @if (showThemeMenu) {
+            <div class="theme-dropdown">
+              <div class="theme-dropdown-header">เลือกธีมสี (Theme)</div>
+              @for (th of availableThemes; track th.id) {
+                <button 
+                  type="button" 
+                  class="theme-option" 
+                  [class.selected]="currentTheme === th.id" 
+                  (click)="setTheme(th.id)"
+                >
+                  <span class="theme-swatch" [style.background]="th.swatchBg" [style.border-color]="th.swatchBorder">
+                    <span class="swatch-accent" [style.background]="th.accent"></span>
+                  </span>
+                  <span class="theme-label-text">{{ th.label }}</span>
+                  @if (currentTheme === th.id) {
+                    <span class="theme-check">✓</span>
+                  }
+                </button>
+              }
+            </div>
+          }
+        </div>
+        
+        <!-- Red Vibrating Bell Notification Widget -->
+        <div class="bell-container" (click)="$event.stopPropagation()">
+          <button 
+            type="button" 
+            class="bell-btn" 
+            [class.has-alerts]="alertsData?.has_alerts" 
+            [class.shaking]="alertsData?.has_alerts"
+            (click)="toggleAlertsDropdown()"
+            title="การแจ้งเตือนใบสั่งซื้อ (PO) — ERPLPH ยังไม่ได้ดึงใบ PO ที่ยังไม่ได้รับของ"
+          >
+            <span class="bell-icon">🔔</span>
+            @if (alertsData?.total_count > 0) {
+              <span class="bell-badge">{{ alertsData.total_count }}</span>
+            }
+          </button>
+
+          @if (showNotificationDropdown) {
+            <div class="alerts-dropdown">
+              <div class="dropdown-head">
+                <div>
+                  <strong>การแจ้งเตือนใบสั่งซื้อ (PO Alerts)</strong>
+                  <small>{{ alertsData?.total_count || 0 }} รายการที่ต้องติดตาม</small>
+                </div>
+                <button type="button" class="close-btn" (click)="showNotificationDropdown = false">✕</button>
+              </div>
+
+              <div class="dropdown-body">
+                @if (alertsData?.alerts?.length) {
+                  @for (alert of alertsData.alerts; track (alert.po_no + '_' + alert.working_code + '_' + alert.type)) {
+                    <div class="alert-item" [class.critical]="alert.severity === 'critical'" [class.urgent]="alert.severity === 'urgent'">
+                      <div class="alert-item-icon">{{ alert.severity === 'critical' ? '🚨' : '⚠️' }}</div>
+                      <div class="alert-content">
+                        <div class="alert-title-row">
+                          <code class="alert-po">{{ alert.po_no }}</code>
+                          <span class="alert-badge-tag">{{ alert.days }} วัน</span>
+                        </div>
+                        <div class="alert-text">{{ alert.detail }}</div>
+                        <div class="alert-action">
+                          <a [routerLink]="['/drug-search']" [queryParams]="{q: alert.working_code}" (click)="showNotificationDropdown = false" class="alert-link">
+                            เปิดดูยา {{ alert.working_code }} →
+                          </a>
+                        </div>
+                      </div>
+                    </div>
+                  }
+                } @else {
+                  <div class="empty-alerts">
+                    <span class="empty-icon">✓</span>
+                    <p>ไม่มีรายการค้างส่งมอบหรือค้างส่งบริษัท</p>
+                  </div>
+                }
+              </div>
+            </div>
+          }
+        </div>
+      </div>
+    </header>
+    <section class="route-stage">
+      <router-outlet />
+    </section>
+  </main>
+</div>
+}

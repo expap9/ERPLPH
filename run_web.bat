@@ -10,7 +10,7 @@ echo    ERPLPH - open the web pages
 echo    Reads only ERPLPH's own database (warehouse_data\erplph.db).
 echo    It does not connect to the hospital database while serving pages.
 echo.
-echo    Open in a browser:  http://127.0.0.1:8090/
+echo    Open in a browser:  http://127.0.0.1:8090/   (screens like Stock5)
 echo    Press Ctrl+C in this window to stop.
 echo ======================================================================
 echo.

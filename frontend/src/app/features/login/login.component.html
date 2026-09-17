@@ -1,0 +1,44 @@
+<div class="login-shell">
+  <form class="login-card panel" (ngSubmit)="submit()">
+    <div class="login-brand">
+      <div class="brand-mark">Rx</div>
+      <div>
+        <strong>ระบบข้อมูลคลังยา</strong>
+        <span>เข้าสู่ระบบด้วยบัญชีห้องยาที่ใช้อยู่เดิม</span>
+      </div>
+    </div>
+
+    @if (error) {
+      <div class="notice error">{{ error }}</div>
+    }
+
+    <div class="field">
+      <label for="login-username">ชื่อผู้ใช้</label>
+      <input
+        id="login-username"
+        type="text"
+        name="username"
+        autocomplete="username"
+        [(ngModel)]="username"
+        [disabled]="submitting"
+      />
+    </div>
+    <div class="field">
+      <label for="login-password">รหัสผ่าน</label>
+      <input
+        id="login-password"
+        type="password"
+        name="password"
+        autocomplete="current-password"
+        [(ngModel)]="password"
+        [disabled]="submitting"
+      />
+    </div>
+
+    <button type="submit" class="btn primary login-submit" [disabled]="submitting">
+      {{ submitting ? 'กำลังเข้าสู่ระบบ...' : 'เข้าสู่ระบบ' }}
+    </button>
+
+    <p class="login-hint">ใช้ชื่อผู้ใช้และรหัสผ่านเดียวกับที่ใช้เข้าโปรแกรมห้องยา</p>
+  </form>
+</div>

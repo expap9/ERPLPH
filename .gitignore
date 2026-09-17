@@ -16,3 +16,6 @@ frontend/node_modules/
 
 # ข้อมูลที่ผู้ใช้บันทึกเอง ดึงคืนไม่ได้ ต้องสำรองแยก ไม่ขึ้น git
 work_data/
+
+# Angular build cache
+frontend/.angular/

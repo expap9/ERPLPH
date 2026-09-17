@@ -1,0 +1,711 @@
+<div class="page">
+  <header class="page-heading">
+    @if (viewMode === 'purchasing') {
+      <div>
+        <div class="eyebrow">งานบริหารการจัดซื้อและคลังเวชภัณฑ์</div>
+        <h1>ส่วนของด้านจัดซื้อ</h1>
+        <p>
+          ตารางวิเคราะห์เพื่อการบริหารและตัดสินใจสั่งซื้อ ใช้ได้กับทุกประเภทของ
+        </p>
+      </div>
+      <div class="header-actions">
+        <a class="btn secondary" routerLink="/dashboard">📊 ไปที่ Dashboard ภาพรวม</a>
+        <button class="btn primary" (click)="load()" [disabled]="loading || syncingLive">{{ loading ? 'กำลังจัดทำรายงาน…' : 'ประมวลผลใหม่' }}</button>
+        @if (!readOnly) {
+          <button class="btn accent live-sync-btn" (click)="liveSync()" [disabled]="syncingLive || loading">{{ syncingLive ? 'กำลังดึงข้อมูล...' : 'ดึงข้อมูลสำหรับแดชบอร์ด' }}</button>
+        }
+      </div>
+    } @else {
+      <div>
+        <div class="eyebrow">รายงานภาพรวมผู้บริหาร</div>
+        <h1>Dashboard ภาพรวมคลังทั้งโรงพยาบาล</h1>
+        <p>
+          สรุปมูลค่าคงคลัง ระยะเวลาคงคลัง (MOS) แนวโน้มการรับ-จ่าย สัดส่วนมูลค่าตามสถานะ และหน่วยงานที่มีการเบิกจ่ายสูงสุด
+        </p>
+      </div>
+      <div class="header-actions">
+        <a class="btn primary" routerLink="/purchasing">🛒 ไปที่ส่วนของด้านจัดซื้อ (8 ตาราง)</a>
+        <button class="btn secondary" (click)="load()" [disabled]="loading || syncingLive">{{ loading ? 'กำลังจัดทำรายงาน…' : 'ประมวลผลใหม่' }}</button>
+        @if (!readOnly) {
+          <button class="btn accent live-sync-btn" (click)="liveSync()" [disabled]="syncingLive || loading">{{ syncingLive ? 'กำลังดึงข้อมูล...' : 'ดึงข้อมูลสำหรับแดชบอร์ด' }}</button>
+          <a class="btn" href="api/monitor/sql-preview" target="_blank" rel="noopener">ดูคำสั่งดึงข้อมูล</a>
+        }
+        @if (autoSyncStatus) {
+          <div class="auto-sync-badge" [class.syncing]="autoSyncStatus.is_syncing" [class.error]="autoSyncStatus.last_status === 'error'" [title]="autoSyncStatus.enabled === false ? (autoSyncStatus.last_message || 'ไม่ได้ดึงข้อมูลอัตโนมัติ') : 'ดึงข้อมูลอัตโนมัติทุก ' + syncHours(autoSyncStatus) + ' (รอบถัดไป: ' + formatNextSync(autoSyncStatus.next_run) + ')'">
+            <span class="sync-dot"></span>
+            @if (autoSyncStatus.enabled === false) {
+              <!-- เว็บรายงานอ่านอย่างเดียวไม่ดึงข้อมูลเอง ไม่มีรอบให้แสดง เดิมขึ้นว่า "ทุก - (ถัดไป กำลังคำนวณ...)" -->
+              <span>{{ autoSyncStatus.last_message || 'ไม่ได้ดึงข้อมูลอัตโนมัติ' }}</span>
+            } @else if (autoSyncStatus.is_syncing) {
+              <span>กำลังดึงข้อมูลอัตโนมัติ...</span>
+            } @else if (autoSyncStatus.last_status === 'error') {
+              <span>Auto-Sync ไม่สำเร็จ (รอ 5 นาที)</span>
+            } @else {
+              <span>Auto-Sync ทุก {{ syncHours(autoSyncStatus) }} (ถัดไป {{ formatNextSync(autoSyncStatus.next_run) }})</span>
+            }
+          </div>
+        }
+      </div>
+    }
+  </header>
+
+  <!-- ERPLPH: เลือกประเภทของและคลัง (Stock5 ดูได้แค่ยาของคลังยา) -->
+  <section class="panel scope-bar">
+    <label>ประเภทของ
+      <select [ngModel]="scopeGroup" (ngModelChange)="setScope($event, scopeStore)">
+        <option value="">ทุกประเภท — ยา เวชภัณฑ์ พัสดุ ครุภัณฑ์ อาหาร งานจ้าง</option>
+        @for (option of scopeOptions.groups; track option.key) {
+          <option [value]="option.key">{{ option.name }}</option>
+        }
+      </select>
+    </label>
+    <label>คลัง
+      <select [ngModel]="scopeStore" (ngModelChange)="setScope(scopeGroup, $event)">
+        <option value="">ทุกคลังรวมกัน (ยอดจ่ายไม่นับการโอนระหว่างคลัง)</option>
+        @for (option of scopeOptions.stores; track option.code) {
+          <option [value]="option.code">{{ option.name }} ({{ option.code }})</option>
+        }
+      </select>
+    </label>
+    @if (data?.meta?.scope?.label) { <span class="scope-label">กำลังดู: <strong>{{ data.meta.scope.label }}</strong></span> }
+  </section>
+
+  @if (data && data.meta && data.meta.receipts_complete === false) {
+    <div class="notice error">ยอดรับ (ซื้อ/จ้าง) ยังไม่ครบ — คลังข้อมูลยังมีใบรับเฉพาะคลังยา ใบรับของคลังพัสดุ ห้องชันสูตร คลังโภชนาการ และงานจ้างจะเข้ามาหลังรัน pull_warehouse_data.bat · ยอดจ่าย คงคลัง และหน่วยเบิก ครบทุกคลังแล้ว</div>
+  }
+
+  @if (syncMessage) { <div class="notice info">{{ syncMessage }}</div> }
+
+  <!-- ================= UNCONDITIONAL PROCUREMENT BUDGET PLAN & QUARTERLY PROGRESS ================= -->
+  @if (viewMode === 'dashboard' && procurementData?.summary) {
+    <section class="panel procurement-dash-card">
+      <div class="procurement-dash-header">
+        <div>
+          <div class="procurement-dash-badge">📋 แผนการจัดซื้อยา ประจำปีงบประมาณ {{ procurementData.fiscal_year }}</div>
+          <h2>ความก้าวหน้าการจัดซื้อยาเทียบกับแผนงบประมาณ</h2>
+          <p>{{ procurementData.period_label }} · สรุปเปรียบเทียบกรอบงบประมาณตามแผนและยอดการจัดซื้อจริง</p>
+        </div>
+        <div class="procurement-dash-actions">
+          <a class="btn primary btn-sm" routerLink="/procurement-plan">
+            ดูรายละเอียดแผนจัดซื้อทั้งหมดและรายไตรมาส Q1–Q4 →
+          </a>
+        </div>
+      </div>
+
+      <!-- 4 KPI Summary Cards -->
+      <div class="procurement-kpi-row">
+        <article class="proc-kpi-item">
+          <span class="proc-kpi-label">งบประมาณตามแผนรวม</span>
+          <strong class="proc-kpi-val">{{ money(procurementData.summary.total_plan_budget) }}</strong>
+          <small class="proc-kpi-sub">จำนวนยาตามแผน {{ number(procurementData.summary.total_plan_drugs) }} รายการ</small>
+        </article>
+
+        <article class="proc-kpi-item">
+          <span class="proc-kpi-label">มูลค่าจัดซื้อจริง (สะสม)</span>
+          <strong class="proc-kpi-val text-cyan">{{ money(procurementData.summary.actual_purchased_value) }}</strong>
+          <small class="proc-kpi-sub">มียาที่มีการสั่งซื้อจริง {{ number(procurementData.summary.purchased_drugs) }} รายการ</small>
+        </article>
+
+        <article class="proc-kpi-item">
+          <span class="proc-kpi-label">งบประมาณคงเหลือจากแผน</span>
+          <strong class="proc-kpi-val" [class.text-rose]="procurementData.summary.remaining_budget < 0" [class.text-emerald]="procurementData.summary.remaining_budget >= 0">
+            {{ money(procurementData.summary.remaining_budget) }}
+          </strong>
+          <small class="proc-kpi-sub">
+            {{ procurementData.summary.remaining_budget >= 0 ? '✓ คงเหลือในกรอบงบประมาณ' : '⚠️ จัดซื้อเกินกรอบงบประมาณ' }}
+          </small>
+        </article>
+
+        <article class="proc-kpi-item">
+          <span class="proc-kpi-label">ร้อยละการจัดซื้อตามแผน</span>
+          <strong class="proc-kpi-val text-amber">{{ procurementData.summary.percent_purchased }}%</strong>
+          <div class="proc-progress-track">
+            <div class="proc-progress-fill" [style.width.%]="procurementData.summary.percent_purchased > 100 ? 100 : procurementData.summary.percent_purchased"></div>
+          </div>
+        </article>
+      </div>
+
+      <!-- 4 Quarterly Cards (Q1–Q4) -->
+      @if (procurementData.quarterly?.length) {
+        <div class="proc-quarterly-wrapper">
+          <div class="proc-quarterly-title">
+            <strong>ความคืบหน้าการจัดซื้อยาแยกรายไตรมาส (Q1 – Q4)</strong>
+          </div>
+          <div class="quarterly-grid">
+            @for (q of procurementData.quarterly; track q.quarter) {
+              <div class="quarter-card">
+                <div class="quarter-header">
+                  <span class="quarter-badge">{{ q.quarter }}</span>
+                  <strong>{{ q.label }}</strong>
+                </div>
+                <div class="quarter-metrics">
+                  <div>
+                    <small>แผนงบประมาณ</small>
+                    <span>{{ money(q.plan_budget) }}</span>
+                  </div>
+                  <div>
+                    <small>จัดซื้อจริง</small>
+                    <strong>{{ money(q.actual_value) }}</strong>
+                  </div>
+                </div>
+                <div class="quarter-footer">
+                  <span class="quarter-percent">จัดซื้อแล้ว {{ q.percent }}%</span>
+                  <div class="quarter-progress">
+                    <div class="quarter-bar" [style.width.%]="q.percent > 100 ? 100 : q.percent"></div>
+                  </div>
+                </div>
+              </div>
+            }
+          </div>
+        </div>
+      }
+    </section>
+  }
+
+  @if (error) { <div class="notice error">{{ error }}</div> }
+  @if (loading && !data) { <div class="panel loading">กำลังวิเคราะห์ข้อมูลรับ ข้อมูลจ่าย และข้อมูลคงคลังทุกคลัง…</div> }
+
+  @if (!data && !loading) {
+    <div class="panel empty-state">
+      <div class="empty-icon">📊</div>
+      @if (readOnly) {
+        <h2>ยังไม่มีชุดข้อมูลสำหรับเผยแพร่</h2>
+        <p>กรุณาให้ผู้ดูแลนำชุดข้อมูลแดชบอร์ดที่ดึงครบแล้วมาติดตั้งบนเซิร์ฟเวอร์ เว็บรายงานไม่เชื่อมต่อฐานข้อมูลโดยตรง</p>
+      } @else {
+        <h2>ยังไม่มีข้อมูลจากการดึงฐานข้อมูล SQL Server</h2>
+        <p>ระบบถูกตั้งค่าให้วิเคราะห์จากข้อมูลจริงที่ดึงจาก SQL Server Live DB เท่านั้น (ไม่มีการใช้ข้อมูลจำลองจากภายนอก)</p>
+        <button class="btn accent live-sync-btn" style="margin-top: 14px;" (click)="liveSync()" [disabled]="syncingLive">🔄 กดเพื่อดึงข้อมูลสดจาก SQL Server ทันที</button>
+      }
+    </div>
+  }
+
+  @if (data) {
+    @if (data.meta.read_only) { <div class="notice info"><strong>ERPLPH — อ่านอย่างเดียว</strong> ข้อมูลทุกคลังจากคลังข้อมูล ERPLPH ถึง {{ data.meta.as_of_thai }} (สำเนาฐานข้อมูลที่คัดลอกวันละครั้ง) ไม่มีส่วนส่งข้อมูลกระทรวง</div> }
+    @if (!data.meta.analytics_only) {
+      <div class="notice info">
+        ขณะนี้ยังแสดงแฟ้มเดิม กรุณาดึงข้อมูลสำหรับแดชบอร์ดหนึ่งรอบเมื่อเชื่อมวงโรงพยาบาล เพื่อใช้จำนวนจ่ายรายล็อตและต้นทุนที่บันทึกจริง
+      </div>
+    }
+
+    <!-- ================= PURCHASING VIEW ================= -->
+    @if (viewMode === 'purchasing') {
+      <section class="grid-4" style="margin-bottom: 20px;">
+        <article class="kpi clickable" (click)="selectTable('backorder')">
+          <span>ขาดจ่าย (ค้างเบิก ย้อนหลัง 1 เดือน)</span>
+          <strong style="color: #fb7185;">{{ number(data.tables?.backorder?.length || 0) }}</strong>
+          <small>ERPLPH ยังไม่ได้ดึงจำนวนขอเบิก</small>
+        </article>
+
+        <article class="kpi clickable" (click)="selectTable('excess')">
+          <span>คงคลังเกินเกณฑ์</span>
+          <strong>{{ number(data.tables?.excess?.length || 0) }}</strong>
+          <small>มูลค่าส่วนเกิน {{ money(data.kpis?.excess_value || 0) }}</small>
+        </article>
+
+        <article class="kpi clickable" (click)="selectTable('expiry')">
+          <span>ใกล้หมดอายุ / หมดอายุแล้ว</span>
+          <strong style="color: #fbbf24;">{{ number(data.tables?.expiry?.length || 0) }}</strong>
+          <small>ในระยะ {{ expiryDays }} วัน</small>
+        </article>
+
+        <article class="kpi clickable" (click)="selectTable('shortage')">
+          <span>อาจมีไม่เพียงพอ</span>
+          <strong style="color: #38bdf8;">{{ number(data.tables?.shortage?.length || 0) }}</strong>
+          <small>MOS น้อยกว่าเกณฑ์สำรอง</small>
+        </article>
+      </section>
+
+      <!-- Action Tables Hero -->
+      <section class="panel" id="drug-review-table">
+        <div class="panel-head">
+          <div>
+            <h2>{{ currentDefinition.label }}</h2>
+            <p>{{ currentDefinition.note }}</p>
+          </div>
+          <div class="table-search">
+            <input
+              type="search"
+              [(ngModel)]="tableSearch"
+              placeholder="ค้นหาในตารางนี้ (รหัส, ชื่อรายการ, เลขที่ใบ, แผนก, ล็อต)…"
+            />
+          </div>
+        </div>
+
+        <div class="panel-body">
+          <div class="tabs">
+            @for (key of tableKeys; track key) {
+              <button
+                type="button"
+                class="tab"
+                [class.active]="selectedTable === key"
+                (click)="selectTable(key)"
+              >
+                {{ definitions[key].label }}
+                @if (data.tables?.[key]?.length) {
+                  <span class="tab-badge-mini">({{ number(data.tables[key].length) }})</span>
+                }
+              </button>
+            }
+          </div>
+        </div>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                @for (column of currentDefinition.columns; track column.key) {
+                  <th
+                    class="sortable"
+                    [class.number]="isNumber(column.type)"
+                    [class.sorted]="sortKey === column.key"
+                    (click)="sortBy(column)"
+                  >
+                    {{ column.label }}{{ sortIndicator(column) }}
+                  </th>
+                }
+              </tr>
+            </thead>
+            <tbody>
+              @for (row of rows; track $index) {
+                <tr>
+                  @for (column of currentDefinition.columns; track column.key) {
+                    <td [class.number]="isNumber(column.type)">
+                      @if (column.type === 'code' || column.type === 'name') {
+                        <a class="drug-link" routerLink="/drug-search" [queryParams]="{ q: row.WORKING_CODE }">
+                          {{ cell(row, column) }}
+                        </a>
+                      } @else if (column.type === 'status') {
+                        <span class="badge bad">{{ cell(row, column) }}</span>
+                      } @else {
+                        {{ cell(row, column) }}
+                      }
+                    </td>
+                  }
+                </tr>
+              } @empty {
+                <tr>
+                  <td class="empty" [attr.colspan]="currentDefinition.columns.length">
+                    ไม่พบรายการตามเกณฑ์ที่กำหนด @if (tableSearch) { (คำค้น: "{{ tableSearch }}") }
+                  </td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+
+        <div class="table-note">{{ currentDefinition.note }}</div>
+      </section>
+    }
+
+    <!-- ================= DASHBOARD VIEW ================= -->
+    @if (viewMode === 'dashboard') {
+      @if (data.kpis.unit_pending_count) {
+        <div class="notice error">มี {{ number(data.kpis.unit_pending_count) }} รายการที่หน่วยหรือยอดจ่ายรายล็อตยังสอบทานไม่ผ่าน จึงพัก MOS รายยาและมูลค่าส่วนเกิน มูลค่าคงคลังกลุ่มนี้ {{ money(data.kpis.unit_pending_value) }} ตรวจสาเหตุรายรายการด้านล่าง <button class="btn" (click)="goToKpiTable('unit_pending')">ดูรายการรอตรวจสอบ</button></div>
+      }
+      @if (data.kpis.cost_reference_rows) {
+        <div class="notice error">ข้อมูลจ่าย {{ number(data.kpis.cost_reference_rows) }} บรรทัดใช้ราคาอ้างอิงล็อตปัจจุบัน ยังไม่ยืนยันล็อตที่จ่ายจริง มูลค่าจ่ายที่แสดงจึงยังใช้ยืนยันต้นทุนย้อนหลังไม่ได้ และยังไม่ใช้คำนวณ MOS ภาพรวม ส่วน MOS รายยาคำนวณได้เมื่อหน่วยจำนวนตรงกัน</div>
+      }
+
+
+      <section class="grid-4">
+        <article class="kpi clickable" (click)="goToKpiTable('top_value')" title="กดเพื่อดูรายการที่ประกอบเป็นมูลค่าคงคลังนี้">
+          <span>มูลค่าคงคลัง ณ วันที่รายงาน</span>
+          <strong>{{ money(data.kpis.stock_value) }}</strong>
+          <small>{{ number(data.kpis.inventory_drugs) }} รายการ · {{ number(data.kpis.inventory_lots) }} รุ่นการผลิต</small>
+        </article>
+
+        <article class="kpi clickable" (click)="goToKpiTable('excess')" title="กดเพื่อดูรายการที่คงคลังเกินเกณฑ์">
+          <span>MOS แบบมูลค่า — {{ data.kpis.system_mos === null ? 'เฉพาะรายการที่ตรวจผ่าน' : 'ทั้งคลัง' }}</span>
+          <strong>{{ (data.kpis.system_mos ?? data.kpis.verified_scope_mos) == null ? 'ยังคำนวณไม่ได้' : number(data.kpis.system_mos ?? data.kpis.verified_scope_mos, 1) + ' เดือน' }}</strong>
+          <small>
+            @if ((data.kpis.system_stock_days ?? data.kpis.verified_scope_stock_days) != null) {
+              ประมาณ {{ number(data.kpis.system_stock_days ?? data.kpis.verified_scope_stock_days, 1) }} วัน · เกณฑ์ {{ number(data.kpis.target_days) }} วัน<br>
+            }
+            @if (data.kpis.system_mos === null && data.kpis.verified_scope_mos != null) {
+              ครอบคลุม {{ number(data.kpis.verified_scope_stock_percent, 1) }}% ของมูลค่าคงคลัง<br>
+              ไม่รวม {{ number(data.kpis.verified_scope_excluded_drugs) }} รหัสที่รอตรวจสอบ
+            }
+          </small>
+        </article>
+
+        <article class="kpi rose clickable" (click)="goToKpiTable('non_moving')" title="กดเพื่อดูรายการที่ไม่พบประวัติการเบิกจ่าย">
+          <span>รายการที่ไม่พบประวัติการเบิกจ่าย</span>
+          <strong>{{ money(data.kpis.non_moving_value) }}</strong>
+          <small>{{ number(data.kpis.non_moving_drugs) }} รายการที่ต้องตรวจสอบ</small>
+        </article>
+
+        <article class="kpi amber clickable" (click)="goToKpiTable(data.kpis.expired_lots > 0 ? 'already_expired' : 'expiry')" title="กดเพื่อดูรายการใกล้หมดอายุ / หมดอายุแล้ว">
+          <span>ใกล้หมดอายุ / หมดอายุแล้ว</span>
+          <strong>{{ money(data.kpis.expiry_selected_value) }}</strong>
+          <small>
+            ใกล้หมด {{ number(data.kpis.expiry_selected_lots) }} รุ่น
+            @if (data.kpis.expired_lots > 0) {
+              · <span style="color:#f43f5e;font-weight:700">หมดอายุแล้ว {{ number(data.kpis.expired_lots) }} รุ่น</span>
+            }
+          </small>
+        </article>
+      </section>
+
+      <!-- 12-Month Historical MOS Trend Chart with 1.5-Month Control Line -->
+      <section class="panel mos-12m-panel" style="margin-bottom: 20px;">
+        <div class="panel-head mos-head-container">
+          <div class="mos-head-title">
+            <h2>📈 กราฟ MOS รายเดือน ย้อนหลัง 12 เดือน (เส้นควบคุม 1.5 เดือน)</h2>
+            <p>ติดตามแนวโน้มจำนวนเดือนสำรอง (Months of Stock) 12 เดือนย้อนหลัง พร้อมเส้นควบคุมมาตรฐานระดับ 1.5 เดือน</p>
+          </div>
+
+          <div class="mos-head-actions">
+            <!-- กรอบข้อความแสดงค่าเฉลี่ย MOS 12 เดือน (ทศนิยม 2 ตำแหน่ง) -->
+            <div class="mos-avg-callout-card">
+              <div class="avg-label-line">
+                <span class="avg-icon">📊</span>
+                <span class="avg-label">ค่าเฉลี่ย MOS 12 เดือน</span>
+              </div>
+              <div class="avg-number-line">
+                <strong class="avg-val">{{ avg12MosFormatted }}</strong>
+                <span class="avg-unit">เดือน</span>
+              </div>
+              <div class="avg-badge" [class.badge-ok]="isAvg12InControl" [class.badge-pink]="avg12MosNumber > controlMos" [class.badge-yellow]="avg12MosNumber < 0.5">
+                {{ avg12ControlStatusText }}
+              </div>
+            </div>
+
+            <!-- Chart Legends -->
+            <div class="chart-legend">
+              <span class="legend-item"><i style="background:#fde047;"></i>&lt; 0.5 ด. (สีเหลืองอ่อน)</span>
+              <span class="legend-item"><i style="background:#86efac;"></i>0.5 - 1.5 ด. (สีเขียวอ่อน)</span>
+              <span class="legend-item"><i style="background:#f472b6;"></i>&gt; 1.5 ด. (สีชมพูอ่อน)</span>
+              <span class="legend-item control-legend"><i style="background:#f43f5e; border-top: 2px dashed #f43f5e; height: 0; width: 22px;"></i>เกณฑ์ควบคุม 1.5 เดือน</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel-body">
+          @if (mos12ChartItems.length) {
+            <div class="svg-chart-wrapper">
+              <svg [attr.viewBox]="'0 0 ' + chart12Width + ' ' + chart12Height" class="monitor-svg mos-svg-compact">
+                <!-- Baseline 0 -->
+                <line [attr.x1]="plot12Left" [attr.y1]="plot12Bottom" [attr.x2]="plot12Right" [attr.y2]="plot12Bottom" stroke="rgba(148,163,184,0.3)" stroke-width="1.5" />
+                <text [attr.x]="plot12Left - 8" [attr.y]="plot12Bottom + 3" fill="#64748b" text-anchor="end" font-size="9">0 ด.</text>
+
+                <!-- Red Dashed Control Line at 1.5 months -->
+                <line [attr.x1]="plot12Left" [attr.y1]="controlMosY" [attr.x2]="plot12Right" [attr.y2]="controlMosY" stroke="#f43f5e" stroke-width="1.8" stroke-dasharray="5 4" />
+                <rect [attr.x]="plot12Right - 125" [attr.y]="controlMosY - 17" width="125" height="15" rx="3" fill="rgba(244,63,94,0.18)" stroke="rgba(244,63,94,0.5)" stroke-width="1" />
+                <text [attr.x]="plot12Right - 62" [attr.y]="controlMosY - 6" fill="#f43f5e" text-anchor="middle" font-size="8.5" font-weight="700">เกณฑ์ควบคุม 1.50 เดือน</text>
+
+                <!-- Monthly Bars -->
+                @for (item of mos12ChartItems; track item.period) {
+                  <g class="svg-bar-group">
+                    <title>{{ item.label }} | MOS: {{ item.hasMos ? number(item.rawMos, 2) + ' เดือน' : 'ไม่มีข้อมูล' }} | คงคลัง: {{ money(item.end_stock) }} | ยอดจ่าย: {{ money(item.issue_value) }}</title>
+                    @if (item.hasMos) {
+                      <rect [attr.x]="item.barX" [attr.y]="item.barY" [attr.width]="item.barW" [attr.height]="item.barH" [attr.fill]="item.color" opacity="0.9" rx="3" />
+                      <text [attr.x]="item.cx" [attr.y]="item.barY - 5" fill="#f8fafc" text-anchor="middle" font-size="9" font-weight="700">
+                        {{ number(item.rawMos, 2) }}
+                      </text>
+                    }
+                    <text [attr.x]="item.cx" [attr.y]="plot12Bottom + 15" [attr.fill]="item.partial ? '#38bdf8' : '#94a3b8'" [attr.font-weight]="item.partial ? '700' : 'normal'" text-anchor="middle" font-size="9">
+                      {{ item.label }}
+                    </text>
+                  </g>
+                }
+              </svg>
+            </div>
+            <div class="chart-summary-footer">
+              <span>เกณฑ์ควบคุมคงคลัง: <strong style="color: #f43f5e;">1.50 เดือน (45 วัน)</strong></span>
+              <span>MOS เดือนล่าสุด: <strong>{{ latestMosText() }}</strong></span>
+              <span>ค่าเฉลี่ย 12 เดือน: <strong style="color: #38bdf8; font-size: 13px;">{{ avg12MosFormatted }} เดือน</strong></span>
+            </div>
+          } @else {
+            <div class="empty">ไม่มีข้อมูลแนวโน้ม MOS ย้อนหลัง</div>
+          }
+          @if (data.meta.trend_mos_available === false) {
+            <div class="notice error" style="margin-top:10px">{{ data.meta.trend_mos_note }}</div>
+          }
+        </div>
+      </section>
+
+      <!-- Visual Charts: MOS Trend & Monthly Receipt vs Issue -->
+      <section class="grid-2 charts-grid">
+        <div class="panel">
+          <div class="panel-head">
+            <div>
+              <h2>การกระจายตัวของจำนวนเดือนสำรอง (MOS)</h2>
+              <p>จำแนกมูลค่าคงคลังตามสถานะ เพื่อดูสัดส่วนที่ไม่เคลื่อนไหว เกินเกณฑ์ หรืออยู่ในเกณฑ์</p>
+            </div>
+          </div>
+          <div class="panel-body">
+            <div class="bucket-list">
+              @for (bucket of data.stock_buckets; track bucket.key) {
+                <div [class.clickable]="bucketTableMap[bucket.key]" (click)="goToBucketTable(bucket.key)">
+                  <i [style.background]="bucket.color"></i>
+                  <span>{{ bucket.label }}</span>
+                  <strong>{{ money(bucket.value) }}</strong>
+                </div>
+              }
+            </div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head">
+            <div>
+              <h2>แนวโน้มมูลค่าการรับและการจ่ายรายเดือน</h2>
+              <p>เปรียบเทียบมูลค่ารับเข้าคลังและมูลค่าจ่ายออก เพื่อดูความสมดุลของกระแสเวชภัณฑ์</p>
+            </div>
+            <div class="chart-legend">
+              <span class="legend-item"><i style="background:#38bdf8;"></i>รับ (ซื้อ/จ้าง)</span>
+              <span class="legend-item"><i style="background:#f97316;"></i>จ่าย</span>
+            </div>
+          </div>
+          <div class="panel-body">
+            @if (chartItems.length) {
+              <div class="svg-chart-wrapper">
+                <svg [attr.viewBox]="'0 0 ' + chartWidth + ' ' + chartHeight" class="monitor-svg">
+                  @for (gl of cashGridLines; track gl.val) {
+                    <line [attr.x1]="plotLeft" [attr.y1]="gl.y" [attr.x2]="plotRight" [attr.y2]="gl.y" stroke="rgba(148,163,184,0.12)" stroke-width="1" stroke-dasharray="3 3" />
+                    <text [attr.x]="plotLeft - 8" [attr.y]="gl.y + 3" fill="#64748b" text-anchor="end" font-size="9.5">{{ gl.label }}</text>
+                  }
+                  <line [attr.x1]="plotLeft" [attr.y1]="plotBottom" [attr.x2]="plotRight" [attr.y2]="plotBottom" stroke="rgba(148,163,184,0.3)" stroke-width="1.5" />
+                  <text [attr.x]="plotLeft - 8" [attr.y]="plotBottom + 3" fill="#64748b" text-anchor="end" font-size="9.5">฿0</text>
+                  @for (item of chartItems; track item.period) {
+                    <g class="svg-bar-group">
+                      <title>{{ item.label }} | รับ: {{ money(item.receipt_value) }} | จ่าย: {{ money(item.issue_value) }}</title>
+                      <rect [attr.x]="item.rX" [attr.y]="item.rY" [attr.width]="item.rW" [attr.height]="item.rH" fill="#38bdf8" rx="2" />
+                      <rect [attr.x]="item.iX" [attr.y]="item.iY" [attr.width]="item.iW" [attr.height]="item.iH" fill="#f97316" rx="2" />
+                      <text [attr.x]="item.cx" [attr.y]="plotBottom + 16" [attr.fill]="item.partial ? '#38bdf8' : '#94a3b8'" [attr.font-weight]="item.partial ? '700' : 'normal'" text-anchor="middle" font-size="9.5">
+                        {{ item.label }}
+                      </text>
+                    </g>
+                  }
+                </svg>
+              </div>
+              <div class="chart-summary-footer">
+                <span>มูลค่าจ่ายเฉลี่ย: <strong>{{ money(data.kpis.avg_monthly_issue_value) }}/เดือน</strong></span>
+                <span>สัดส่วนรับ/จ่าย: <strong>{{ number(data.kpis.receipt_issue_ratio, 1) }} เท่า</strong></span>
+              </div>
+            } @else {
+              <div class="empty">ไม่มีข้อมูลแนวโน้มรายเดือน</div>
+            }
+          </div>
+        </div>
+      </section>
+
+      <!-- Methodology -->
+      <section class="panel methodology">
+        <details>
+          <summary>
+            <div class="panel-head"><div><h2>หลักเกณฑ์การคำนวณจำนวนเดือนสำรอง (MOS)</h2><p>MOS ย่อมาจาก Months of Stock หมายถึงจำนวนเดือนโดยประมาณที่ของคงเหลือสามารถรองรับการเบิกจ่ายได้ · กดเพื่อดูรายละเอียดวิธีคำนวณ</p></div></div>
+          </summary>
+          <div class="panel-body">
+            <div class="method-grid">
+              <article><span>1</span><div><h3>กำหนดช่วงอัตราการใช้</h3><p>ใช้เดือนเต็มที่ดึงครอบคลุม {{ usagePeriodRange() }} รวม {{ number(data?.meta?.usage_months_used) }} เดือน ไม่รวมเดือนปัจจุบัน แฟ้มรายล็อตรุ่นใหม่นับเดือนที่ไม่มีจ่ายเป็นศูนย์ด้วย หากดึงไม่ครบเดือนจะไม่นำเดือนนั้นมาเฉลี่ย</p></div></article>
+              <article><span>2</span><div><h3>คำนวณยอดจ่ายเฉลี่ยต่อเดือน</h3><p>รวมจำนวนจ่ายจากล็อตที่สอบทานกับรายการหลักแล้ว แปลงให้เป็นหน่วยเดียวกับคงคลังเพียงครั้งเดียว แล้วหารด้วยจำนวนเดือนเต็ม เช่น จ่าย 6,000 เม็ดใน 6 เดือน เท่ากับเฉลี่ย 1,000 เม็ดต่อเดือน</p></div></article>
+              <article><span>3</span><div><h3>คำนวณ MOS รายรายการ</h3><p><strong>ERPLPH: จำนวนเดือนสำรอง = มูลค่าคงคลัง ÷ มูลค่าจ่ายเฉลี่ยต่อเดือน</strong> คิดจากมูลค่าเพราะหน่วยนับของคงคลังกับใบจ่ายอาจต่างกัน เช่น คงคลัง 20,000 บาท จ่ายเฉลี่ย 10,000 บาทต่อเดือน ได้ MOS 2 เดือน หรือประมาณ 60 วัน ครุภัณฑ์และงานจ้างไม่คำนวณ</p></div></article>
+              <article><span>4</span><div><h3>คำนวณ MOS แบบมูลค่า</h3><p><strong>มูลค่าคงคลังตามบัญชี ÷ มูลค่าจ่าย FIFO เฉลี่ยต่อเดือน</strong> ใช้คลังและขอบเขตรายการเดียวกัน ถ้าตรวจได้เพียงบางรายการจะแสดงแยกพร้อมสัดส่วนมูลค่าที่ครอบคลุม ไม่เรียกว่า MOS ทั้งคลัง</p></div></article>
+            </div>
+            <div class="interpretation"><strong>ตัวอย่างการอ่านผล:</strong> MOS 1.0 หมายถึงมีคงคลังรองรับการใช้ประมาณ 1 เดือน หรือ 30 วัน ส่วน MOS 2.5 หมายถึงประมาณ 2 เดือนครึ่ง หรือ 75 วัน ทั้งนี้ จำนวนวันคงคลังเท่ากับ MOS × 30 วัน</div>
+            <div class="calculation-notes"><p>{{ data?.meta?.method_note }}</p><p>{{ data?.meta?.calculation_limit_note }}</p></div>
+          </div>
+        </details>
+      </section>
+
+      <!-- Department usage & recommendations -->
+      <section class="grid-2">
+        <div class="panel"><div class="panel-head"><div><h2>ประเด็นที่ควรตรวจสอบและดำเนินการ</h2><p>เรียงตามผลกระทบด้านมูลค่าคงคลังและความต่อเนื่องของการให้บริการ</p></div></div><div class="panel-body recommendations">@for (item of data.recommendations; track item.title) { <article [class]="'recommendation ' + item.severity"><h3>{{ item.title }}</h3><p><strong>ผลที่พบ:</strong> {{ item.finding }}</p><div><strong>แนวทางดำเนินการ:</strong> {{ item.action }}</div></article> } @empty { <div class="empty">ไม่พบประเด็นเร่งด่วนตามเกณฑ์ที่กำหนด</div> }</div></div>
+        <div class="panel">
+          <div class="panel-head">
+            <div>
+              <h2>มูลค่าการเบิกจ่ายแยกตามหน่วยเบิก</h2>
+              <div class="dept-currency-meta">
+                <span class="currency-badge-time">
+                  🕒 ข้อมูลเบิกจ่ายล่าสุด ณ วันที่ <strong>{{ data.distribution_as_of || data.meta.as_of }}</strong>
+                </span>
+                <span class="currency-badge-count">ทั้งหมด {{ data.department_usage?.length || 0 }} หน่วยงาน</span>
+              </div>
+            </div>
+            <div class="dept-action-bar">
+              <button type="button" class="btn secondary btn-sm" (click)="toggleShowAllDepartments()">
+                {{ showAllDepartments ? 'ย่อเหลือ 10 อันดับแรก' : ('แสดงทั้งหมด (' + (data.department_usage?.length || 0) + ' หน่วยงาน)') }}
+              </button>
+            </div>
+          </div>
+          <div class="panel-body">
+            <!-- Search department filter -->
+            <div class="dept-search-container">
+              <input
+                type="search"
+                placeholder="🔍 ค้นหาหน่วยงาน / หอผู้ป่วย / ห้องยา..."
+                [(ngModel)]="departmentSearch"
+                class="dept-search-input"
+              >
+            </div>
+
+            <div class="dept-list">
+              @for (item of displayedDepartments; track item.department) {
+                <div class="dept-row clickable-dept" (click)="openDepartmentModal(item)" title="คลิกเพื่อดูรายการและสถิติการเบิกของ {{ item.department }}">
+                  <span class="dept-rank-badge">#{{ item.rank }}</span>
+                  <div class="dept-name-block">
+                    <span class="dept-name">{{ item.department }}</span>
+                    <small class="dept-sub-info">
+                      {{ number(item.drug_count) }} รายการ · {{ number(item.issue_count) }} ครั้ง
+                    </small>
+                  </div>
+                  <div class="dept-bar-track">
+                    <span class="dept-bar" [style.width.%]="departmentWidth(item.value)"></span>
+                  </div>
+                  <div class="dept-value-block">
+                    <strong class="dept-value">{{ money(item.value) }}</strong>
+                    @if (item.percent_of_total) {
+                      <small class="dept-pct-tag">{{ item.percent_of_total }}%</small>
+                    }
+                  </div>
+                  <span class="dept-open-indicator">›</span>
+                </div>
+              } @empty {
+                <div class="empty">ไม่พบข้อมูลหน่วยเบิกที่ค้นหา</div>
+              }
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Department Drill-Down Modal -->
+      @if (selectedDepartment) {
+        <div class="modal-backdrop" (click)="closeDepartmentModal()">
+          <div class="modal-card dept-modal-window" (click)="$event.stopPropagation()">
+            <div class="modal-head dept-modal-header">
+              <div class="dept-modal-title">
+                <span class="dept-rank-pill">อันดับ #{{ selectedDepartment.rank }} จาก {{ data.department_usage?.length || 0 }} หน่วยงาน</span>
+                <h3>🏢 {{ selectedDepartment.department }}</h3>
+              </div>
+              <button type="button" class="dept-close-btn" (click)="closeDepartmentModal()" title="ปิดหน้าต่าง">✕</button>
+            </div>
+
+            <div class="modal-body dept-modal-content">
+              <!-- KPI Summary Cards -->
+              <div class="dept-kpi-summary-grid">
+                <div class="dept-kpi-box">
+                  <span class="box-label">มูลค่าเบิกจ่ายรวม</span>
+                  <strong class="box-val text-cyan">{{ money(selectedDepartment.value) }}</strong>
+                  <small class="box-sub">คิดเป็น {{ selectedDepartment.percent_of_total }}% ของทั้งโรงพยาบาล</small>
+                </div>
+                <div class="dept-kpi-box">
+                  <span class="box-label">จำนวนรายการที่เบิก</span>
+                  <strong class="box-val text-emerald">{{ number(selectedDepartment.drug_count) }}</strong>
+                  <small class="box-sub">รายการที่มีการเบิก</small>
+                </div>
+                <div class="dept-kpi-box">
+                  <span class="box-label">จำนวนครั้งที่เบิกจ่าย</span>
+                  <strong class="box-val text-amber">{{ number(selectedDepartment.issue_count) }}</strong>
+                  <small class="box-sub">ใบเบิก / ครั้ง (Transactions)</small>
+                </div>
+                <div class="dept-kpi-box">
+                  <span class="box-label">เบิกจ่ายรายการล่าสุด</span>
+                  <strong class="box-val text-slate">{{ selectedDepartment.last_movement || '-' }}</strong>
+                  <small class="box-sub">วันและเวลาที่บันทึกข้อมูล</small>
+                </div>
+              </div>
+
+              <!-- Monthly Trend -->
+              @if (selectedDepartment.monthly_trend?.length) {
+                <div class="dept-detail-section">
+                  <div class="section-title-line">
+                    <strong>📈 ยอดเบิกจ่ายแยกรายเดือน (Monthly Distribution)</strong>
+                    <small>แนวโน้มมูลค่าการเบิกจ่ายของหน่วยงานนี้</small>
+                  </div>
+                  <div class="dept-trend-strip">
+                    @for (m of selectedDepartment.monthly_trend; track m.period) {
+                      <div class="trend-month-card">
+                        <span class="trend-m-period">{{ period(m.period) }}</span>
+                        <div class="trend-m-track">
+                          <div class="trend-m-fill" [style.height.%]="deptMonthlyWidth(m.value, selectedDepartment.monthly_trend)"></div>
+                        </div>
+                        <strong class="trend-m-val">{{ money(m.value) }}</strong>
+                      </div>
+                    }
+                  </div>
+                </div>
+              }
+
+              <!-- Top Dispensed Drugs Table -->
+              <div class="dept-detail-section">
+                <div class="dept-table-top-bar">
+                  <div>
+                    <strong>📦 รายการที่เบิกจ่ายสูงสุด (Top {{ selectedDepartment.top_drugs?.length || 0 }} รายการ)</strong>
+                    <small>คลิกที่รหัสเพื่อเปิดหน้ารายละเอียด Lot และประวัติจัดซื้อ</small>
+                  </div>
+                  <input
+                    type="search"
+                    placeholder="🔍 ค้นหารายการในหน่วยนี้..."
+                    [(ngModel)]="modalDrugSearch"
+                    class="dept-modal-search"
+                  >
+                </div>
+
+                <div class="table-wrap dept-table-container">
+                  <table class="dept-drugs-data-table">
+                    <thead>
+                      <tr>
+                        <th style="width: 35px; text-align: center;">#</th>
+                        <th style="width: 120px;">รหัส</th>
+                        <th>ชื่อรายการ</th>
+                        <th class="number" style="width: 130px;">จำนวนเบิก</th>
+                        <th class="number" style="width: 140px;">มูลค่าเบิก (บาท)</th>
+                        <th class="number" style="width: 80px;">สัดส่วน</th>
+                        <th style="width: 145px;">เบิกล่าสุด</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      @for (drug of filteredModalDrugs; track drug.code; let idx = $index) {
+                        <tr>
+                          <td style="text-align: center; color: var(--muted);">{{ idx + 1 }}</td>
+                          <td>
+                            <a class="drug-code-chip" [routerLink]="['/drugs', drug.code]" (click)="closeDepartmentModal()" title="คลิกเพื่อดูประวัติและรายละเอียดเวชภัณฑ์">
+                              {{ drug.code }} ↗
+                            </a>
+                          </td>
+                          <td>
+                            <span class="drug-name-text">{{ drug.name }}</span>
+                          </td>
+                          <td class="number">
+                            <strong>{{ number(drug.qty) }}</strong> <small class="text-muted">{{ drug.unit }}</small>
+                          </td>
+                          <td class="number text-cyan font-bold">
+                            {{ money(drug.value) }}
+                          </td>
+                          <td class="number">
+                            <span class="pct-badge">{{ drug.percent }}%</span>
+                          </td>
+                          <td class="text-muted text-xs">
+                            {{ drug.last_date }}
+                          </td>
+                        </tr>
+                      } @empty {
+                        <tr>
+                          <td colspan="7" class="empty">ไม่พบรายการที่ตรงกับคำค้น</td>
+                        </tr>
+                      }
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+
+            <div class="modal-foot">
+              <button type="button" class="btn secondary" (click)="closeDepartmentModal()">ปิด</button>
+            </div>
+          </div>
+        </div>
+      }
+
+      <!-- Link to Purchasing Tables -->
+      <div class="purchasing-shortcut-box">
+        <div>
+          <h3>🛒 ส่วนของด้านจัดซื้อ (8 ตารางวิเคราะห์)</h3>
+          <p>เข้าดูรายการขาดจ่าย, คงคลังเกินเกณฑ์, ไม่พบประวัติเบิกจ่าย, ใกล้หมดอายุ, อาจมีไม่เพียงพอ, มูลค่าคงคลังสูงสุด, มูลค่าซื้อ/จ้างสูงสุด และมูลค่าจ่ายสูงสุด</p>
+        </div>
+        <a class="btn primary" routerLink="/purchasing">เปิดดูตารางจัดซื้อทั้งหมด</a>
+      </div>
+    }
+  }
+</div>
