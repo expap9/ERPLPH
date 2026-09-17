@@ -121,6 +121,17 @@ _DEPARTMENT_LEVELS = (
     "    p.DIVISION AS DIS_DIVISION, p.DEPT AS DIS_DEPT, p.[SECTION] AS DIS_SECTION,",
 )
 
+#: หมวดของรายการ ใช้จัดกลุ่มเป็น ยา / เวชภัณฑ์ / พัสดุ / อื่น ๆ
+#:
+#: คำสั่งของ Stock5 ไม่เคยส่งค่านี้ออกมา มันโผล่เฉพาะในเงื่อนไข WHERE ที่ ERPLPH เติมเข้าไป
+#: ตอนกรองหมวด ทะเบียนรายการจึงเคยได้กลุ่มจาก "หมวดที่สั่งดึง" ไม่ใช่หมวดของรายการเอง
+#: พอเปลี่ยนมาดึงทุกหมวดพร้อมกัน วิธีเดิมใช้ไม่ได้ ต้องขอค่ามาตรง ๆ
+#: (ตรวจพบ 17 ก.ย. 2569 หลังดึงจริง: ทะเบียน 8,887 รายการตกไปอยู่กลุ่ม "อื่น ๆ" ทั้งหมด)
+_ITEM_CATEGORY = (
+    "LTRIM(RTRIM(sm.ENGLISHNAME)) AS ENGLISHNAME,",
+    "LTRIM(RTRIM(sm.ENGLISHNAME)) AS ENGLISHNAME,\n    sm.MAINCATEGORY AS MAINCATEGORY,",
+)
+
 
 def _category_filter(column: str, group_key: str) -> str:
     """ตัวกรองหมวด รองรับทั้งที่มีและไม่มี alias ของ STOCK_MASTER
@@ -160,6 +171,12 @@ def build(kind: str, store: str, date_from: str, date_to: str,
 
     sql = statements[wanted]
     main_store = str(store) == stores.PHARMACY_MAIN_STORE
+
+    original, replacement = _ITEM_CATEGORY
+    if sql.count(original) != 1:
+        raise ValueError("ไม่พบชื่อรายการในคำสั่งของ Stock5 ตามที่คาด "
+                         "ต้องตรวจก่อนว่ายังจัดกลุ่ม ยา/เวชภัณฑ์/พัสดุ ได้ถูกต้อง")
+    sql = sql.replace(original, replacement)
 
     if wanted == "DISTRIBUTION":
         original, replacement = _DEPARTMENT_LEVELS

@@ -19,11 +19,22 @@ from flask import Flask, render_template, request
 BASE_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(BASE_DIR / "app"))
 
+import categories  # noqa: E402
 import cut_status  # noqa: E402
+import department_usage  # noqa: E402
+import departments  # noqa: E402
+import stores  # noqa: E402
 import warehouse_db  # noqa: E402
 
 WINDOW_CHOICES = (30, 90, 180)
 DEFAULT_WINDOW = 90
+
+#: ช่วงเดือนที่หน้ารายหน่วยงานให้เลือก — 12 เดือนคือค่าตั้งต้นเพราะของหลายอย่างเบิกปีละครั้ง
+MONTH_CHOICES = (3, 6, 12, 24)
+DEFAULT_MONTHS = 12
+
+NO_WAREHOUSE = ("ยังไม่มีคลังข้อมูลของ ERPLPH บนเครื่องนี้ "
+                "(warehouse_data/erplph.db) ให้ดึงข้อมูลก่อน")
 
 app = Flask(__name__, template_folder=str(BASE_DIR / "templates"))
 
@@ -49,9 +60,7 @@ def cut_status_page():
     connection = open_warehouse()
     if connection is None:
         return render_template("cut_status.html", report=None, window=window,
-                               windows=WINDOW_CHOICES,
-                               problem="ยังไม่มีคลังข้อมูลของ ERPLPH บนเครื่องนี้ "
-                                       "(warehouse_data/erplph.db) ให้ดึงข้อมูลก่อน")
+                               windows=WINDOW_CHOICES, problem=NO_WAREHOUSE)
     try:
         report = cut_status.collect(connection, window_days=window)
     finally:
@@ -59,6 +68,54 @@ def cut_status_page():
     return render_template("cut_status.html", report=report, window=window,
                            windows=WINDOW_CHOICES, problem=None,
                            warning_days=cut_status.MIN_BEHIND_DAYS)
+
+
+@app.route("/departments")
+def departments_page():
+    """แต่ละหน่วยงานเบิกอะไรไปเท่าไร — กดลงไปได้ 3 ชั้น แล้วจบที่รายการของจริง"""
+    try:
+        months = int(request.args.get("months", DEFAULT_MONTHS))
+    except ValueError:
+        months = DEFAULT_MONTHS
+    if months not in MONTH_CHOICES:
+        months = DEFAULT_MONTHS
+
+    # รหัสหน่วยงานมาจาก URL จึงเชื่อไม่ได้ ตัดความยาวและส่งเป็นพารามิเตอร์เสมอ
+    parent = departments.path_of(*(request.args.get(name, "")[:8]
+                                   for name in ("div", "dept", "section")))
+    depth = sum(1 for part in parent if part)
+    group = request.args.get("group") or None
+    if group not in {found.key for found in categories.GROUPS}:
+        group = None
+    store = request.args.get("store") or None
+    if store is not None and store not in stores.STORES:
+        store = None
+
+    connection = open_warehouse()
+    if connection is None:
+        return render_template("departments.html", problem=NO_WAREHOUSE, months=months,
+                               month_choices=MONTH_CHOICES, parent=parent, depth=depth)
+    try:
+        latest = department_usage.latest_period(connection)
+        level = department_usage.LEVELS[min(depth, len(department_usage.LEVELS) - 1)]
+        report = department_usage.breakdown(connection, level=level, parent=parent, months=months,
+                                            store=store, group=group, latest=latest)
+        groups = department_usage.group_totals(connection, parent=parent, months=months,
+                                               store=store, latest=latest)
+        items = department_usage.items_of(connection, parent=parent, months=months,
+                                          store=store, group=group, latest=latest) if depth else []
+    finally:
+        connection.close()
+
+    trail = [{"name": departments.name_of(*parent[:step + 1]),
+              "args": {name: parent[index] for index, name in enumerate(("div", "dept", "section"))
+                       if index <= step and parent[index]}}
+             for step in range(depth)]
+    return render_template(
+        "departments.html", problem=None, report=report, groups=groups, items=items,
+        months=months, month_choices=MONTH_CHOICES, parent=parent, depth=depth,
+        trail=trail, group=group, store=store, name_source=departments.source(),
+        store_name=stores.store_name, deepest=len(department_usage.LEVELS))
 
 
 def main():

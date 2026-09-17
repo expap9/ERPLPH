@@ -88,5 +88,71 @@ class WebPageTests(unittest.TestCase):
             self.assertEqual(self.render().status_code, 200)
 
 
+def make_department_warehouse(path: Path):
+    """คลังข้อมูลจำลองของหน้ารายแผนก — คนละรูปกับหน้าคลังค้าง จึงแยกกันสร้าง"""
+    connection = sqlite3.connect(path)
+    connection.execute(
+        "CREATE TABLE issues (period TEXT, store TEXT, irno TEXT, suffix TEXT, "
+        "movement_key TEXT, stock_code TEXT, qty REAL, value REAL, unit TEXT, "
+        "division TEXT, dept TEXT, section TEXT, document_type TEXT, direction TEXT, "
+        "issued_at TEXT)")
+    connection.execute("CREATE TABLE items (stock_code TEXT, name TEXT, item_group TEXT)")
+    connection.execute(
+        "INSERT INTO issues VALUES ('202609','I2','A1','1','','1000',10,1000.0,'TAB',"
+        "'208','02','','32','out','2026-09-08')")
+    connection.execute("INSERT INTO items VALUES ('1000', 'PARACETAMOL', 'drug')")
+    connection.commit()
+    connection.close()
+
+
+class DepartmentPageTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.db = Path(self.tmp.name) / "erplph.db"
+        web.app.config["TESTING"] = True
+        self.client = web.app.test_client()
+
+    def render(self, query=""):
+        with mock.patch.object(web.warehouse_db, "DB_PATH", self.db):
+            return self.client.get("/departments" + query)
+
+    def test_the_page_renders_with_real_shaped_data(self):
+        make_department_warehouse(self.db)
+        response = self.render()
+        self.assertEqual(response.status_code, 200)
+        body = response.get_data(as_text=True)
+        self.assertIn("แต่ละแผนกเบิกอะไรไปเท่าไร", body)
+        self.assertIn("208", body)
+
+    def test_drilling_into_a_department_keeps_working(self):
+        make_department_warehouse(self.db)
+        self.assertEqual(self.render("?div=208").status_code, 200)
+        self.assertEqual(self.render("?div=208&dept=02").status_code, 200)
+        self.assertEqual(self.render("?div=208&dept=02&section=01").status_code, 200)
+
+    def test_values_from_the_address_bar_cannot_reach_the_database_as_sql(self):
+        make_department_warehouse(self.db)
+        for bad in ("?div=208'; DROP TABLE issues--", "?months=ไม่ใช่ตัวเลข", "?months=99999",
+                    "?group=ไม่มีกลุ่มนี้", "?store=ไม่มีคลังนี้", "?div=" + "9" * 500):
+            with self.subTest(query=bad):
+                self.assertEqual(self.render(bad).status_code, 200)
+        with mock.patch.object(web.warehouse_db, "DB_PATH", self.db):
+            connection = sqlite3.connect(self.db)
+            self.addCleanup(connection.close)
+            self.assertEqual(
+                connection.execute("SELECT COUNT(*) FROM issues").fetchone()[0], 1)
+
+    def test_a_missing_warehouse_explains_itself_instead_of_crashing(self):
+        response = self.render()
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("ยังไม่มีคลังข้อมูล", response.get_data(as_text=True))
+
+    def test_the_page_does_not_open_the_hospital_database(self):
+        make_department_warehouse(self.db)
+        with mock.patch("database.connect", side_effect=AssertionError("ห้ามต่อฐานโรงพยาบาล")):
+            self.assertEqual(self.render().status_code, 200)
+
+
 if __name__ == "__main__":
     unittest.main()

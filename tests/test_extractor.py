@@ -101,11 +101,34 @@ class ScopeTests(unittest.TestCase):
                     self.assertIn(column, sql)
                 self.assertIn("AS DIS,", sql, "ต้องไม่ทับของเดิมที่ใช้ join รหัสกลุ่มกระทรวง")
 
-    def test_a_missing_department_field_stops_the_pull_instead_of_reporting_blanks(self):
-        """ถ้า Stock5 แก้คำสั่งจนไม่มีช่องหน่วยงาน ต้องล้มให้เห็น ไม่ใช่ได้รายงานแผนกว่าง"""
-        with patch.object(queries, "_statements", return_value={"DISTRIBUTION": "SELECT 1"}), \
+    def test_every_query_returns_the_category_it_classifies_items_by(self):
+        """เจอตอนดึงจริง 17 ก.ย. 2569: ทะเบียน 8,887 รายการตกไปอยู่กลุ่ม "อื่น ๆ" ทั้งหมด
+
+        คำสั่งของ Stock5 ไม่เคยส่ง MAINCATEGORY ออกมา มันโผล่แค่ในเงื่อนไขกรองหมวด
+        พอเลิกกรอง (ดึงทุกหมวด) ค่าก็หายไปเงียบ ๆ โดยไม่มีอะไรล้ม
+        """
+        for kind in ("RECEIPT", "DISTRIBUTION", "INVENTORY"):
+            with self.subTest(kind=kind):
+                sql = queries.build(kind, "O5", "20260801", "20260901", categories.ALL)
+                self.assertIn("MAINCATEGORY AS MAINCATEGORY", sql.split("FROM")[0])
+
+    def test_a_missing_category_field_stops_the_pull_instead_of_grouping_everything_as_other(self):
+        with patch.object(queries, "_statements", return_value={"RECEIPT": "SELECT 1"}), \
                 self.assertRaises(ValueError):
+            queries.build("RECEIPT", "O5", "20260801", "20260901")
+
+    def test_a_missing_department_field_stops_the_pull_instead_of_reporting_blanks(self):
+        """ถ้า Stock5 แก้คำสั่งจนไม่มีช่องหน่วยงาน ต้องล้มให้เห็น ไม่ใช่ได้รายงานแผนกว่าง
+
+        คำสั่งปลอมต้องมีช่องชื่อรายการอยู่ ไม่งั้นจะไปล้มที่ด่านหมวดก่อน แล้วเทสต์นี้
+        จะผ่านโดยไม่ได้ตรวจเรื่องหน่วยงานเลย
+        """
+        without_department = "SELECT LTRIM(RTRIM(sm.ENGLISHNAME)) AS ENGLISHNAME, 1"
+        with patch.object(queries, "_statements",
+                          return_value={"DISTRIBUTION": without_department}), \
+                self.assertRaises(ValueError) as caught:
             queries.build("DISTRIBUTION", "O5", "20260801", "20260901")
+        self.assertIn("หน่วยงาน", str(caught.exception))
 
     def test_a_bad_store_code_is_refused_rather_than_injected(self):
         for bad in ("2'; DROP TABLE items--", "", "ยาว-เกิน-สิบตัวอักษร"):
