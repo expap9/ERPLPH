@@ -43,12 +43,18 @@ def make_warehouse(path: Path):
     conn = sqlite3.connect(path)
     conn.execute("CREATE TABLE issues (period TEXT, store TEXT, irno TEXT, suffix TEXT, "
                  "movement_key TEXT, stock_code TEXT, qty REAL, value REAL, unit TEXT, "
-                 "division TEXT, dept TEXT, section TEXT, document_type TEXT, direction TEXT)")
+                 "division TEXT, dept TEXT, section TEXT, document_type TEXT, direction TEXT, "
+                 "check_status TEXT)")
     conn.execute("CREATE TABLE items (stock_code TEXT, name TEXT, main_category TEXT, "
                  "item_group TEXT)")
     for store, irno, div, dept, section, code, qty, value, doctype, direction in ROWS:
-        conn.execute("INSERT INTO issues VALUES ('202609',?,?,'1','',?,?,?,'TAB',?,?,?,?,?)",
-                     (store, irno, code, qty, value, div, dept, section, doctype, direction))
+        # ขาเข้าไม่เคยผ่านการสอบทานของ Stock5 จึงเป็น PENDING เหมือนข้อมูลจริง
+        status = "VERIFIED" if direction == "out" else "PENDING"
+        conn.execute("INSERT INTO issues VALUES ('202608',?,?,'1','',?,?,?,'TAB',?,?,?,?,?,?)",
+                     (store, irno, code, qty, value, div, dept, section, doctype, direction, status))
+    # งวดล่าสุดที่ยังไม่จบเดือน — ทำให้ "งวดล่าสุด" เป็น 202609 แต่ต้องไม่ถูกนับรวม
+    conn.execute("INSERT INTO issues VALUES ('202609','I2','OPEN','1','','1000',1,5000.0,'TAB',"
+                 "'208','02','','32','out','VERIFIED')")
     conn.execute("INSERT INTO items VALUES ('1000', 'PARACETAMOL', '11', ?)",
                  (categories.DRUG,))
     conn.execute("INSERT INTO items VALUES ('6000', 'กระดาษ A4', '6', ?)",
@@ -145,8 +151,19 @@ class DepartmentUsageTests(unittest.TestCase):
     def test_the_window_counts_back_from_the_newest_period_not_from_today(self):
         """ต้นทางเป็นสำเนาที่คัดลอกวันละครั้ง ถ้านับจากวันนี้ เดือนสุดท้ายจะดูตกลงเสมอ"""
         clause, values = usage._period_clause(12, "202609")
-        self.assertEqual(values, ["202510", "202609"])
-        self.assertEqual(usage._period_clause(3, "202601")[1], ["202511", "202601"])
+        self.assertEqual(values, ["202509", "202609"])
+        self.assertIn("period < ?", clause, "งวดล่าสุดยังไม่จบเดือน ต้องไม่นับ")
+        self.assertEqual(usage._period_clause(3, "202601")[1], ["202510", "202601"])
+
+    def test_the_unfinished_latest_month_is_not_counted(self):
+        """ต้องตรงกับหน้าภาพรวม ซึ่งตัดเดือนที่ยังไม่จบออกตามกติกาของ metrics.py"""
+        self.assertEqual(self.rows()["208"].net, 800.0, "ใบ OPEN ของ 202609 ต้องไม่ถูกนับ")
+
+    def test_an_issue_that_failed_reconciliation_is_not_counted_as_used(self):
+        """กติกาผู้ใช้ 11 ก.ย. 2569: ขาออกนับเฉพาะที่สอบทานผ่าน ขาเข้าหักทั้งหมด"""
+        self.conn.execute("INSERT INTO issues VALUES ('202608','I2','X1','1','','1000',5,777.0,"
+                          "'TAB','208','02','','32','out','PENDING')")
+        self.assertEqual(self.rows()["208"].net, 800.0)
 
 
 if __name__ == "__main__":

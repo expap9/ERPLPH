@@ -95,12 +95,15 @@ def make_department_warehouse(path: Path):
         "CREATE TABLE issues (period TEXT, store TEXT, irno TEXT, suffix TEXT, "
         "movement_key TEXT, stock_code TEXT, qty REAL, value REAL, unit TEXT, "
         "division TEXT, dept TEXT, section TEXT, document_type TEXT, direction TEXT, "
-        "issued_at TEXT)")
+        "issued_at TEXT, check_status TEXT)")
     connection.execute("CREATE TABLE items (stock_code TEXT, name TEXT, main_category TEXT, "
                        "item_group TEXT)")
     connection.execute(
-        "INSERT INTO issues VALUES ('202609','I2','A1','1','','1000',10,1000.0,'TAB',"
-        "'208','02','','32','out','2026-09-08')")
+        "INSERT INTO issues VALUES ('202608','I2','A1','1','','1000',10,1000.0,'TAB',"
+        "'208','02','','32','out','2026-08-08','VERIFIED')")
+    connection.execute(
+        "INSERT INTO issues VALUES ('202609','I2','A2','1','','1000',1,100.0,'TAB',"
+        "'208','02','','32','out','2026-09-08','VERIFIED')")
     connection.execute("INSERT INTO items VALUES ('1000', 'PARACETAMOL', '11', 'drug')")
     connection.commit()
     connection.close()
@@ -142,7 +145,8 @@ class DepartmentPageTests(unittest.TestCase):
             connection = sqlite3.connect(self.db)
             self.addCleanup(connection.close)
             self.assertEqual(
-                connection.execute("SELECT COUNT(*) FROM issues").fetchone()[0], 1)
+                connection.execute("SELECT COUNT(*) FROM issues").fetchone()[0], 2,
+                "ตารางต้องยังอยู่ครบ ไม่ถูกลบด้วยค่าจากช่อง URL")
 
     def test_a_missing_warehouse_explains_itself_instead_of_crashing(self):
         response = self.render()

@@ -27,6 +27,18 @@ import departments
 #: ชนิดเอกสาร "จ่ายให้หน่วยเบิก" — ชนิดเดียวที่แปลว่าของถูกเบิกไปใช้จริง
 DISPENSE_TYPE = "32"
 
+#: ขาออกนับเฉพาะที่สอบทานผ่าน ขาเข้า (ใบคืน) หักทั้งหมด — กติกาที่ผู้ใช้ตัดสิน 11 ก.ย. 2569
+#: (ดู queries.is_return) ใบคืนไม่เคยผ่านการสอบทานของ Stock5 จึงหักด้วยยอดรวมทุกสถานะ
+#: หน้ารายแผนกรุ่นแรกนับขาออกทุกสถานะ ต่างจากกติกานี้ราว 2.6 ล้านบาทต่อปี (0.2%)
+VERIFIED = "VERIFIED"
+
+
+def net(column: str, alias: str = "") -> str:
+    """นิพจน์ยอดสุทธิของหนึ่งแถว — ใช้ร่วมกับหน้าภาพรวม ตัวเลขสองหน้าจึงตรงกันเสมอ"""
+    at = f"{alias}." if alias else ""
+    return (f"CASE WHEN {at}direction = 'out' AND {at}check_status = '{VERIFIED}' "
+            f"THEN {at}{column} WHEN {at}direction = 'in' THEN -{at}{column} ELSE 0 END")
+
 #: ระดับที่หน้าจอเจาะได้
 LEVELS = (departments.DIVISION, departments.DEPT, departments.SECTION)
 
@@ -71,9 +83,11 @@ def _period_clause(months: int, latest: str) -> tuple[str, list[Any]]:
     เดือนสุดท้ายดูตกลงเสมอ
     """
     year, month = int(latest[:4]), int(latest[4:6])
-    total = year * 12 + (month - 1) - (months - 1)
+    total = year * 12 + (month - 1) - months
     first = f"{total // 12:04d}{total % 12 + 1:02d}"
-    return "period >= ? AND period <= ?", [first, latest]
+    # เดือนล่าสุดยังไม่จบ ถ้านับรวม "12 เดือน" จะเป็น 11 เดือนเต็มกับเศษเดือน และตัวเลข
+    # จะไม่ตรงกับหน้าภาพรวมซึ่งตัดเดือนที่ยังไม่จบออกตามกติกาของ metrics.py
+    return "period >= ? AND period < ?", [first, latest]
 
 
 def latest_period(conn) -> str:
@@ -122,7 +136,8 @@ def breakdown(conn, level: str = departments.DIVISION, parent: Iterable[str] = (
     grouped = ", ".join(columns)
     rows = conn.execute(
         f"SELECT {grouped}, "
-        "       COALESCE(SUM(CASE WHEN direction = 'out' THEN value ELSE 0 END), 0), "
+        f"       COALESCE(SUM(CASE WHEN direction = 'out' AND check_status = '{VERIFIED}' "
+        "                         THEN value ELSE 0 END), 0), "
         "       COALESCE(SUM(CASE WHEN direction = 'in'  THEN value ELSE 0 END), 0), "
         "       COUNT(DISTINCT irno), COUNT(DISTINCT stock_code), COUNT(DISTINCT store) "
         f"FROM issues WHERE {' AND '.join(where)} "
@@ -150,9 +165,9 @@ def items_of(conn, parent: Iterable[str], months: int = 12, limit: int = 40,
     where, values = _scope(months, latest, path, store, group, alias="i")
     rows = conn.execute(
         "SELECT i.stock_code, COALESCE(m.name, ''), COALESCE(m.main_category, ''), "
-        "       COALESCE(SUM(CASE WHEN i.direction = 'out' THEN i.qty ELSE -i.qty END), 0), "
+        f"       COALESCE(SUM({net('qty', 'i')}), 0), "
         "       COALESCE(MAX(i.unit), ''), "
-        "       COALESCE(SUM(CASE WHEN i.direction = 'out' THEN i.value ELSE -i.value END), 0), "
+        f"       COALESCE(SUM({net('value', 'i')}), 0), "
         "       COUNT(DISTINCT i.irno) "
         "FROM issues i LEFT JOIN items m ON m.stock_code = i.stock_code "
         f"WHERE {' AND '.join(where)} "
@@ -176,7 +191,7 @@ def group_totals(conn, parent: Iterable[str] = (), months: int = 12,
     grouping = categories.sql_group_expression("m.main_category")
     rows = conn.execute(
         f"SELECT CASE WHEN COALESCE(m.main_category, '') = '' THEN '' ELSE {grouping} END, "
-        "       COALESCE(SUM(CASE WHEN i.direction = 'out' THEN i.value ELSE -i.value END), 0) "
+        f"       COALESCE(SUM({net('value', 'i')}), 0) "
         "FROM issues i LEFT JOIN items m ON m.stock_code = i.stock_code "
         f"WHERE {' AND '.join(where)} "
         "GROUP BY 1 ORDER BY 2 DESC", values).fetchall()
