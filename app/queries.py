@@ -106,6 +106,31 @@ _MAIN_STORE_ISSUE_NUMBERING = (
      "AND DOCUMENTTYPE IN ({types})"),
 )
 
+#: เลขใบรับของคลังยา — Stock5 กรองเฉพาะ M (ซื้อ) และ MRS (บริจาค) เพราะส่งกระทรวงแค่คลัง 2
+#:
+#: คลังอื่นใช้เลขคนละชุดทั้งหมด ตัวกรองนี้จึงตัดใบรับของคลังอื่นทิ้งเงียบ ๆ ทุกใบ
+#: พบ 17 ก.ย. 2569: คลังข้อมูลมีใบรับแค่คลัง 2 คลังเดียว ทั้งที่การสำรวจ 15 ก.ย. 2569
+#: (`probe_procurement_finance`) นับใบรับ 12 เดือนได้ 7 คลัง รวมประมาณ 1,959 ล้านบาท
+#: ส่วนที่หายไปรวมงานจ้าง (หมวด 9) ของคลังพัสดุ 356 ล้าน ครุภัณฑ์ 197 ล้าน อาหาร 17 ล้าน
+#:
+#: ไม่แทนด้วยตัวกรองอื่น เพราะการสำรวจเดียวกันพบว่าใบรับของคลังอื่นทุกบรรทัดมีเลขใบ PO
+#: (LINES_WITHOUT_PO = 0 ทุกคลังยกเว้นคลัง 2) คือเป็นใบรับจากการซื้อ/จ้างทั้งหมด
+#: ตัวอย่างเลข: คลังพัสดุ R1368-2692 RA6807-0065 GN6812-001 RQ6912-022 ·
+#: ห้องชันสูตร LRS68-0608 LRA68-0043 · โภชนาการ NRS69-0002 · ทันตกรรม DR69-0457
+_MAIN_STORE_RECEIPT_NUMBERING = "AND rd.RECEIVENO LIKE 'M%'"
+
+#: หน่วยงานบนใบรับ — งานจ้างและครุภัณฑ์ไม่เคยถูก "เบิก" ออกจากคลัง จึงไม่โผล่ในใบจ่าย
+#: ถ้าไม่เก็บหน่วยงานจากใบรับ จะตอบไม่ได้ว่าจ้างทำความสะอาดหรือซื้อเครื่องมือให้แผนกไหน
+#: ใช้ช่องระดับบรรทัดก่อน ถ้าว่างใช้ของหัวใบ (SKRECVDTL และ SKRECV มีทั้งสามช่อง)
+#: **ยังไม่ได้ยืนยันว่าช่องนี้คือหน่วยงานผู้ขอซื้อ/ขอจ้าง** — เก็บไว้ก่อน ยังไม่แสดง
+_RECEIPT_DEPARTMENT = (
+    "rd.RECEIVENO AS RCV_NO,",
+    "rd.RECEIVENO AS RCV_NO,\n"
+    "    COALESCE(NULLIF(LTRIM(RTRIM(rd.DIVISION)), ''), rh.DIVISION) AS RCV_DIVISION,\n"
+    "    COALESCE(NULLIF(LTRIM(RTRIM(rd.DEPT)), ''), rh.DEPT) AS RCV_DEPT,\n"
+    "    COALESCE(NULLIF(LTRIM(RTRIM(rd.[SECTION])), ''), rh.[SECTION]) AS RCV_SECTION,",
+)
+
 #: หน่วยงานที่ขอเบิก มี 3 ชั้น (SKIR.DIVISION / DEPT / SECTION) เช่น 208-02-02
 #: คำสั่งของ Stock5 ต่อสามช่องเป็นสายเดียวชื่อ DIS เพื่อ join ตารางรหัสกลุ่มของกระทรวง
 #: แล้วส่งออกเป็น DIS_DEPT_GROUP ซึ่งเหลือแค่รหัสกลุ่ม 1-9 — พอสำหรับส่งกระทรวง
@@ -193,6 +218,17 @@ def build(kind: str, store: str, date_from: str, date_to: str,
             if original not in sql:
                 raise ValueError("รูปแบบคำสั่งจ่ายของ Stock5 เปลี่ยนไป ต้องตรวจการปรับขอบเขตใหม่")
             sql = sql.replace(original, replacement.format(types=types))
+
+    if wanted == "RECEIPT":
+        original, replacement = _RECEIPT_DEPARTMENT
+        if sql.count(original) != 1:
+            raise ValueError("ไม่พบเลขใบรับในคำสั่งรับของ Stock5 ตามที่คาด")
+        sql = sql.replace(original, replacement)
+
+    if not main_store and wanted == "RECEIPT":
+        if _MAIN_STORE_RECEIPT_NUMBERING not in sql:
+            raise ValueError("รูปแบบคำสั่งรับของ Stock5 เปลี่ยนไป ต้องตรวจการปรับขอบเขตใหม่")
+        sql = sql.replace(_MAIN_STORE_RECEIPT_NUMBERING, "")
 
     # ขอบเขตคลัง — รูปแบบเดียวกันทุกจุดในไฟล์ต้นฉบับ
     sql = sql.replace("STORE = '2'", f"STORE = '{store}'")

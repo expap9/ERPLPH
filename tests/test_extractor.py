@@ -417,9 +417,25 @@ class FirstRealPullLessonsTests(unittest.TestCase):
         self.assertNotIn("DOCUMENTNO LIKE", sql)
         self.assertIn("iro.DOCUMENTTYPE IN ('32', '33', '34', '35')", sql)
 
-    def test_other_query_kinds_are_left_as_stock5_wrote_them(self):
-        sql = queries.build("RECEIPT", "O5", "20260801", "20260901")
+    # --- ดึงจริง 17 ก.ย. 2569 ได้ใบรับแค่คลัง 2 ทั้งที่ 12 เดือนมีใบรับ 7 คลัง ~1,959 ล้านบาท
+    # เลข M คือเลขใบรับของคลังยาเท่านั้น คลังพัสดุใช้ R1368-… RA68-… GN68-… ห้องชันสูตรใช้ LRS…
+    # งานจ้าง 356 ล้าน ครุภัณฑ์ 197 ล้าน และอาหาร 17 ล้าน จึงหายไปทั้งหมด
+    def test_sub_store_receipts_are_not_limited_to_the_pharmacy_numbering(self):
+        for store in ("1", "LAB", "8", "O5"):
+            with self.subTest(store=store):
+                sql = queries.build("RECEIPT", store, "20260801", "20260901")
+                self.assertNotIn("RECEIVENO LIKE 'M%'", sql)
+                self.assertIn(f"rd.STORE = '{store}'", sql, "ขอบเขตคลังต้องยังอยู่")
+
+    def test_the_main_store_receipts_keep_stock5_numbering_so_both_systems_agree(self):
+        sql = queries.build("RECEIPT", "2", "20260801", "20260901")
         self.assertIn("RECEIVENO LIKE 'M%'", sql)
+
+    def test_receipts_carry_the_department_for_work_that_is_never_issued(self):
+        """งานจ้างและครุภัณฑ์ไม่เคยถูกเบิกออกจากคลัง หน่วยงานจึงต้องมาจากใบรับ"""
+        sql = queries.build("RECEIPT", "1", "20260801", "20260901")
+        for column in ("RCV_DIVISION", "RCV_DEPT", "RCV_SECTION"):
+            self.assertIn(column, sql.split("FROM [SKRECVDTL]")[0])
 
     # --- ตัวดึงรุ่นแรกไม่ได้เรียก reconcile_distribution สถานะสอบทานจึงว่างทุกแถว
     def test_issue_periods_are_reconciled_with_the_stock5_engine(self):

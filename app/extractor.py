@@ -78,6 +78,9 @@ def _receipt_row(row: dict) -> dict[str, Any]:
         "po_no": _text(row, "PO_NO"),
         "supplier": _text(row, "VENDOR_NAME"),
         "rcv_date": _text(row, "DATE_RCV"),
+        "division": _text(row, "RCV_DIVISION"),
+        "dept": _text(row, "RCV_DEPT"),
+        "section": _text(row, "RCV_SECTION"),
     }
 
 

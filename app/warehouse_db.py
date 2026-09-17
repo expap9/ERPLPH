@@ -87,6 +87,10 @@ CREATE TABLE IF NOT EXISTS receipts (
     po_no        TEXT DEFAULT '',
     supplier     TEXT DEFAULT '',
     rcv_date     TEXT DEFAULT '',
+    -- หน่วยงานบนใบรับ ยังไม่ยืนยันว่าเป็นผู้ขอซื้อ/ขอจ้าง (ดู queries._RECEIPT_DEPARTMENT)
+    division     TEXT DEFAULT '',
+    dept         TEXT DEFAULT '',
+    section      TEXT DEFAULT '',
     PRIMARY KEY (period, store, rcv_no, suffix, stock_code)
 );
 
@@ -151,6 +155,8 @@ _ADDED_COLUMNS = {
                ("direction", "TEXT DEFAULT ''"), ("division", "TEXT DEFAULT ''"),
                ("dept", "TEXT DEFAULT ''"), ("section", "TEXT DEFAULT ''")),
     "periods": (("units_sha256", "TEXT DEFAULT ''"),),
+    "receipts": (("division", "TEXT DEFAULT ''"), ("dept", "TEXT DEFAULT ''"),
+                 ("section", "TEXT DEFAULT ''")),
 }
 
 
