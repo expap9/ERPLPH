@@ -42,6 +42,11 @@ MOVE_BY_DOC = (("DOCUMENTNO", "20260908-I2-I/S1"), ("DOCUMENTTYPE", 32), ("ADDST
 MOVE_TWICE = (("STOCKCODE", "1000000"), ("DOCS", 3), ("QTY_IN", 10.0), ("QTY_OUT", 25.0),
               ("FIRST_DOC", "20260908-I2-I/S1"), ("LAST_DOC", "WG69-2680"))
 
+# ชื่อหน่วยงานเป็นข้อมูลอ้างอิงขององค์กร ต้องอ่านออกได้ ไม่ใช่ข้อมูลของคน
+DEPARTMENT = (("CTRLCODE", 10028), ("CODE", "208"), ("THAINAME", "กลุ่มงานเภสัชกรรม"))
+DEPARTMENT_SLIPS = (("DIVISION", "208"), ("DEPT", "02"), ("SECTION", "02"), ("DOCUMENTTYPE", 32),
+                    ("SLIPS", 10035), ("STORES", 1), ("LAST_SLIP", datetime(2026, 9, 17)))
+
 CASE = {"numbers": ["02-0000-69"], "codes": ["1000000", "3000000"], "dates": ["2026-09-07"],
         "codes_by_date": {"2026-09-07": ["1000000", "3000000"]},
         "reconcile_store": "I2", "reconcile_day": "2026-09-08"}
@@ -59,6 +64,10 @@ class FakeCursor:
             raise RuntimeError("42S02")
         if "INFORMATION_SCHEMA" in sql:
             rows = [COLUMN]
+        elif "SYSCONFIG" in sql:
+            rows = [DEPARTMENT]
+        elif "GROUP BY ir.DIVISION" in sql:
+            rows = [DEPARTMENT_SLIPS]
         elif "HAVING COUNT(DISTINCT mv.DOCUMENTNO)" in sql:
             rows = [MOVE_TWICE]
         elif "GROUP BY mv.DOCUMENTNO" in sql:
@@ -175,6 +184,23 @@ class SubstoreRequisitionProbeTests(unittest.TestCase):
         text = json.dumps(self.report, ensure_ascii=False)
         self.assertNotIn("ผู้ป่วยสมมุติ", text)
         self.assertNotIn("999999", text)
+
+    def test_reference_names_stay_readable_while_patient_text_stays_hidden(self):
+        """กฎกันชื่อคนดูคำว่า NAME ในชื่อช่อง จึงเผลอซ่อน TABLE_NAME กับ THAINAME ไปด้วย
+
+        คำสั่งที่อ่านตารางรหัสต้องประกาศช่องอ้างอิงเอง แล้วชื่อหน่วยงานกับชื่อตารางจึงอ่านออก
+        โดยที่ช่องหมายเหตุของใบเบิกยังถูกซ่อนเหมือนเดิม
+        """
+        department = self.queries["department_codes:SSBHOSPITAL"]["rows"][0]
+        self.assertEqual(department["THAINAME"], "กลุ่มงานเภสัชกรรม")
+        self.assertEqual(self.queries["skir_columns"]["rows"][0]["TABLE_NAME"], "SKIROUT")
+
+        header = self.queries["requisition_header_by_number"]["rows"][0]
+        self.assertEqual(header["REMARKSMEMO"]["withheld"], True)
+
+    def test_requisitions_are_counted_by_the_three_department_levels(self):
+        row = self.queries["requisition_by_department_12m"]["rows"][0]
+        self.assertEqual((row["DIVISION"], row["DEPT"], row["SECTION"]), ("208", "02", "02"))
 
     def test_case_comes_from_ignored_diagnostics_files(self):
         """ฟอร์มมีช่องเลขที่สองช่อง แต่ละใบกรอกคนละช่อง ต้องอ่านได้ทั้งสองแบบ"""

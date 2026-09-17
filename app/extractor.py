@@ -93,6 +93,10 @@ def _issue_row(row: dict) -> dict[str, Any]:
         "value": _number(row, "VALUE"),
         "unit": _text(row, "ISSUEUNITCODE", "BASE_UNIT"),
         "department": _text(row, "DIS_DEPT_GROUP", "DIS"),
+        # หน่วยงานจริง 3 ชั้น — เก็บแยกจาก department ซึ่งเป็นรหัสกลุ่มของกระทรวง
+        "division": _text(row, "DIS_DIVISION"),
+        "dept": _text(row, "DIS_DEPT"),
+        "section": _text(row, "DIS_SECTION"),
         "issued_at": _text(row, "SOURCE_MOVEMENT_DATETIME")[:19],
         "document_type": document_type,
         "movement_kind": queries.movement_kind(document_type),
@@ -170,11 +174,19 @@ def _display_name(raw: str) -> str:
         return raw
 
 
+def _item_group(main_category: str, group_key: str) -> str:
+    """หมวดของรายการเองเชื่อถือได้กว่าตัวกรองที่ใช้ดึง ยกเว้นแถวที่ไม่มีหมวดติดมา"""
+    if main_category:
+        return categories.group_of(main_category)
+    return categories.OTHER if group_key == categories.ALL else group_key
+
+
 def _item_rows(rows: Iterable[dict], group_key: str = categories.DRUG) -> list[dict[str, Any]]:
     """ทะเบียนรายการที่พบในผลการดึง ใช้ร่วมทุกคลัง
 
-    กลุ่มมาจากตัวกรองหมวดของคำสั่งที่ใช้ดึง ไม่ใช่ค่าคงที่ — เฟส 2 ดึงเวชภัณฑ์
-    มิใช่ยาแล้วต้องไม่ถูกบันทึกเป็นยา
+    กลุ่มมาจากหมวดของรายการเอง ไม่ใช่จากตัวกรองที่ใช้ดึง เพราะการดึงรวดเดียวทุกหมวด
+    (categories.ALL) จะได้ทั้งยา เวชภัณฑ์ และพัสดุ ปนกันมาในผลลัพธ์เดียว
+    ถ้าแถวไหนไม่มีหมวดติดมา จึงค่อยถอยไปใช้กลุ่มของตัวกรอง
     """
     seen: dict[str, dict[str, Any]] = {}
     for row in rows:
@@ -182,12 +194,13 @@ def _item_rows(rows: Iterable[dict], group_key: str = categories.DRUG) -> list[d
         if not code or code in seen:
             continue
         name = _display_name(_text(row, "ENGLISHNAME"))
+        main_category = _text(row, "MAINCATEGORY")
         seen[code] = {
             "stock_code": code,
             "name": name,
             "trade_name": _display_name(_text(row, "TRADE_NAME")),
-            "main_category": _text(row, "MAINCATEGORY"),
-            "item_group": group_key,
+            "main_category": main_category,
+            "item_group": _item_group(main_category, group_key),
             "base_unit": _text(row, "BASE_UNIT", "BASE_UNIT*", "STDIRUNITCODE"),
             "retired": categories.is_retired_item(name),
         }
@@ -384,8 +397,13 @@ def run(today=None, store_codes: Iterable[str] | None = None,
         limit: int | None = None, pacing: float = PACING_SECONDS,
         progress: Callable[[dict], None] | None = None,
         connection_factory: Callable[[], Any] | None = None,
-        recheck_months: int = 0) -> dict[str, Any]:
-    """ดึงตามแผน คืนผลสรุป งวดที่ล้มไม่ทำให้งวดอื่นหยุด"""
+        recheck_months: int = 0,
+        group_key: str = categories.DRUG) -> dict[str, Any]:
+    """ดึงตามแผน คืนผลสรุป งวดที่ล้มไม่ทำให้งวดอื่นหยุด
+
+    group_key เลือกขอบเขตหมวด — categories.ALL คือทั้งโรงพยาบาล (ยา เวชภัณฑ์ พัสดุ อื่น ๆ)
+    ตาราง periods ไม่มีมิติหมวด การสลับค่านี้จึงเท่ากับดึงทับของเดิม ไม่ใช่ดึงเพิ่ม
+    """
     warehouse_db.init_db()
     work = plan(today, store_codes, kinds, years_back, recheck_months=recheck_months)
     if limit is not None:
@@ -405,7 +423,7 @@ def run(today=None, store_codes: Iterable[str] | None = None,
         for index, (period, store, kind) in enumerate(work):
             if index:
                 time.sleep(pacing)
-            outcome = pull_period(connection, period, store, kind)
+            outcome = pull_period(connection, period, store, kind, group_key)
             results["details"].append(outcome)
             if outcome["status"] == "success":
                 results["success"] += 1

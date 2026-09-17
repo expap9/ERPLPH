@@ -106,6 +106,21 @@ _MAIN_STORE_ISSUE_NUMBERING = (
      "AND DOCUMENTTYPE IN ({types})"),
 )
 
+#: หน่วยงานที่ขอเบิก มี 3 ชั้น (SKIR.DIVISION / DEPT / SECTION) เช่น 208-02-02
+#: คำสั่งของ Stock5 ต่อสามช่องเป็นสายเดียวชื่อ DIS เพื่อ join ตารางรหัสกลุ่มของกระทรวง
+#: แล้วส่งออกเป็น DIS_DEPT_GROUP ซึ่งเหลือแค่รหัสกลุ่ม 1-9 — พอสำหรับส่งกระทรวง
+#: แต่ไม่พอสำหรับรายงาน "แผนกไหนเบิกอะไร" ที่ผู้บริหารขอ
+#:
+#: จึงขอทั้งสามช่องแยกกันมาด้วย แทนที่จะตัดสตริง DIS เอง เพราะยังไม่รู้ความกว้างจริง
+#: ของแต่ละช่อง (ตาราง SYSCONFIG เก็บรหัสงานเป็น '101   01' คือกลุ่มงานกว้าง 6 ตัว
+#: แต่ค่าที่อ่านจาก SKIR มาเป็น '208' ซึ่งผ่านการ strip แล้ว จึงบอกไม่ได้)
+#: การเพิ่มคอลัมน์ผลลัพธ์ไม่เปลี่ยนแถวหรือตัวเลขใด ๆ ยอดของคลังหลักจึงยังตรงกับ Stock5
+_DEPARTMENT_LEVELS = (
+    "p.DIVISION + p.DEPT + p.[SECTION] AS DIS,",
+    "p.DIVISION + p.DEPT + p.[SECTION] AS DIS,\n"
+    "    p.DIVISION AS DIS_DIVISION, p.DEPT AS DIS_DEPT, p.[SECTION] AS DIS_SECTION,",
+)
+
 
 def _category_filter(column: str, group_key: str) -> str:
     """ตัวกรองหมวด รองรับทั้งที่มีและไม่มี alias ของ STOCK_MASTER
@@ -114,6 +129,10 @@ def _category_filter(column: str, group_key: str) -> str:
     แต่บางจุดอยู่ใน subquery ของ SKMOVE ที่ไม่มี alias นั้น จึงใช้ IN (SELECT ...)
     ซึ่งใช้ได้ทั้งสองแบบ
     """
+    # ดึงทุกหมวดคือไม่กรองเลย ถ้าใส่ IN (SELECT ... FROM STOCK_MASTER) ทั้งที่ไม่กรองอะไร
+    # จะกลายเป็นเงื่อนไขใหม่ว่ารหัสต้องมีในทะเบียน ซึ่งตัดของบางส่วนทิ้งโดยไม่ตั้งใจ
+    if group_key == categories.ALL:
+        return "1 = 1"
     values = categories.sql_category_filter(group_key, "cat_sm.MAINCATEGORY")
     return (f"{column} IN (SELECT cat_sm.STOCKCODE FROM dbo.STOCK_MASTER cat_sm "
             f"WITH (NOLOCK) WHERE {values})")
@@ -142,7 +161,14 @@ def build(kind: str, store: str, date_from: str, date_to: str,
     sql = statements[wanted]
     main_store = str(store) == stores.PHARMACY_MAIN_STORE
 
-    # คลังหลักใช้คำสั่งของ Stock5 ตามเดิมทุกตัวอักษร ตัวเลขคลัง 2 ของสองระบบจึง
+    if wanted == "DISTRIBUTION":
+        original, replacement = _DEPARTMENT_LEVELS
+        if original not in sql:
+            raise ValueError("คำสั่งจ่ายของ Stock5 ไม่มีช่องหน่วยงานตามที่คาด "
+                             "ต้องตรวจก่อนว่ารายงานรายแผนกยังดึงข้อมูลได้ถูกต้อง")
+        sql = sql.replace(original, replacement)
+
+    # คลังหลักใช้ขอบเขตของ Stock5 ตามเดิมทุกตัวอักษร ตัวเลขคลัง 2 ของสองระบบจึง
     # ต้องตรงกันเสมอ ซึ่งเป็นตัวตรวจไขว้ที่ดีที่สุดที่มี
     if not main_store and wanted == "DISTRIBUTION":
         types = ", ".join(f"'{value}'" for value in sorted(MOVEMENT_KINDS))

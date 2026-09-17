@@ -9,6 +9,7 @@
     python scripts\\pull_warehouse_data.py --plan-only      ดูแผนโดยไม่ดึงจริง
     python scripts\\pull_warehouse_data.py --kind balance   เฉพาะคงคลัง ณ วันนี้
     python scripts\\pull_warehouse_data.py --recheck 3      ดึงซ้ำ 3 เดือนหลังสุด กันเอกสารย้อนวัน
+    python scripts\\pull_warehouse_data.py --group drug     เฉพาะยา (เดิมเป็นค่าตั้งต้น)
 
 ทุกรอบจบด้วยการถ่ายภาพคงคลังของทุกคลัง ดึงซ้ำวันเดียวกันแทนภาพเดิมของวันนั้น
 """
@@ -19,6 +20,7 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "app"))
 
+import categories  # noqa: E402
 import extractor  # noqa: E402
 import stores  # noqa: E402
 import warehouse_db  # noqa: E402
@@ -36,6 +38,11 @@ def main() -> int:
     parser.add_argument("--plan-only", action="store_true", help="แสดงแผนโดยไม่ดึงจริง")
     parser.add_argument("--recheck", type=int, default=0, metavar="N",
                         help="ดึงซ้ำย้อนหลัง N เดือน กันเอกสารที่บันทึกย้อนวัน (งานประจำสัปดาห์)")
+    # ผู้ใช้สั่ง 16 ก.ย. 2569 ว่าทุกแผนกที่เบิกของต้องเห็นภาพ ไม่ใช่เฉพาะยา ค่าตั้งต้นจึง
+    # เป็นทุกหมวด ตาราง periods ไม่มีมิติหมวด การเปลี่ยนค่านี้คือดึงทับของเดิม ไม่ใช่ดึงเพิ่ม
+    parser.add_argument("--group", default=categories.ALL,
+                        choices=[categories.ALL] + [group.key for group in categories.GROUPS],
+                        help="ขอบเขตหมวด ค่าตั้งต้น all = ทั้งโรงพยาบาล (ยา เวชภัณฑ์ พัสดุ อื่น ๆ)")
     args = parser.parse_args()
 
     warehouse_db.init_db()
@@ -50,6 +57,9 @@ def main() -> int:
         print(f"\n  วางแผนไม่สำเร็จ ยังไม่ได้อ่านฐานข้อมูลโรงพยาบาล: {exc}")
         return 1
 
+    scope = ("ทั้งโรงพยาบาล ยา เวชภัณฑ์ พัสดุ อื่น ๆ" if args.group == categories.ALL
+             else categories.group_name(args.group))
+    print(f"  ขอบเขตหมวด: {scope}")
     print(f"  งวดที่ต้องดึง {len(work):,} งวด")
     by_reason: dict[str, int] = {}
     for *_ignored, reason in work:
@@ -84,7 +94,8 @@ def main() -> int:
                 outcome.get("message", "")[:44]), flush=True)
 
     result = extractor.run(store_codes=args.store, kinds=args.kind, limit=args.limit,
-                           pacing=args.pacing, progress=show, recheck_months=args.recheck)
+                           pacing=args.pacing, progress=show, recheck_months=args.recheck,
+                           group_key=args.group)
 
     print("\n" + "=" * 70)
     print("  สำเร็จ %s งวด  ล้มเหลว %s งวด  รวม %s แถว" % (

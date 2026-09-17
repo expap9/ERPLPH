@@ -36,6 +36,11 @@ NUMBER_FIELDS = ("requisition_no", "supply_requisition_no")
 MONTHS_BACK = 12
 SALES_DAYS_BACK = 60
 
+#: ช่องที่เป็นข้อมูลอ้างอิงขององค์กร ไม่ใช่ข้อมูลคน — ต้องประกาศเป็นรายคำสั่ง ไม่งั้นกฎกัน
+#: ชื่อคนที่มองหาคำว่า NAME จะไปซ่อน TABLE_NAME กับ THAINAME ด้วย (เจอตอนรัน 17 ก.ย. 2569)
+SCHEMA_COLUMNS = ("TABLE_NAME", "COLUMN_NAME", "TABLE_CATALOG")
+DEPARTMENT_COLUMNS = ("THAINAME", "ENGNAME", "SHORTNAME")
+
 #: วันที่และคลังสำหรับ "กระทบยอดวันเดียว" — เลือก 8 ก.ย. 2569 ที่คลัง I2 เพราะจากภาพหน้าจอ
 #: วันนั้นมีครบทั้ง 5 ทาง: เอกสารขาย (20260908-I2-I/S1) · เบิกจ่ายให้หน่วยเบิก (I769090xx) ·
 #: โอนออก (I7T6909005/S1, I7T6909007/S1) · รับของภายใน (WG69-2680 ถึง WG69-2694) ·
@@ -77,7 +82,7 @@ def load_case(directory: Path) -> dict:
     }
 
 
-def _run(conn, name, sql, params, limit, terms=()):
+def _run(conn, name, sql, params, limit, terms=(), plain_columns=()):
     check = dict(name=name, sql=sql, status="pending", rows=[])
     cursor = None
     try:
@@ -87,7 +92,8 @@ def _run(conn, name, sql, params, limit, terms=()):
         raw = cursor.fetchmany(limit + 1)
         check.update(
             status="truncated" if len(raw) > limit else "complete", row_limit=limit,
-            rows=[{col: safe_value(col, val, terms) for col, val in zip(columns, row)} for row in raw[:limit]])
+            rows=[{col: safe_value(col, val, terms, plain_columns) for col, val in zip(columns, row)}
+                  for row in raw[:limit]])
     except Exception as exc:
         check.update(status="error", error=error_summary(exc))
     finally:
@@ -134,7 +140,7 @@ def build_queries(case: dict) -> list[tuple]:
         SELECT TABLE_NAME, COLUMN_NAME, DATA_TYPE
         FROM INFORMATION_SCHEMA.COLUMNS
         WHERE TABLE_NAME IN ('SKIR', 'SKIROUT')
-        ORDER BY TABLE_NAME, ORDINAL_POSITION""", [], 400))
+        ORDER BY TABLE_NAME, ORDINAL_POSITION""", [], 400, SCHEMA_COLUMNS))
 
     # คลังย่อยมีคงคลังของตัวเองไหม — ถ้ามีแถวใน STOCK_LOT แปลว่าติดตามรายคลังได้จริง
     queries.append(("stock_rows_by_store", """
@@ -180,16 +186,29 @@ def build_queries(case: dict) -> list[tuple]:
         WHERE COLUMN_NAME IN ('DIVISION', 'DEPT', 'SECTION', 'DIVISIONCODE', 'DEPTCODE')
         GROUP BY TABLE_CATALOG, TABLE_NAME
         HAVING COUNT(*) >= 2
-        ORDER BY COUNT(*) DESC, TABLE_NAME""", [], 200))
+        ORDER BY COUNT(*) DESC, TABLE_NAME""", [], 200, SCHEMA_COLUMNS))
 
-    # ชื่อหน่วยงานที่เห็นบนหน้าจอขึ้นต้นด้วย "กลุ่มงาน" ทุกอัน ลองหาในตารางค่าคงที่ของระบบก่อน
-    # (SYSCONFIG เป็นที่เก็บตารางเทียบรหัสหลายชุด เช่น วิธีจัดซื้อ CTRLCODE 40083)
+    # ตารางรหัสหน่วยงานอยู่ใน SYSCONFIG — ยืนยันจากการรัน 17 ก.ย. 2569
+    #   CTRLCODE 10028 = กลุ่มงาน (DIVISION) รหัส 3 หลัก เช่น 208 = กลุ่มงานเภสัชกรรม
+    #   CTRLCODE 10029 = งาน (DEPT) ช่อง CODE รวมรหัสแม่ไว้ด้วย รูปแบบ '203   02'
+    #   CTRLCODE 10030 = ส่วนย่อย (SECTION) — ยังไม่ยืนยัน ดึงมาดูพร้อมกัน
+    # SSBHOSPITAL กับ SSBSTOCK ให้ชื่อไม่เหมือนกันในรหัสเดียวกัน จึงต้องดึงทั้งสองฐานมาเทียบ
     for database in ("SSBHOSPITAL", "SSBSTOCK"):
-        queries.append((f"department_names_in_sysconfig:{database}", f"""
-            SELECT TOP 100 CTRLCODE, CODE, LTRIM(RTRIM(THAINAME)) AS THAINAME
+        queries.append((f"department_codes:{database}", f"""
+            SELECT CTRLCODE, CODE, LTRIM(RTRIM(THAINAME)) AS THAINAME
             FROM {database}.dbo.SYSCONFIG WITH (NOLOCK)
-            WHERE THAINAME LIKE N'%กลุ่มงาน%'
-            ORDER BY CTRLCODE, CODE""", [], 100))
+            WHERE CTRLCODE IN (10028, 10029, 10030)
+            ORDER BY CTRLCODE, CODE""", [], 1500, DEPARTMENT_COLUMNS))
+
+    # ใบเบิกกรอกรหัสหน่วยงานมาครบแค่ไหน และหน่วยไหนเบิกมากที่สุด — นี่คือหน้า "รายแผนก"
+    queries.append(("requisition_by_department_12m", """
+        SELECT ir.DIVISION, ir.DEPT, ir.SECTION, ir.DOCUMENTTYPE,
+               COUNT(*) AS SLIPS, COUNT(DISTINCT ir.STORE) AS STORES,
+               MAX(ir.UPDATESTOCKDATETIME) AS LAST_SLIP
+        FROM dbo.SKIR ir WITH (NOLOCK)
+        WHERE ir.UPDATESTOCKDATETIME >= DATEADD(month, -12, GETDATE())
+        GROUP BY ir.DIVISION, ir.DEPT, ir.SECTION, ir.DOCUMENTTYPE
+        ORDER BY COUNT(*) DESC""", [], 600))
 
     store, day = case.get("reconcile_store"), case.get("reconcile_day")
     if store and day:
@@ -241,7 +260,9 @@ def collect_report(open_connection, case: dict, pacing=PACING_SECONDS) -> dict:
         for item in build_queries(case):
             if report["queries"]:
                 time.sleep(pacing)
-            report["queries"].append(_run(conn, *item, terms))
+            name, sql, params, limit, *reference = item
+            report["queries"].append(
+                _run(conn, name, sql, params, limit, terms, reference[0] if reference else ()))
         report["complete"] = True
     except Exception as exc:
         report["errors"].append(error_summary(exc))
@@ -377,12 +398,31 @@ def print_summary(report):
                   f"({row.get('MATCHED_COLUMNS')} ช่อง)")
 
     for name, found in queries.items():
-        if not name.startswith("department_names_in_sysconfig:") or found["status"] == "error":
+        if not name.startswith("department_codes:") or found["status"] == "error":
             continue
         database = name.split(":", 1)[1]
-        print(f"\n[11] ชื่อหน่วยงานใน {database}.SYSCONFIG ({len(found['rows'])} แถว)")
-        for row in found["rows"][:12]:
-            print(f"    CTRLCODE={row.get('CTRLCODE')} CODE={row.get('CODE')} {row.get('THAINAME')}")
+        levels = {}
+        for row in found["rows"]:
+            levels.setdefault(row.get("CTRLCODE"), []).append(row)
+        print(f"\n[11] ตารางรหัสหน่วยงานใน {database}.SYSCONFIG ({len(found['rows'])} แถว)")
+        for ctrlcode in sorted(levels, key=lambda code: (code is None, code)):
+            rows = levels[ctrlcode]
+            label = {10028: "กลุ่มงาน", 10029: "งาน", 10030: "ส่วนย่อย"}.get(ctrlcode, "ไม่ทราบชั้น")
+            print(f"    CTRLCODE {ctrlcode} = {label} ({len(rows)} รหัส)")
+            for row in rows[:6]:
+                print(f"        [{row.get('CODE')}] {row.get('THAINAME')}")
+
+    by_department = queries.get("requisition_by_department_12m")
+    if by_department and by_department["status"] != "error":
+        rows = by_department["rows"]
+        filled = sum(1 for row in rows if str(row.get("DIVISION") or "").strip())
+        print(f"\n[12] ใบเบิก 12 เดือนแยกตามหน่วยงาน ({len(rows)} กลุ่ม "
+              f"กรอกรหัสกลุ่มงานมา {filled} กลุ่ม)")
+        for row in rows[:15]:
+            code = "-".join(str(row.get(part) or "").strip() or "?"
+                            for part in ("DIVISION", "DEPT", "SECTION"))
+            print(f"    {code:<14} ชนิด {row.get('DOCUMENTTYPE')}  "
+                  f"{row.get('SLIPS'):>7,} ใบ  {row.get('STORES')} คลัง")
 
     for query in report.get("queries", []):
         if query["status"] == "error":

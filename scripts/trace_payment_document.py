@@ -35,6 +35,8 @@ WITHHELD_COLUMNS = re.compile(
     r"MEMO|REMARK|NOTE|DESC|DETAIL|COMMENT|NAME|PATIENT|HN|CID|CARD|ADDRESS|TEL|PHONE", re.I)
 #: ข้อความยาวกว่านี้ไม่เก็บค่า ไม่ว่าชื่อช่องจะเป็นอะไร
 MAX_PLAIN_TEXT = 40
+#: ช่องที่ประกาศว่าเป็นข้อมูลอ้างอิงยาวได้ถึงเท่านี้ เกินแล้วตัด กันเผลอดึงข้อความก้อนใหญ่
+MAX_REFERENCE_TEXT = 200
 
 _INVOICE_MATCH = "REPLACE(REPLACE(UPPER(rh.SUPPLIERINVOICENO), ' ', ''), '-', '') = ?"
 
@@ -58,12 +60,20 @@ def json_value(value):
     return value
 
 
-def safe_value(column: str, value, terms=()):
-    """ค่าที่เก็บลงรายงานได้ ข้อความที่อาจมีข้อมูลผู้ป่วยเหลือแค่ความยาวและเลขเอกสารที่พบ"""
+def safe_value(column: str, value, terms=(), plain_columns=()):
+    """ค่าที่เก็บลงรายงานได้ ข้อความที่อาจมีข้อมูลผู้ป่วยเหลือแค่ความยาวและเลขเอกสารที่พบ
+
+    plain_columns คือช่องที่คนเขียนคำสั่งยืนยันว่าเป็นข้อมูลอ้างอิงขององค์กร ไม่ใช่ข้อมูลคน
+    เช่น ชื่อตารางจาก INFORMATION_SCHEMA หรือชื่อหน่วยงานจากตารางรหัส ต้องระบุเป็นราย
+    คำสั่ง ห้ามตั้งเป็นค่าตั้งต้น เพราะกฎเดิมกันชื่อคนด้วยการมองหาคำว่า NAME ในชื่อช่อง
+    ซึ่งไปโดน TABLE_NAME กับ THAINAME เข้าด้วย
+    """
     value = json_value(value)
     if not isinstance(value, str):
         return value
     text = value.strip()
+    if column.upper() in {name.upper() for name in plain_columns}:
+        return text[:MAX_REFERENCE_TEXT]
     if WITHHELD_COLUMNS.search(column) or len(text) > MAX_PLAIN_TEXT:
         found = [term for term in terms if compact(term) and compact(term) in compact(text)]
         return {"withheld": True, "length": len(text), "contains": found}

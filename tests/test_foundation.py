@@ -79,6 +79,12 @@ class CategoryTests(unittest.TestCase):
         for category in ("11", "2", "6"):
             self.assertIn(f"'{category}'", clause)
 
+    def test_pulling_everything_puts_no_category_condition_in_the_query(self):
+        """ทุกแผนกต้องเห็นภาพ ไม่ใช่เฉพาะยา — ตัวกรองหมวดจึงต้องหายไปจริง ๆ ไม่ใช่ขยายรายชื่อ"""
+        self.assertEqual(categories.sql_category_filter(categories.ALL), "1 = 1")
+        self.assertNotIn(categories.ALL, [group.key for group in categories.GROUPS],
+                         "all ไม่ใช่กลุ่มของรายการ เป็นแค่ขอบเขตการดึง")
+
     def test_the_group_expression_covers_every_group(self):
         expression = categories.sql_group_expression()
         for group in categories.GROUPS:
@@ -313,6 +319,9 @@ class SchemaUpgradeTests(unittest.TestCase):
         applied = warehouse_db.init_db()
         self.assertIn("issues.document_type", applied)
         self.assertIn("issues.movement_kind", applied)
+        # คลังข้อมูลจริงมี 507 MB การเพิ่มช่องหน่วยงานต้องไม่บังคับให้ลบทิ้งแล้วดึงใหม่
+        for level in ("division", "dept", "section"):
+            self.assertIn(f"issues.{level}", applied)
 
     def test_existing_rows_survive_the_upgrade(self):
         self.build_old_database()

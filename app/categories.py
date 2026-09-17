@@ -19,6 +19,13 @@ MEDICAL_SUPPLY = "medical_supply"
 MATERIAL = "material"
 OTHER = "other"
 
+#: ไม่กรองหมวดเลย — ใช้เมื่อต้องการทั้งโรงพยาบาลในการดึงครั้งเดียว
+#:
+#: ผู้ใช้สั่ง 16 ก.ย. 2569 ว่าทุกแผนกที่เบิกของต้องเห็นภาพ ไม่ใช่เฉพาะยา ถ้าดึงทีละหมวด
+#: แต่ละงวดจะทับกันเอง เพราะกุญแจของตาราง periods คือ (งวด, คลัง, ชนิด) ไม่มีมิติหมวด
+#: ดึงรวดเดียวแล้วค่อยแยกกลุ่มจาก MAINCATEGORY ของแต่ละรายการจึงตรงกว่าและง่ายกว่า
+ALL = "all"
+
 
 class Group(NamedTuple):
     key: str
@@ -75,7 +82,9 @@ def sql_group_expression(column: str = "sm.MAINCATEGORY") -> str:
 
 
 def sql_category_filter(group_key: str, column: str = "sm.MAINCATEGORY") -> str:
-    """WHERE สำหรับดึงเฉพาะกลุ่มที่ต้องการ"""
+    """WHERE สำหรับดึงเฉพาะกลุ่มที่ต้องการ — ALL คือไม่กรอง"""
+    if group_key == ALL:
+        return "1 = 1"
     group = GROUP_BY_KEY.get(group_key)
     if group is None or not group.categories:
         known = ", ".join(

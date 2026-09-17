@@ -101,7 +101,13 @@ CREATE TABLE IF NOT EXISTS issues (
     qty          REAL DEFAULT 0,
     value        REAL DEFAULT 0,
     unit         TEXT DEFAULT '',
+    -- รหัสกลุ่มของกระทรวง (1-9) ที่ Stock5 ใช้ส่งแฟ้ม ไม่ใช่หน่วยงานจริงของโรงพยาบาล
     department   TEXT DEFAULT '',
+    -- หน่วยงานที่ขอเบิก 3 ชั้นตามผังของโรงพยาบาล เช่น 208-02-02
+    -- ชื่อของแต่ละรหัสอยู่ใน SSBSTOCK.SYSCONFIG (CTRLCODE 10028/10029/10030)
+    division     TEXT DEFAULT '',
+    dept         TEXT DEFAULT '',
+    section      TEXT DEFAULT '',
     issued_at    TEXT DEFAULT '',
     -- ชนิดเอกสารตัดสินว่าบรรทัดนี้เป็นการใช้จริงหรือแค่ย้ายของภายในโรงพยาบาล
     -- 32 จ่ายให้หน่วยเบิก / 35 โอนระหว่างคลัง / 33,34 ยังไม่ทราบความหมาย
@@ -120,6 +126,7 @@ CREATE INDEX IF NOT EXISTS idx_receipts_lookup ON receipts(store, stock_code, pe
 CREATE INDEX IF NOT EXISTS idx_issues_lookup   ON issues(store, stock_code, period);
 CREATE INDEX IF NOT EXISTS idx_issues_period   ON issues(period, store);
 CREATE INDEX IF NOT EXISTS idx_issues_kind     ON issues(movement_kind, period);
+CREATE INDEX IF NOT EXISTS idx_issues_division  ON issues(division, period);
 CREATE INDEX IF NOT EXISTS idx_items_group     ON items(item_group, retired);
 """
 
@@ -141,7 +148,8 @@ def connect() -> sqlite3.Connection:
 #: จึงต้องถูกอัปเกรดก่อน มิฉะนั้น index ที่อ้างคอลัมน์ใหม่จะสร้างไม่ได้
 _ADDED_COLUMNS = {
     "issues": (("document_type", "TEXT DEFAULT ''"), ("movement_kind", "TEXT DEFAULT ''"),
-               ("direction", "TEXT DEFAULT ''")),
+               ("direction", "TEXT DEFAULT ''"), ("division", "TEXT DEFAULT ''"),
+               ("dept", "TEXT DEFAULT ''"), ("section", "TEXT DEFAULT ''")),
     "periods": (("units_sha256", "TEXT DEFAULT ''"),),
 }
 

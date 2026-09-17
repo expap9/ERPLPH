@@ -23,7 +23,8 @@ import warehouse_db
 
 ISSUE_COLUMNS = ("WORKING_CODE", "ENGLISHNAME", "TRADE_NAME", "IRNO", "SUFFIX",
                  "SOURCE_MOVEMENT_SUFFIX", "SOURCE_LOTNO", "QTY_DIS", "VALUE",
-                 "ISSUEUNITCODE", "DIS_DEPT_GROUP", "SOURCE_MOVEMENT_DATETIME",
+                 "ISSUEUNITCODE", "DIS_DEPT_GROUP",
+                 "DIS_DIVISION", "DIS_DEPT", "DIS_SECTION", "SOURCE_MOVEMENT_DATETIME",
                  "SOURCE_DOCUMENTTYPE", "SOURCE_MOS_STATUS", "SOURCE_MOS_REASON",
                  "MAINCATEGORY")
 
@@ -33,9 +34,11 @@ def current_units(codes=()) -> str:
     return unit_rules.period_digest(codes, unit_rules.rules(), unit_rules.engine_digest())
 
 
-def issue_row(code="1321080", document_type="32", qty=100.0, value=1423.1):
+def issue_row(code="1321080", document_type="32", qty=100.0, value=1423.1,
+              division="208", dept="02", section="02", main_category="11"):
     return (code, "AATORVASTATIN TAB 40 mg", "LLipitor", "69D1", "1", "36", "L1",
-            qty, value, "TAB", "2", "2026-08-01 09:00:00", document_type, "VERIFIED", "", "11")
+            qty, value, "TAB", "2", division, dept, section,
+            "2026-08-01 09:00:00", document_type, "VERIFIED", "", main_category)
 
 
 class FakeCursor:
@@ -88,6 +91,21 @@ class ScopeTests(unittest.TestCase):
                 self.assertNotIn("[12a-zA-Z]", sql, "ยังเหลือตัวกรองรหัสเดิม")
                 self.assertIn("MAINCATEGORY", sql)
                 self.assertNotIn("{{", sql, "ยังเหลือ token ที่ยังไม่ได้แทนค่า")
+
+    def test_the_dispense_query_asks_for_the_three_department_levels(self):
+        """คลังหลักด้วย — การเพิ่มคอลัมน์ผลลัพธ์ไม่เปลี่ยนแถวหรือยอด จึงยังเทียบกับ Stock5 ได้"""
+        for store in ("O5", "2"):
+            with self.subTest(store=store):
+                sql = queries.build("DISTRIBUTION", store, "20260801", "20260901")
+                for column in ("DIS_DIVISION", "DIS_DEPT", "DIS_SECTION"):
+                    self.assertIn(column, sql)
+                self.assertIn("AS DIS,", sql, "ต้องไม่ทับของเดิมที่ใช้ join รหัสกลุ่มกระทรวง")
+
+    def test_a_missing_department_field_stops_the_pull_instead_of_reporting_blanks(self):
+        """ถ้า Stock5 แก้คำสั่งจนไม่มีช่องหน่วยงาน ต้องล้มให้เห็น ไม่ใช่ได้รายงานแผนกว่าง"""
+        with patch.object(queries, "_statements", return_value={"DISTRIBUTION": "SELECT 1"}), \
+                self.assertRaises(ValueError):
+            queries.build("DISTRIBUTION", "O5", "20260801", "20260901")
 
     def test_a_bad_store_code_is_refused_rather_than_injected(self):
         for bad in ("2'; DROP TABLE items--", "", "ยาว-เกิน-สิบตัวอักษร"):
@@ -155,6 +173,26 @@ class PullTests(unittest.TestCase):
         kinds = {row["stock_code"]: row["movement_kind"] for row in self.rows()}
         self.assertEqual(kinds["1321080"], "dispense")
         self.assertEqual(kinds["1021030"], "transfer")
+
+    def test_the_department_that_asked_is_kept_at_all_three_levels(self):
+        """ผู้บริหารขอเห็น "แผนกไหนเบิกอะไร" — รหัสกลุ่มของกระทรวงมีแค่ 1-9 ไม่พอตอบ
+
+        คำสั่งของ Stock5 ส่ง DIS_DEPT_GROUP มาให้ ซึ่งเป็นรหัสกลุ่มสำหรับส่งแฟ้ม
+        ไม่ใช่หน่วยงานจริง ถ้าเก็บแค่ค่านั้น รายงานรายแผนกจะรวมทั้งโรงพยาบาลเหลือ 9 แถว
+        """
+        extractor.pull_period(FakeConnection([issue_row()]), "202608", "O5", "issue")
+        row = self.rows()[0]
+        self.assertEqual((row["division"], row["dept"], row["section"]), ("208", "02", "02"))
+        self.assertEqual(row["department"], "2", "รหัสกลุ่มของกระทรวงต้องยังอยู่ ไม่ถูกทับ")
+
+    def test_pulling_everything_classifies_each_item_by_its_own_category(self):
+        """ดึงทีเดียวทุกหมวด ผลลัพธ์จึงมีทั้งยาและพัสดุปนกัน กลุ่มต้องมาจากรายการ ไม่ใช่จากขอบเขต"""
+        connection = FakeConnection([issue_row(main_category="11"),
+                                     issue_row(code="6010010", main_category="6")])
+        extractor.pull_period(connection, "202608", "O5", "issue", categories.ALL)
+        groups = {row["stock_code"]: row["item_group"] for row in self.rows("items")}
+        self.assertEqual(groups["1321080"], categories.DRUG)
+        self.assertEqual(groups["6010010"], categories.MATERIAL)
 
     def test_item_names_use_the_same_cleaner_as_stock5(self):
         extractor.pull_period(FakeConnection([issue_row()]), "202608", "O5", "issue")
