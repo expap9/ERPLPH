@@ -1,0 +1,152 @@
+{% extends "base.html" %}
+{% import "_charts.html" as charts %}
+{% block title %}ภาพรวมคลังทั้งโรงพยาบาล{% endblock %}
+{% block content %}
+
+<h1>ภาพรวมคลังทั้งโรงพยาบาล</h1>
+<p class="sub">
+  ทุกประเภทของ — ยา เวชภัณฑ์ พัสดุ ครุภัณฑ์ อาหาร และงานจ้าง ·
+  {% if store %}เฉพาะ{{ store_name(store) }}{% else %}ทุกคลัง{% endif %}
+  {% if group %} · เฉพาะกลุ่ม{{ group_name(group) }}{% endif %}
+</p>
+
+{% if problem %}
+  <div class="problem">{{ problem }}</div>
+{% else %}
+
+{% if not receipts.complete %}
+  <div class="notice">
+    <b>ยอดรับ (ยอดซื้อ/จ้าง) ยังไม่ครบ</b> — คลังข้อมูลนี้ยังมีใบรับของ{{ receipts.stores | map('store_name') | join(', ') or 'ไม่มีคลังไหนเลย' }}
+    เท่านั้น ใบรับของคลังพัสดุ ห้องชันสูตร คลังโภชนาการ และคลังอื่น จะเข้ามาหลังรัน
+    <code>pull_warehouse_data.bat</code> รอบถัดไป ·
+    ยอดใช้ คงคลัง และหน้ารายแผนก ครบทุกคลังแล้ว
+  </div>
+{% endif %}
+
+<div class="tabs">
+  <span class="label">ช่วงเวลา</span>
+  {% for choice in month_choices %}
+    <a class="{{ 'on' if choice == months }}" href="{{ link(months=choice) }}">{{ choice }} เดือน</a>
+  {% endfor %}
+</div>
+<div class="tabs">
+  <span class="label">กลุ่มของ</span>
+  <a class="{{ 'on' if not group }}" href="{{ link(group=None) }}">ทุกกลุ่ม</a>
+  {% for choice in group_choices %}
+    <a class="{{ 'on' if choice.key == group }}" href="{{ link(group=choice.key) }}">
+      <i class="dot" style="background:var(--g-{{ choice.key }})"></i>{{ choice.name_th }}</a>
+  {% endfor %}
+</div>
+<div class="tabs">
+  <span class="label">คลัง</span>
+  <a class="{{ 'on' if not store }}" href="{{ link(store=None) }}">ทุกคลัง</a>
+  {% for code in store_choices %}
+    <a class="{{ 'on' if code == store }}" href="{{ link(store=code) }}">{{ store_name(code) }}</a>
+  {% endfor %}
+</div>
+
+<div class="tiles">
+  <a class="tile" href="/items?{{ query(group=group, store=store) }}" title="กดเพื่อดูรายการที่ประกอบเป็นมูลค่านี้">
+    <div class="label">มูลค่าคงคลัง</div>
+    <div class="value">{{ short_money(head.stock_value) }}</div>
+    <div class="hint">{{ '{:,}'.format(head.item_count) }} รายการ · ภาพวันที่ {{ thai_day(head.snapshot) }}</div>
+  </a>
+  <div class="tile">
+    <div class="label">ยอดใช้ {{ months }} เดือน</div>
+    <div class="value">{{ short_money(head.used) }}</div>
+    <div class="hint">เฉลี่ยเดือนละ {{ short_money(head.average_use) }}</div>
+  </div>
+  <div class="tile">
+    <div class="label">ยอดรับ (ซื้อ/จ้าง) {{ months }} เดือน</div>
+    <div class="value">{{ short_money(head.received) }}</div>
+    <div class="hint">{% if receipts.complete %}ทุกคลังที่มีใบรับ{% else %}ยังไม่ครบทุกคลัง{% endif %}</div>
+  </div>
+  <div class="tile {{ 'warn' if head.months_of_stock is not none and head.months_of_stock > 6 }}">
+    <div class="label">เดือนคงคลัง</div>
+    <div class="value">{{ '%.1f' % head.months_of_stock if head.months_of_stock is not none else '—' }}</div>
+    <div class="hint">{% if head.months_of_stock is none %}คิดไม่ได้กับครุภัณฑ์และงานจ้าง{% else %}มูลค่าคงคลัง ÷ ยอดใช้เฉลี่ย{% endif %}</div>
+  </div>
+  <a class="tile {{ 'bad' if head.expired > 0 }}" href="/lists/expiring?{{ query(group=group, store=store) }}">
+    <div class="label">หมดอายุแล้ว / ภายใน 3 เดือน</div>
+    <div class="value">{{ short_money(head.expired) }}</div>
+    <div class="hint">อีก {{ short_money(head.expiring_critical) }} หมดใน 3 เดือน · {{ short_money(head.expiring_warning) }} ใน 3–6 เดือน</div>
+  </a>
+  <a class="tile {{ 'warn' if head.dormant > 0 }}" href="/lists/dormant?{{ query(group=group, store=store) }}">
+    <div class="label">ของค้างนิ่ง (ไม่ขยับ 6 เดือน)</div>
+    <div class="value">{{ short_money(head.dormant) }}</div>
+    <div class="hint">ยังมีในคลัง แต่ไม่มีการจ่ายหรือโอนออกเลย</div>
+  </a>
+</div>
+
+<div class="grid2">
+  <div class="card">
+    <div style="font-weight:600">ยอดใช้และยอดรับรายเดือน</div>
+    {{ charts.monthly_bars(trend) }}
+  </div>
+  <div class="card">
+    <div style="font-weight:600">มูลค่าคงคลังแยกตามกลุ่มของ</div>
+    {{ charts.group_stack(stock_parts, stock_total) }}
+    <div style="font-weight:600;margin-top:20px">ยอดใช้ {{ months }} เดือนแยกตามกลุ่มของ</div>
+    {{ charts.group_stack(used_parts, used_total) }}
+  </div>
+</div>
+
+<h2>แยกตามกลุ่มของ</h2>
+<div class="scroll">
+<table>
+  <thead><tr>
+    <th>กลุ่ม</th>
+    <th class="num">มูลค่าคงคลัง</th>
+    <th class="num">ยอดรับ {{ months }} เดือน</th>
+    <th class="num">ยอดใช้ {{ months }} เดือน</th>
+    <th class="num">ใช้เฉลี่ย/เดือน</th>
+    <th class="num">เดือนคงคลัง</th>
+    <th class="num">รายการในคลัง</th>
+  </tr></thead>
+  <tbody>
+  {% for row in table.rows %}
+    <tr>
+      <td><i class="dot" style="background:var(--g-{{ row.key }})"></i>
+        <a href="{{ link(group=row.key) }}">{{ row.name }}</a></td>
+      <td class="num">{{ money(row.stock) }}</td>
+      <td class="num">{{ money(row.received) }}</td>
+      <td class="num">{{ money(row.used) }}</td>
+      <td class="num">{{ money(row.average_use) }}</td>
+      <td class="num">{% if row.months_of_stock is not none %}{{ '%.1f' % row.months_of_stock }}{% else %}—{% endif %}</td>
+      <td class="num">{{ '{:,}'.format(row.items_held) }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+
+<details class="card" style="margin-bottom:20px">
+  <summary style="cursor:pointer">ดูตัวเลขรายเดือนเป็นตาราง</summary>
+  <div class="scroll" style="margin-top:10px">
+  <table>
+    <thead><tr><th>เดือน</th><th class="num">ยอดใช้</th><th class="num">ยอดรับ</th></tr></thead>
+    <tbody>
+    {% for row in trend %}
+      <tr><td>{{ thai_period(row.period) }}{% if row.partial %} <span class="code">(ยังไม่จบเดือน)</span>{% endif %}</td>
+        <td class="num">{{ money(row.used) }}</td><td class="num">{{ money(row.received) }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</details>
+
+<div class="note">
+  <b>ตัวเลขนี้มาจากไหน</b> — ช่วง {{ months }} เดือนคือเดือนที่จบแล้ว
+  {{ thai_period(table.first) }} ถึงก่อน {{ thai_period(table.until) }} (เดือนล่าสุดยังไม่จบ ไม่นับ) ·
+  <b>ยอดใช้</b>ทั้งโรงพยาบาล = ใบจ่ายให้หน่วยเบิกที่สอบทานผ่าน หักใบคืน ไม่นับการโอนระหว่างคลัง
+  (เลือกรายคลังแล้วจะนับการโอนออกด้วย) ตรงกับหน้ารายแผนก ·
+  <b>ยอดรับ</b> = ใบรับจากการซื้อ จ้าง และรับบริจาค ·
+  <b>คงคลัง</b> = ภาพล่าสุดของแต่ละคลัง ·
+  มูลค่าทั้งหมดเป็นต้นทุนที่ระบบบันทึก ไม่ใช่ราคาที่เรียกเก็บผู้ป่วย<br>
+  <b>ยังไม่รู้</b> — ชื่อกลุ่มของ (ยา เวชภัณฑ์ พัสดุ ครุภัณฑ์ อาหาร งานจ้าง) จัดจากหมวดในทะเบียนรายการ
+  โดยดูชื่อรายการตัวอย่าง ราคาต่อหน่วย และคลังที่รับ <b>ยังไม่ได้เทียบกับชื่อหมวดจริงของ SSB</b> ·
+  งานก่อสร้างและวัสดุคอมพิวเตอร์ยังไม่ได้แยกเป็นกลุ่มของตัวเอง (ค้นชื่อได้ที่ช่องค้นหา)
+</div>
+
+{% endif %}
+{% endblock %}

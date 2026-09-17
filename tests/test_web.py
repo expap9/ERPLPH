@@ -26,7 +26,8 @@ def make_warehouse(path: Path, stores_days: dict[str, tuple[int, int]]):
     ต้องข้ามวันล่าสุดได้ ไม่งั้นทุกคลังจะจบวันเดียวกันและไม่มีคลังไหนค้างเลย
     """
     connection = sqlite3.connect(path)
-    connection.execute("CREATE TABLE issues (store TEXT, irno TEXT, issued_at TEXT, stock_code TEXT)")
+    connection.execute("CREATE TABLE issues (store TEXT, irno TEXT, issued_at TEXT, stock_code TEXT, "
+                       "period TEXT)")
     for store, (days_done, skip_recent) in stores_days.items():
         day, skipped, added = NEWEST_DAY, 0, 0
         while added < days_done:
@@ -36,8 +37,9 @@ def make_warehouse(path: Path, stores_days: dict[str, tuple[int, int]]):
                 else:
                     key = day.strftime("%Y%m%d")
                     connection.execute(
-                        "INSERT INTO issues VALUES (?, ?, ?, ?)",
-                        (store, f"{key}-{store}-I/S1", f"{key[:4]}-{key[4:6]}-{key[6:8]}", "1"))
+                        "INSERT INTO issues VALUES (?, ?, ?, ?, ?)",
+                        (store, f"{key}-{store}-I/S1", f"{key[:4]}-{key[4:6]}-{key[6:8]}", "1",
+                         key[:6]))
                     added += 1
             day -= timedelta(days=1)
     connection.commit()
@@ -54,7 +56,7 @@ class WebPageTests(unittest.TestCase):
 
     def render(self, query=""):
         with mock.patch.object(web.warehouse_db, "DB_PATH", self.db):
-            return self.client.get("/" + query)
+            return self.client.get("/cut-status" + query)
 
     def test_page_renders_with_real_shaped_data(self):
         make_warehouse(self.db, {"I2": (40, 0), "SMC": (35, 5)})

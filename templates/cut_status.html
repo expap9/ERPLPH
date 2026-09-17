@@ -1,60 +1,28 @@
-<!doctype html>
-<html lang="th">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>คลังไหนข้อมูลค้าง · ERPLPH</title>
-<style>
-  :root { --ink:#1b2430; --muted:#6b7684; --line:#dde3ea; --bg:#f4f6f9;
-          --late:#b4232a; --late-bg:#fdf0f0; --ok:#1d7a4c; --ok-bg:#eef8f2;
-          --slow:#9a6a12; --slow-bg:#fdf7e8; }
-  * { box-sizing:border-box; }
-  body { margin:0; background:var(--bg); color:var(--ink); font-size:15px;
-         font-family:"Sarabun","Leelawadee UI","Tahoma",sans-serif; }
-  .wrap { max-width:1060px; margin:0 auto; padding:24px 20px 56px; }
-  h1 { font-size:22px; margin:0 0 4px; }
-  .sub { color:var(--muted); margin:0 0 18px; }
-  .freshness { background:#fff; border:1px solid var(--line); border-left:4px solid #3d6fb4;
+{% extends "base.html" %}
+{% block title %}คลังไหนข้อมูลค้าง{% endblock %}
+{% block style %}
+  .freshness { background:var(--card); border:1px solid var(--line); border-left:4px solid var(--nav-on);
                border-radius:6px; padding:12px 14px; margin-bottom:18px; line-height:1.7; }
   .freshness b { font-variant-numeric:tabular-nums; }
   .headline { display:flex; gap:14px; align-items:baseline; margin:0 0 14px; }
   .headline .big { font-size:34px; font-weight:700; }
   .headline .big.late { color:var(--late); }
   .headline .big.ok { color:var(--ok); }
-  .tabs { margin:0 0 14px; }
-  .tabs a { display:inline-block; padding:5px 12px; margin-right:6px; border:1px solid var(--line);
-            border-radius:999px; background:#fff; color:var(--ink); text-decoration:none; font-size:14px; }
-  .tabs a.on { background:var(--ink); color:#fff; border-color:var(--ink); }
-  table { width:100%; border-collapse:collapse; background:#fff; border:1px solid var(--line);
-          border-radius:8px; overflow:hidden; }
-  th, td { padding:11px 12px; text-align:left; border-bottom:1px solid var(--line); vertical-align:top; }
-  th { background:#eef1f5; font-size:13px; color:var(--muted); font-weight:600; }
-  td.num, th.num { text-align:right; font-variant-numeric:tabular-nums; }
   tr.late { background:var(--late-bg); }
   tr.slow { background:var(--slow-bg); }
-  .pill.slow { background:var(--slow); color:#fff; }
   .headline .big.slow { color:var(--slow); }
   .headline .split { color:var(--muted); font-size:14px; }
-  .pill { display:inline-block; padding:2px 9px; border-radius:999px; font-size:13px; font-weight:600; }
-  .pill.late { background:var(--late); color:#fff; }
-  .pill.ok { background:var(--ok-bg); color:var(--ok); }
   .store-code { color:var(--muted); font-size:13px; }
   details { margin-top:6px; }
-  summary { cursor:pointer; color:#3d6fb4; font-size:13px; }
+  summary { cursor:pointer; color:var(--link); font-size:13px; }
   .days { margin-top:8px; display:flex; flex-wrap:wrap; gap:5px; }
-  .day { background:#fff; border:1px solid var(--late); color:var(--late); border-radius:4px;
+  .day { background:var(--card); border:1px solid var(--late); color:var(--late); border-radius:4px;
          padding:2px 7px; font-size:12.5px; font-variant-numeric:tabular-nums; }
-  .note { color:var(--muted); font-size:13.5px; line-height:1.8; margin-top:20px;
-          border-top:1px solid var(--line); padding-top:14px; }
-  .problem { background:#fff8e6; border:1px solid #e8d48a; border-radius:6px; padding:14px; }
-</style>
-</head>
-<body>
-<div class="wrap">
+{% endblock %}
+{% block content %}
 
   <h1>คลังไหนข้อมูลค้าง</h1>
-  <p class="sub">ถ้าคลังยังไม่ได้ตัดยอดหรือยังไม่ได้บันทึกเอกสาร ยอดคงคลังของคลังนั้นจะสูงกว่าจริง
-    · <a href="/departments">แต่ละแผนกเบิกอะไรไปเท่าไร</a></p>
+  <p class="sub">ถ้าคลังยังไม่ได้ตัดยอดหรือยังไม่ได้บันทึกเอกสาร ยอดคงคลังของคลังนั้นจะสูงกว่าจริง</p>
 
   {% if problem %}
     <div class="problem">{{ problem }}</div>
@@ -154,6 +122,4 @@
   </div>
 
   {% endif %}
-</div>
-</body>
-</html>
+{% endblock %}

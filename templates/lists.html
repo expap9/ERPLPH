@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block title %}{{ title }}{% endblock %}
+{% block content %}
+
+<h1>{{ title }}</h1>
+<p class="sub">{{ subtitle }}{% if store %} · เฉพาะ{{ store_name(store) }}{% endif %}{% if group %} · เฉพาะกลุ่ม{{ group_name(group) }}{% endif %}</p>
+
+{% if problem %}
+  <div class="problem">{{ problem }}</div>
+{% else %}
+
+<div class="tabs">
+  <a class="{{ 'on' if kind == 'expiring' }}" href="/lists/expiring?{{ query(group=group, store=store) }}">ใกล้หมดอายุ / หมดอายุแล้ว</a>
+  <a class="{{ 'on' if kind == 'dormant' }}" href="/lists/dormant?{{ query(group=group, store=store) }}">ของค้างนิ่ง</a>
+</div>
+<div class="tabs">
+  <span class="label">กลุ่มของ</span>
+  <a class="{{ 'on' if not group }}" href="/lists/{{ kind }}?{{ query(store=store) }}">ทุกกลุ่ม</a>
+  {% for choice in group_choices %}
+    <a class="{{ 'on' if choice.key == group }}" href="/lists/{{ kind }}?{{ query(group=choice.key, store=store) }}">
+      <i class="dot" style="background:var(--g-{{ choice.key }})"></i>{{ choice.name_th }}</a>
+  {% endfor %}
+</div>
+
+<div class="tiles">
+  <div class="tile"><div class="label">จำนวนแถว</div><div class="value">{{ '{:,}'.format(rows | length) }}</div>
+    <div class="hint">{% if truncated %}แสดง {{ rows | length }} แถวแรก{% else %}ครบทุกแถว{% endif %}</div></div>
+  <div class="tile"><div class="label">มูลค่ารวม</div><div class="value">{{ money(rows | sum(attribute='value')) }}</div>
+    <div class="hint">บาท ตามต้นทุนที่ระบบบันทึก</div></div>
+</div>
+
+{% if not rows %}
+  <div class="card">ไม่มีรายการ</div>
+{% else %}
+<div class="scroll"><table>
+  <thead><tr>
+    <th>รายการ</th><th>กลุ่ม</th><th>คลัง</th>
+    {% if kind == 'expiring' %}<th>ล็อต</th><th>หมดอายุ</th>{% else %}<th>รับเข้าล่าสุด</th>{% endif %}
+    <th class="num">จำนวน</th><th class="num">มูลค่า</th>
+  </tr></thead>
+  <tbody>
+  {% for row in rows %}
+    <tr>
+      <td><a href="/items/{{ row.stock_code | urlencode }}">{{ row.name or '(ไม่มีชื่อ)' }}</a><br><span class="code">รหัส {{ row.stock_code }}</span></td>
+      <td style="white-space:nowrap">{{ row.group }}</td>
+      <td>{{ row.store_name }}</td>
+      {% if kind == 'expiring' %}
+        <td>{{ row.lot_no or '—' }}</td><td style="white-space:nowrap">{{ expiry_badge(row.expire_date) }}</td>
+      {% else %}
+        <td style="white-space:nowrap">{{ thai_day(row.last_in_date) or '—' }}</td>
+      {% endif %}
+      <td class="num">{{ money(row.qty) }} {{ row.unit }}</td>
+      <td class="num">{{ money(row.value) }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table></div>
+{% endif %}
+
+<div class="note">{{ explanation }}</div>
+{% endif %}
+{% endblock %}

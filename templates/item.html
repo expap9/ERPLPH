@@ -1,0 +1,144 @@
+{% extends "base.html" %}
+{% import "_charts.html" as charts %}
+{% block title %}{{ d.name if d else 'ไม่พบรายการ' }}{% endblock %}
+{% block content %}
+
+{% if problem %}
+  <div class="problem">{{ problem }}</div>
+{% elif not d %}
+  <h1>ไม่พบรายการ {{ code }}</h1>
+  <p class="sub">รหัสนี้ไม่เคยมีการรับหรือจ่ายในคลังข้อมูลของเรา · <a href="/items?q={{ code | urlencode }}">ลองค้นหา</a></p>
+{% else %}
+
+<p class="code" style="margin:0 0 4px"><a href="/items?{{ query(group=d.group_key) }}">
+  <i class="dot" style="background:var(--g-{{ d.group_key }})"></i>{{ d.group }}</a> · หมวด {{ d.main_category or '—' }}</p>
+<h1>{{ d.name }} {% if d.retired %}<span class="pill slow">รหัสเลิกใช้แล้ว</span>{% endif %}</h1>
+<p class="sub">รหัส {{ d.stock_code }}{% if d.trade_name and d.trade_name != d.name %} · {{ d.trade_name }}{% endif %}
+  {% if d.base_unit %} · หน่วยนับ {{ d.base_unit }}{% endif %}</p>
+
+<div class="tiles">
+  <div class="tile">
+    <div class="label">มูลค่าคงคลังรวมทุกคลัง</div>
+    <div class="value">{{ money(d.stock_value) }}</div>
+    <div class="hint">{{ d.stock_by_store | length }} คลัง · {{ d.lots | length }} ล็อต · ภาพ {{ thai_day(d.snapshot) }}</div>
+  </div>
+  <div class="tile">
+    <div class="label">ยอดใช้ {{ d.window_months }} เดือน (ทั้งโรงพยาบาล)</div>
+    <div class="value">{{ money(d.used_total) }}</div>
+    <div class="hint">เฉลี่ยเดือนละ {{ money(d.average_use) }}</div>
+  </div>
+  <div class="tile">
+    <div class="label">ยอดรับ {{ d.window_months }} เดือน</div>
+    <div class="value">{{ money(d.received_total) }}</div>
+    <div class="hint">{{ d.vendors | length }} ผู้ขาย/ผู้รับจ้าง</div>
+  </div>
+  <div class="tile {{ 'bad' if d.months_of_stock is not none and d.months_of_stock < 1 }}{{ 'warn' if d.months_of_stock is not none and d.months_of_stock > 6 }}">
+    <div class="label">เดือนคงคลัง</div>
+    <div class="value">{{ '%.1f' % d.months_of_stock if d.months_of_stock is not none else '—' }}</div>
+    <div class="hint">{% if not d.consumable %}คิดไม่ได้กับ{{ d.group }}{% elif d.months_of_stock is none %}ไม่มียอดใช้ให้หาร{% else %}มูลค่าคงคลัง ÷ ยอดใช้เฉลี่ย{% endif %}</div>
+  </div>
+</div>
+
+<div class="card" style="margin-bottom:16px">
+  <div style="font-weight:600">ยอดใช้และยอดรับรายเดือน (มูลค่า)</div>
+  {{ charts.monthly_bars(d.months) }}
+</div>
+
+<div class="grid2">
+<div>
+  <h2 style="margin-top:4px">คงคลังตอนนี้ แยกคลัง</h2>
+  {% if d.stock_by_store %}
+  <div class="scroll"><table>
+    <thead><tr><th>คลัง</th><th class="num">จำนวน</th><th class="num">มูลค่า</th><th class="num">ล็อต</th><th>หมดอายุเร็วสุด</th></tr></thead>
+    <tbody>
+    {% for s in d.stock_by_store %}
+      <tr><td>{{ s.store_name }}<br><span class="code">รหัส {{ s.store }}</span></td>
+        <td class="num">{{ money(s.qty) }} {{ s.units }}</td><td class="num">{{ money(s.value) }}</td>
+        <td class="num">{{ s.lots }}</td><td style="white-space:nowrap">{{ expiry_badge(s.nearest_expiry) }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  {% else %}<div class="card">ไม่มีคงคลังในภาพล่าสุด{% if d.group_key == 'hire' %} — งานจ้างไม่มีคงคลังตามปกติ{% endif %}</div>{% endif %}
+</div>
+<div>
+  <h2 style="margin-top:4px">หน่วยงานที่เบิกไป {{ d.window_months }} เดือน</h2>
+  {% if d.taken_by %}
+  <div class="scroll"><table>
+    <thead><tr><th>หน่วยงาน</th><th class="num">จำนวน</th><th class="num">มูลค่าสุทธิ</th><th class="num">ใบเบิก</th></tr></thead>
+    <tbody>
+    {% for t in d.taken_by %}
+      <tr><td><a href="/departments?div={{ t.division }}{% if t.dept %}&amp;dept={{ t.dept }}{% endif %}">{{ t.name }}</a></td>
+        <td class="num">{{ money(t.qty) }}</td><td class="num">{{ money(t.value) }}</td><td class="num">{{ t.slips }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  {% else %}<div class="card">ไม่มีใบเบิกของรายการนี้ในช่วงนี้{% if d.group_key in ('hire', 'equipment') %} — {{ d.group }}มักไม่ผ่านการเบิกจากคลัง{% endif %}</div>{% endif %}
+</div>
+</div>
+
+<h2>ผู้ขาย / ผู้รับจ้าง (ทุกช่วงที่มีข้อมูล)</h2>
+{% if d.vendors %}
+<div class="scroll"><table>
+  <thead><tr><th>ผู้ขาย</th><th class="num">ใบรับ</th><th class="num">จำนวนรวม</th><th class="num">มูลค่ารวม</th><th class="num">ราคาล่าสุด/หน่วย</th><th>รับล่าสุด</th></tr></thead>
+  <tbody>
+  {% for v in d.vendors %}
+    <tr><td>{{ v.supplier }}</td><td class="num">{{ v.receipts }}</td><td class="num">{{ money(v.qty) }}</td>
+      <td class="num">{{ money(v.value) }}</td><td class="num">{{ price(v.last_price) }}</td><td style="white-space:nowrap">{{ thai_day(v.last_date) }}</td></tr>
+  {% endfor %}
+  </tbody>
+</table></div>
+{% else %}<div class="card">ยังไม่มีใบรับของรายการนี้ในคลังข้อมูล{% if not receipts.complete %} — ใบรับของคลังอื่นนอกจากคลังยาจะเข้ามาหลังดึงข้อมูลรอบถัดไป{% endif %}</div>{% endif %}
+
+<h2>ใบรับล่าสุด</h2>
+{% if d.receipts %}
+<div class="scroll"><table>
+  <thead><tr><th>วันที่รับ</th><th>เลขใบรับ</th><th>คลัง</th><th>เลข PO</th><th>ผู้ขาย</th><th>ล็อต</th>
+    <th class="num">จำนวน</th><th class="num">ราคา/หน่วย</th><th class="num">มูลค่า</th></tr></thead>
+  <tbody>
+  {% for r in d.receipts %}
+    <tr><td style="white-space:nowrap">{{ thai_day(r.rcv_date) }}</td><td>{{ r.rcv_no }}</td><td>{{ r.store_name }}</td>
+      <td>{{ r.po_no or '—' }}</td><td>{{ r.supplier }}</td><td>{{ r.lot_no or '—' }}</td>
+      <td class="num">{{ money(r.qty) }} {{ r.unit }}</td><td class="num">{{ price(r.unit_price) }}</td><td class="num">{{ money(r.value) }}</td></tr>
+  {% endfor %}
+  </tbody>
+</table></div>
+{% else %}<div class="card">ยังไม่มีใบรับ</div>{% endif %}
+
+<h2>ล็อตที่มีอยู่ตอนนี้</h2>
+{% if d.lots %}
+<div class="scroll"><table>
+  <thead><tr><th>คลัง</th><th>ล็อต</th><th class="num">จำนวน</th><th class="num">มูลค่า</th><th>หมดอายุ</th><th>รับเข้าล่าสุด</th></tr></thead>
+  <tbody>
+  {% for lot in d.lots %}
+    <tr><td>{{ lot.store_name }}</td><td>{{ lot.lot_no or '—' }}</td><td class="num">{{ money(lot.qty) }} {{ lot.unit }}</td>
+      <td class="num">{{ money(lot.value) }}</td><td style="white-space:nowrap">{{ expiry_badge(lot.expire_date) }}</td>
+      <td style="white-space:nowrap">{{ thai_day(lot.last_in_date) or '—' }}</td></tr>
+  {% endfor %}
+  </tbody>
+</table></div>
+{% else %}<div class="card">ไม่มีล็อตคงเหลือ</div>{% endif %}
+
+<details class="card" style="margin:20px 0">
+  <summary style="cursor:pointer">ดูตัวเลขรายเดือนเป็นตาราง (จำนวนและมูลค่า)</summary>
+  <div class="scroll" style="margin-top:10px"><table>
+    <thead><tr><th>เดือน</th><th class="num">รับ (จำนวน)</th><th class="num">รับ (มูลค่า)</th>
+      <th class="num">ใช้สุทธิ (จำนวน)</th><th class="num">ใช้สุทธิ (มูลค่า)</th><th class="num">โอนระหว่างคลัง (มูลค่า)</th></tr></thead>
+    <tbody>
+    {% for m in d.months %}
+      <tr><td>{{ thai_period(m.period) }}{% if m.partial %} <span class="code">(ยังไม่จบเดือน)</span>{% endif %}</td>
+        <td class="num">{{ money(m.received_qty) }}</td><td class="num">{{ money(m.received) }}</td>
+        <td class="num">{{ money(m.used_qty) }}</td><td class="num">{{ money(m.used) }}</td><td class="num">{{ money(m.transferred) }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+</details>
+
+<div class="note">
+  <b>ยอดใช้</b> = ใบจ่ายให้หน่วยเบิกที่สอบทานผ่าน หักใบคืน ทุกคลังรวมกัน ·
+  <b>โอนระหว่างคลัง</b>แสดงแยกไว้ ไม่นับเป็นยอดใช้ เพราะของยังอยู่ในโรงพยาบาล ·
+  เดือนคงคลังหารด้วยยอดใช้เฉลี่ย {{ d.covered_months }} เดือนที่จบแล้ว ·
+  จำนวนในตารางเป็นหน่วยตามที่ระบบบันทึกในแต่ละเอกสาร ซึ่งอาจไม่ใช่หน่วยเดียวกันทุกแถว
+  การเทียบจึงใช้มูลค่าเป็นหลัก
+</div>
+{% endif %}
+{% endblock %}

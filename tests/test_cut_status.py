@@ -10,7 +10,8 @@ sys.path.insert(0, str(ROOT / "app"))
 
 import cut_status  # noqa: E402
 
-SCHEMA = "CREATE TABLE issues (store TEXT, irno TEXT, issued_at TEXT, stock_code TEXT)"
+SCHEMA = ("CREATE TABLE issues (store TEXT, irno TEXT, issued_at TEXT, stock_code TEXT, "
+          "period TEXT)")
 START, END = date(2026, 6, 15), date(2026, 9, 9)   # จันทร์ ถึง พุธ
 WINDOW = (END - START).days + 1
 
@@ -18,7 +19,9 @@ WINDOW = (END - START).days + 1
 def build(rows):
     connection = sqlite3.connect(":memory:")
     connection.execute(SCHEMA)
-    connection.executemany("INSERT INTO issues VALUES (?, ?, ?, ?)", rows)
+    # งวดคือเดือนที่บันทึกเข้าระบบ เหมือนคลังข้อมูลจริง — หน้านี้กรองงวดก่อนเพื่อความเร็ว
+    connection.executemany("INSERT INTO issues VALUES (?, ?, ?, ?, ?)",
+                           [(*row, row[2][:4] + row[2][5:7]) for row in rows])
     return connection
 
 
@@ -151,6 +154,18 @@ class SeverityTests(unittest.TestCase):
         self.assertEqual(both, set())
         self.assertEqual(len(report["stopped"]) + len(report["late"]),
                          len(report["needs_attention"]))
+
+
+class PeriodFilterTests(unittest.TestCase):
+    """หน้านี้กรองงวดก่อนจัดกลุ่มเพื่อความเร็ว — เอกสารที่บันทึกข้ามเดือนต้องไม่หาย"""
+
+    def test_a_cut_posted_in_the_following_month_still_counts_for_its_own_day(self):
+        days = working_days()
+        rows = [row for row in import_rows("I2", days) if row[1][:8] != "20260831"]
+        # ตัดยอดของวันที่ 31 ส.ค. แต่บันทึกเข้าระบบวันที่ 2 ก.ย. — งวดของแถวนี้คือ 202609
+        rows.append(("I2", "20260831-I2-I/S1", "2026-09-02 00:50", "1000000"))
+        report = cut_status.collect(build(rows), window_days=WINDOW)
+        self.assertNotIn("20260831", report["stores"][0].missing_working_days)
 
 
 class ReportShapeTests(unittest.TestCase):

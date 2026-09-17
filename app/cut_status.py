@@ -119,13 +119,26 @@ def latest_data_day(connection) -> str | None:
     ต้นทางเป็นสำเนาที่คัดลอกวันละครั้ง ถ้าเทียบกับวันนี้จริง ทุกคลังจะดูค้างทั้งที่
     ยังไม่ถึงรอบคัดลอก
     """
+    # ดูแค่สองงวดล่าสุด — เคยอ่านทั้งตาราง 2 ล้านแถว หน้านี้จึงช้าถึง 14 วินาทีหลังดึงทุกหมวด
+    # เอกสารของวันไหนก็ตามถูกบันทึกในงวดเดียวกันหรืองวดหลังจากนั้นเสมอ สองงวดล่าสุดจึงพอ
+    latest = connection.execute(
+        "SELECT MAX(period) FROM issues WHERE LENGTH(period) = 6").fetchone()
+    if not latest or not latest[0]:
+        return None
+    since = _previous_period(latest[0])
     row = connection.execute("""
         SELECT MAX(day) FROM (
-            SELECT MAX(SUBSTR(irno, 1, 8)) AS day FROM issues WHERE """ + _IMPORT_DOC + """
+            SELECT MAX(SUBSTR(irno, 1, 8)) AS day FROM issues
+            WHERE period >= ? AND """ + _IMPORT_DOC + """
             UNION ALL
-            SELECT MAX(REPLACE(SUBSTR(issued_at, 1, 10), '-', '')) FROM issues
-        )""").fetchone()
+            SELECT MAX(REPLACE(SUBSTR(issued_at, 1, 10), '-', '')) FROM issues WHERE period >= ?
+        )""", (since, since)).fetchone()
     return row[0] if row and row[0] else None
+
+
+def _previous_period(period: str) -> str:
+    year, month = int(period[:4]), int(period[4:6])
+    return f"{year - 1:04d}12" if month == 1 else f"{year:04d}{month - 1:02d}"
 
 
 def collect(connection, window_days: int = 90, as_of: str | None = None) -> dict:
@@ -147,9 +160,12 @@ def collect(connection, window_days: int = 90, as_of: str | None = None) -> dict
                CASE WHEN {_IMPORT_DOC} THEN 1 ELSE 0 END AS is_import,
                COUNT(DISTINCT irno) AS documents
         FROM issues
+        WHERE period >= ?
         GROUP BY store, day, is_import
         HAVING day BETWEEN ? AND ?""",
-        (start.strftime("%Y%m%d"), end_day)).fetchall()
+        # เอกสารถูกบันทึกในงวดเดียวกับวันของมันหรือหลังจากนั้นเสมอ กรองงวดก่อนจึงไม่ตกหล่น
+        # และไม่ต้องจัดกลุ่มข้อมูลทั้งสองปีงบประมาณก่อนค่อยทิ้ง
+        (start.strftime("%Y%m"), start.strftime("%Y%m%d"), end_day)).fetchall()
 
     tally: dict[str, dict] = {}
     for store, day, is_import, documents in rows:

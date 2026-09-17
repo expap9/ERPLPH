@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}ERPLPH{% endblock %} · ERPLPH</title>
+<style>
+  :root {
+    color-scheme: light;
+    --ink:#1b2430; --muted:#5f6b78; --line:#dde3ea; --bg:#f4f6f9; --card:#ffffff;
+    --head:#eef1f5; --link:#2f5d9e; --nav:#1b2430; --nav-ink:#e9eef4; --nav-on:#3d6fb4;
+    --late:#b4232a; --late-bg:#fdf0f0; --ok:#1d7a4c; --ok-bg:#eef8f2;
+    --slow:#9a6a12; --slow-bg:#fdf7e8; --note-bg:#fff8e6; --note-line:#e8d48a;
+    /* สีของกลุ่มของ — ลำดับตายตัวตาม categories.GROUPS สีตามกลุ่ม ไม่ตามอันดับ
+       ตรวจด้วย validate_palette.js แล้ว (light ผ่านทุกข้อ contrast WARN จึงมีตัวเลขกำกับเสมอ) */
+    --g-drug:#2a78d6; --g-medical_supply:#eb6834; --g-material:#1baf7a; --g-equipment:#eda100;
+    --g-food:#e87ba4; --g-hire:#008300; --g-other:#4a3aa7;
+    --s-used:#2a78d6; --s-received:#eb6834;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:where(:not([data-theme="light"])) {
+      color-scheme: dark;
+      --ink:#eef1f4; --muted:#aab3bd; --line:#34383d; --bg:#141516; --card:#1a1a19;
+      --head:#232427; --link:#8db4ea; --nav:#0c0d0e; --nav-ink:#e9eef4; --nav-on:#3987e5;
+      --late:#e66767; --late-bg:#3a1d1d; --ok:#4cc38a; --ok-bg:#15291f;
+      --slow:#e0a93a; --slow-bg:#33280f; --note-bg:#2e2710; --note-line:#6b5a1e;
+      --g-drug:#3987e5; --g-medical_supply:#d95926; --g-material:#199e70; --g-equipment:#c98500;
+      --g-food:#d55181; --g-hire:#008300; --g-other:#9085e9;
+      --s-used:#3987e5; --s-received:#d95926;
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --ink:#eef1f4; --muted:#aab3bd; --line:#34383d; --bg:#141516; --card:#1a1a19;
+    --head:#232427; --link:#8db4ea; --nav:#0c0d0e; --nav-ink:#e9eef4; --nav-on:#3987e5;
+    --late:#e66767; --late-bg:#3a1d1d; --ok:#4cc38a; --ok-bg:#15291f;
+    --slow:#e0a93a; --slow-bg:#33280f; --note-bg:#2e2710; --note-line:#6b5a1e;
+    --g-drug:#3987e5; --g-medical_supply:#d95926; --g-material:#199e70; --g-equipment:#c98500;
+    --g-food:#d55181; --g-hire:#008300; --g-other:#9085e9;
+    --s-used:#3987e5; --s-received:#d95926;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font-size:15px;
+         font-family:"Sarabun","Leelawadee UI","Tahoma",sans-serif; }
+  a { color:var(--link); }
+  nav.top { background:var(--nav); color:var(--nav-ink); }
+  nav.top .in { max-width:1240px; margin:0 auto; padding:0 16px; display:flex; flex-wrap:wrap;
+                align-items:center; gap:4px 18px; }
+  nav.top .brand { font-weight:700; padding:12px 0; margin-right:8px; }
+  nav.top a { color:var(--nav-ink); text-decoration:none; padding:12px 2px; font-size:14.5px;
+              border-bottom:3px solid transparent; }
+  nav.top a.on { border-bottom-color:var(--nav-on); font-weight:600; }
+  nav.top form { margin-left:auto; padding:7px 0; }
+  nav.top input { width:230px; max-width:60vw; padding:6px 10px; border-radius:6px; border:0;
+                  font:inherit; font-size:14px; }
+  .wrap { max-width:1240px; margin:0 auto; padding:22px 16px 56px; }
+  h1 { font-size:22px; margin:0 0 4px; }
+  h2 { font-size:17px; margin:26px 0 10px; }
+  .sub { color:var(--muted); margin:0 0 16px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:8px; padding:14px 16px; }
+  .tiles { display:grid; grid-template-columns:repeat(auto-fill, minmax(200px, 1fr)); gap:12px;
+           margin:0 0 16px; }
+  .tile { background:var(--card); border:1px solid var(--line); border-radius:8px;
+          padding:12px 14px; text-decoration:none; color:var(--ink); display:block; }
+  a.tile:hover { border-color:var(--nav-on); }
+  .tile .label { color:var(--muted); font-size:13.5px; }
+  .tile .value { font-size:24px; font-weight:700; font-variant-numeric:tabular-nums; margin-top:2px; }
+  .tile .hint { color:var(--muted); font-size:12.5px; margin-top:2px; }
+  .tile.bad .value { color:var(--late); }
+  .tile.warn .value { color:var(--slow); }
+  .tabs { margin:0 0 12px; display:flex; flex-wrap:wrap; gap:6px; align-items:center; }
+  .tabs a { display:inline-block; padding:5px 12px; border:1px solid var(--line);
+            border-radius:999px; background:var(--card); color:var(--ink); text-decoration:none;
+            font-size:14px; }
+  .tabs a.on { background:var(--ink); color:var(--bg); border-color:var(--ink); }
+  .tabs .label { color:var(--muted); font-size:13.5px; margin-right:4px; }
+  .scroll { overflow-x:auto; margin-bottom:20px; }
+  table { width:100%; border-collapse:collapse; background:var(--card); border:1px solid var(--line);
+          border-radius:8px; overflow:hidden; }
+  th, td { padding:9px 11px; text-align:left; border-bottom:1px solid var(--line); vertical-align:top; }
+  th { background:var(--head); font-size:13px; color:var(--muted); font-weight:600; white-space:nowrap; }
+  td.num, th.num { text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap; }
+  tbody tr:hover { background:var(--head); }
+  .code { color:var(--muted); font-size:12.5px; }
+  .dot { display:inline-block; width:10px; height:10px; border-radius:2px; margin-right:6px;
+         vertical-align:baseline; }
+  .pill { display:inline-block; padding:1px 8px; border-radius:999px; font-size:12.5px; font-weight:600; }
+  .pill.late { background:var(--late); color:#fff; }
+  .pill.slow { background:var(--slow); color:#fff; }
+  .pill.ok { background:var(--ok-bg); color:var(--ok); }
+  .problem, .notice { background:var(--note-bg); border:1px solid var(--note-line); border-radius:6px;
+                      padding:12px 14px; margin:0 0 16px; line-height:1.7; }
+  .note { color:var(--muted); font-size:13.5px; line-height:1.85; margin-top:22px;
+          border-top:1px solid var(--line); padding-top:14px; }
+  .grid2 { display:grid; grid-template-columns:repeat(auto-fit, minmax(340px, 1fr)); gap:16px; }
+  .viz-tip { position:fixed; pointer-events:none; background:var(--card); color:var(--ink);
+             border:1px solid var(--line); border-radius:6px; padding:6px 9px; font-size:13px;
+             box-shadow:0 2px 8px rgba(0,0,0,.18); display:none; z-index:10; white-space:nowrap; }
+  @media (max-width:640px) {
+    nav.top form { margin-left:0; width:100%; }
+    nav.top input { width:100%; max-width:none; }
+    .tile .value { font-size:20px; }
+  }
+  {% block style %}{% endblock %}
+</style>
+</head>
+<body>
+<nav class="top"><div class="in">
+  <span class="brand">ERPLPH</span>
+  <a href="/" class="{{ 'on' if active == 'overview' }}">ภาพรวม</a>
+  <a href="/items" class="{{ 'on' if active == 'items' }}">ค้นหารายการ</a>
+  <a href="/departments" class="{{ 'on' if active == 'departments' }}">แต่ละแผนกเบิกอะไร</a>
+  <a href="/lists/expiring" class="{{ 'on' if active == 'lists' }}">ใกล้หมดอายุ · ค้างนิ่ง</a>
+  <a href="/cut-status" class="{{ 'on' if active == 'cut' }}">คลังไหนข้อมูลค้าง</a>
+  <form action="/items" method="get" role="search">
+    <input type="search" name="q" placeholder="ค้นรหัสหรือชื่อ ยา พัสดุ ครุภัณฑ์ งานจ้าง…"
+           value="{{ search_text or '' }}" aria-label="ค้นหารายการ">
+  </form>
+</div></nav>
+<div class="wrap">
+{% block content %}{% endblock %}
+</div>
+<div class="viz-tip" id="viz-tip" role="status"></div>
+<script>
+  // ป้ายเมื่อชี้ที่แท่งกราฟ — ข้อความอยู่ใน data-tip ของแต่ละแท่ง
+  (function () {
+    var tip = document.getElementById('viz-tip');
+    document.addEventListener('mousemove', function (event) {
+      var mark = event.target.closest ? event.target.closest('[data-tip]') : null;
+      if (!mark) { tip.style.display = 'none'; return; }
+      tip.textContent = mark.getAttribute('data-tip');
+      tip.style.display = 'block';
+      var x = event.clientX + 14, y = event.clientY + 14;
+      if (x + tip.offsetWidth > window.innerWidth - 8) x = event.clientX - tip.offsetWidth - 14;
+      tip.style.left = x + 'px'; tip.style.top = y + 'px';
+    });
+  })();
+</script>
+</body>
+</html>

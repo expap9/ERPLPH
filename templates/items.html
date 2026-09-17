@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block title %}ค้นหารายการ{% endblock %}
+{% block content %}
+
+<h1>ค้นหารายการ</h1>
+<p class="sub">ค้นด้วยรหัสหรือชื่อ ได้ทุกประเภท — ยา เวชภัณฑ์ พัสดุ ครุภัณฑ์ อาหาร งานจ้าง ·
+  หรือเลือกกลุ่มเพื่อดูรายการที่เงินหมุนเวียนมากที่สุด</p>
+
+{% if problem %}
+  <div class="problem">{{ problem }}</div>
+{% else %}
+
+<form class="card" method="get" action="/items" style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:12px">
+  <input type="search" name="q" value="{{ search_text }}" placeholder="เช่น กระดาษ, paracetamol, หมึก, 1021030"
+         style="flex:1 1 260px;padding:8px 10px;border:1px solid var(--line);border-radius:6px;font:inherit;background:var(--card);color:var(--ink)">
+  {% if group %}<input type="hidden" name="group" value="{{ group }}">{% endif %}
+  {% if store %}<input type="hidden" name="store" value="{{ store }}">{% endif %}
+  <button style="padding:8px 16px;border-radius:6px;border:1px solid var(--ink);background:var(--ink);color:var(--bg);font:inherit">ค้นหา</button>
+</form>
+
+<div class="tabs">
+  <span class="label">กลุ่มของ</span>
+  <a class="{{ 'on' if not group }}" href="/items?{{ query(q=search_text, store=store) }}">ทุกกลุ่ม</a>
+  {% for choice in group_choices %}
+    <a class="{{ 'on' if choice.key == group }}" href="/items?{{ query(q=search_text, group=choice.key, store=store) }}">
+      <i class="dot" style="background:var(--g-{{ choice.key }})"></i>{{ choice.name_th }}</a>
+  {% endfor %}
+</div>
+
+{% if not search_text and not group %}
+  <div class="card">พิมพ์คำค้น หรือเลือกกลุ่มของด้านบน</div>
+{% elif not rows %}
+  <div class="card">ไม่พบรายการที่ตรงกับ “{{ search_text }}”{% if group %} ในกลุ่ม{{ group_name(group) }}{% endif %}</div>
+{% else %}
+  <p class="code">พบ {{ rows | length }} รายการ{% if rows | length >= limit %} (แสดง {{ limit }} รายการแรกที่เงินหมุนเวียนมากที่สุด พิมพ์คำค้นให้เจาะจงขึ้นเพื่อดูรายการอื่น){% endif %}
+    · ยอดใช้และยอดรับ {{ months }} เดือนที่จบแล้ว</p>
+  <div class="scroll">
+  <table>
+    <thead><tr>
+      <th>รายการ</th><th>กลุ่ม</th>
+      <th class="num">มูลค่าคงคลัง</th><th class="num">คลังที่มีของ</th>
+      <th class="num">ยอดใช้ {{ months }} เดือน</th><th class="num">ยอดรับ {{ months }} เดือน</th>
+      <th>รับล่าสุด</th>
+    </tr></thead>
+    <tbody>
+    {% for row in rows %}
+      <tr>
+        <td><a href="/items/{{ row.stock_code | urlencode }}">{{ row.name or '(ไม่มีชื่อ)' }}</a>
+          {% if row.retired %}<span class="pill slow">เลิกใช้</span>{% endif %}
+          <br><span class="code">รหัส {{ row.stock_code }}{% if row.trade_name and row.trade_name != row.name %} · {{ row.trade_name }}{% endif %}</span></td>
+        <td style="white-space:nowrap"><i class="dot" style="background:var(--g-{{ row.group_key }})"></i>{{ row.group }}</td>
+        <td class="num">{{ money(row.stock_value) }}</td>
+        <td class="num">{{ row.stores or '—' }}</td>
+        <td class="num">{{ money(row.used) }}</td>
+        <td class="num">{{ money(row.received) }}</td>
+        <td style="white-space:nowrap">{{ thai_day(row.last_received) or '—' }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+{% endif %}
+
+<div class="note">
+  ค้นจากทะเบียนรายการที่เคยมีการเคลื่อนไหวในคลังข้อมูลของเรา ({{ '{:,}'.format(catalogue_size) }} รายการ)
+  รายการที่ไม่เคยรับหรือจ่ายเลยใน 2 ปีงบประมาณจะไม่อยู่ในนี้ ·
+  ยอดรับ{% if not receipts.complete %} <b>ยังมีเฉพาะ{{ receipts.stores | map('store_name') | join(', ') }}</b> จนกว่าจะดึงข้อมูลรอบถัดไป{% endif %}
+</div>
+{% endif %}
+{% endblock %}

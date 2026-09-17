@@ -1,0 +1,84 @@
+{#- กราฟที่ใช้ร่วมกันหลายหน้า — เขียนเป็น SVG ในหน้าเลย ไม่ดึงไลบรารีจากภายนอก
+    เพราะเซิร์ฟเวอร์ของโรงพยาบาลอาจไม่มีอินเทอร์เน็ต
+
+    หลักที่ใช้ (skill dataviz): แกนเดียว · แท่งบาง ปลายมน 4px ติดฐาน · ช่องว่าง 2px ระหว่างแท่ง
+    · เส้นตารางจาง · มีคำอธิบายสีทุกครั้งที่มี 2 ชุด · ชี้ที่แท่งแล้วเห็นตัวเลข · มีตารางให้ดูแทนกราฟ -#}
+
+{% macro monthly_bars(rows, used_label='ยอดใช้', received_label='ยอดรับ', show_received=true) -%}
+  {%- set width = 760 -%}{%- set height = 240 -%}
+  {%- set left = 62 -%}{%- set right = 8 -%}{%- set top = 12 -%}{%- set bottom = 34 -%}
+  {%- set plot_w = width - left - right -%}{%- set plot_h = height - top - bottom -%}
+  {%- set values = [] -%}
+  {%- for row in rows -%}
+    {%- set _ = values.append(row.used if row.used > 0 else 0) -%}
+    {%- if show_received -%}{%- set _ = values.append(row.received if row.received > 0 else 0) -%}{%- endif -%}
+  {%- endfor -%}
+  {%- set peak = (values | max) if values else 0 -%}
+  {%- set scale_top = nice_ceiling(peak) -%}
+  {%- set slot = plot_w / (rows | length if rows else 1) -%}
+  {%- set series = 2 if show_received else 1 -%}
+  {%- set bar_w = [ (slot - 10) / series - 2, 26 ] | min -%}
+  <div class="legend-row" style="display:flex;gap:18px;font-size:13.5px;color:var(--muted);margin:2px 0 6px">
+    <span><i class="dot" style="background:var(--s-used)"></i>{{ used_label }}</span>
+    {% if show_received %}<span><i class="dot" style="background:var(--s-received)"></i>{{ received_label }}</span>{% endif %}
+    <span>เดือนล่าสุดยังไม่จบ แสดงแบบโปร่ง</span>
+  </div>
+  <svg viewBox="0 0 {{ width }} {{ height }}" width="100%" role="img"
+       aria-label="{{ used_label }}{% if show_received %}และ{{ received_label }}{% endif %}รายเดือน"
+       style="display:block;max-height:280px">
+    {%- for step in range(0, 5) %}
+      {%- set y = top + plot_h - plot_h * step / 4 %}
+      <line x1="{{ left }}" x2="{{ width - right }}" y1="{{ y }}" y2="{{ y }}"
+            stroke="var(--line)" stroke-width="{{ 1 if step else 1.5 }}"/>
+      <text x="{{ left - 8 }}" y="{{ y + 4 }}" text-anchor="end" font-size="11.5"
+            fill="var(--muted)">{{ short_money(scale_top * step / 4) }}</text>
+    {%- endfor %}
+    {%- for row in rows %}
+      {%- set x0 = left + slot * loop.index0 + (slot - (bar_w + 2) * series) / 2 %}
+      {%- set opacity = 0.45 if row.partial else 1 %}
+      {%- set used = row.used if row.used > 0 else 0 %}
+      {%- set h = (used / scale_top * plot_h) if scale_top else 0 %}
+      <g data-tip="{{ thai_period(row.period) }} · {{ used_label }} {{ money(row.used) }} บาท{% if row.partial %} (ยังไม่จบเดือน){% endif %}">
+        <rect x="{{ x0 - 1 }}" y="{{ top }}" width="{{ bar_w + 2 }}" height="{{ plot_h }}" fill="transparent"/>
+        {%- if h > 0 %}
+        <path d="M{{ x0 }},{{ top + plot_h }} V{{ top + plot_h - h + [4, h] | min }} q0,-{{ [4, h] | min }} {{ [4, h] | min }},-{{ [4, h] | min }} H{{ x0 + bar_w - [4, h] | min }} q{{ [4, h] | min }},0 {{ [4, h] | min }},{{ [4, h] | min }} V{{ top + plot_h }} Z"
+              fill="var(--s-used)" fill-opacity="{{ opacity }}"/>
+        {%- endif %}
+      </g>
+      {%- if show_received %}
+        {%- set received = row.received if row.received > 0 else 0 %}
+        {%- set h2 = (received / scale_top * plot_h) if scale_top else 0 %}
+        {%- set x1 = x0 + bar_w + 2 %}
+        <g data-tip="{{ thai_period(row.period) }} · {{ received_label }} {{ money(row.received) }} บาท{% if row.partial %} (ยังไม่จบเดือน){% endif %}">
+          <rect x="{{ x1 - 1 }}" y="{{ top }}" width="{{ bar_w + 2 }}" height="{{ plot_h }}" fill="transparent"/>
+          {%- if h2 > 0 %}
+          <path d="M{{ x1 }},{{ top + plot_h }} V{{ top + plot_h - h2 + [4, h2] | min }} q0,-{{ [4, h2] | min }} {{ [4, h2] | min }},-{{ [4, h2] | min }} H{{ x1 + bar_w - [4, h2] | min }} q{{ [4, h2] | min }},0 {{ [4, h2] | min }},{{ [4, h2] | min }} V{{ top + plot_h }} Z"
+                fill="var(--s-received)" fill-opacity="{{ opacity }}"/>
+          {%- endif %}
+        </g>
+      {%- endif %}
+      <text x="{{ left + slot * loop.index0 + slot / 2 }}" y="{{ height - 12 }}" text-anchor="middle"
+            font-size="11.5" fill="var(--muted)">{{ thai_period(row.period) }}</text>
+    {%- endfor %}
+  </svg>
+{%- endmacro %}
+
+{% macro group_stack(parts, total) -%}
+  {#- แถบเดียวแบ่งตามกลุ่มของ ลำดับตาม categories.GROUPS สีตามกลุ่ม -#}
+  {%- set shown = parts | selectattr('value', 'gt', 0) | list -%}
+  {%- if total and total > 0 and shown %}
+  <div style="display:flex;height:18px;gap:2px;margin:10px 0 8px;border-radius:4px;overflow:hidden">
+    {%- for part in shown %}
+      <i data-tip="{{ part.name }} {{ money(part.value) }} บาท ({{ '%.1f' % (part.value / total * 100) }}%)"
+         style="display:block;flex:0 0 calc({{ '%.4f' % (part.value / total * 100) }}% - 2px);min-width:2px;background:var(--g-{{ part.key }})"></i>
+    {%- endfor %}
+  </div>
+  <div style="display:flex;flex-wrap:wrap;gap:4px 16px;font-size:13.5px;color:var(--muted)">
+    {%- for part in shown %}
+      <span><i class="dot" style="background:var(--g-{{ part.key }})"></i>{{ part.name }}
+        <b style="color:var(--ink);font-variant-numeric:tabular-nums">{{ short_money(part.value) }}</b>
+        ({{ '%.1f' % (part.value / total * 100) }}%)</span>
+    {%- endfor %}
+  </div>
+  {%- endif %}
+{%- endmacro %}

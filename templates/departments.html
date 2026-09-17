@@ -1,24 +1,10 @@
-<!doctype html>
-<html lang="th">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>แต่ละแผนกเบิกอะไรไปเท่าไร · ERPLPH</title>
-<style>
-  :root { --ink:#1b2430; --muted:#6b7684; --line:#dde3ea; --bg:#f4f6f9; --link:#2f5d9e;
-          --drug:#3d6fb4; --supply:#1d7a4c; --material:#a8631c; --equip:#5c5aa8; --food:#b0344c;
-          --other:#7a6b8a; }
-  * { box-sizing:border-box; }
-  body { margin:0; background:var(--bg); color:var(--ink); font-size:15px;
-         font-family:"Sarabun","Leelawadee UI","Tahoma",sans-serif; }
-  .wrap { max-width:1180px; margin:0 auto; padding:24px 20px 56px; }
-  h1 { font-size:22px; margin:0 0 4px; }
-  .sub { color:var(--muted); margin:0 0 16px; }
-  a { color:var(--link); }
+{% extends "base.html" %}
+{% block title %}แต่ละแผนกเบิกอะไรไปเท่าไร{% endblock %}
+{% block style %}
   .crumb { margin:0 0 14px; font-size:14px; }
   .crumb a, .crumb span { display:inline-block; }
   .crumb .sep { color:var(--muted); margin:0 6px; }
-  .headline { background:#fff; border:1px solid var(--line); border-radius:8px;
+  .headline { background:var(--card); border:1px solid var(--line); border-radius:8px;
               padding:16px 18px; margin-bottom:16px; }
   .headline .big { font-size:32px; font-weight:700; font-variant-numeric:tabular-nums; }
   .headline .what { color:var(--muted); margin-top:2px; }
@@ -28,32 +14,12 @@
   .legend { font-size:13.5px; color:var(--muted); }
   .legend b { color:var(--ink); font-variant-numeric:tabular-nums; }
   .legend span { margin-right:16px; white-space:nowrap; }
-  .dot { display:inline-block; width:9px; height:9px; border-radius:2px; margin-right:5px; }
-  .tabs { margin:0 0 14px; }
-  .tabs a { display:inline-block; padding:5px 12px; margin-right:6px; border:1px solid var(--line);
-            border-radius:999px; background:#fff; color:var(--ink); text-decoration:none; font-size:14px; }
-  .tabs a.on { background:var(--ink); color:#fff; border-color:var(--ink); }
-  .tabs .label { color:var(--muted); font-size:13.5px; margin-right:8px; }
-  table { width:100%; border-collapse:collapse; background:#fff; border:1px solid var(--line);
-          border-radius:8px; overflow:hidden; margin-bottom:22px; }
-  th, td { padding:10px 12px; text-align:left; border-bottom:1px solid var(--line); }
-  th { background:#eef1f5; font-size:13px; color:var(--muted); font-weight:600; }
-  td.num, th.num { text-align:right; font-variant-numeric:tabular-nums; }
-  tbody tr:hover { background:#f7f9fc; }
-  .share { display:block; height:4px; background:var(--drug); border-radius:2px; margin-top:4px; }
-  .code { color:var(--muted); font-size:12.5px; }
-  h2 { font-size:17px; margin:26px 0 10px; }
-  .note { color:var(--muted); font-size:13.5px; line-height:1.85; margin-top:22px;
-          border-top:1px solid var(--line); padding-top:14px; }
-  .problem { background:#fff8e6; border:1px solid #e8d48a; border-radius:6px; padding:14px; }
-</style>
-</head>
-<body>
-<div class="wrap">
+  .share { display:block; height:4px; background:var(--g-drug); border-radius:2px; margin-top:4px; }
+{% endblock %}
+{% block content %}
 
   <h1>แต่ละแผนกเบิกอะไรไปเท่าไร</h1>
-  <p class="sub">ทุกหน่วยงานที่เบิกของจากคลัง ทั้งยา เวชภัณฑ์ พัสดุ ครุภัณฑ์ และอาหาร · กดชื่อหน่วยงานเพื่อดูลึกลงไป
-    · <a href="/cut-status">คลังไหนข้อมูลค้าง</a></p>
+  <p class="sub">ทุกหน่วยงานที่เบิกของจากคลัง ทั้งยา เวชภัณฑ์ พัสดุ ครุภัณฑ์ และอาหาร · กดชื่อหน่วยงานเพื่อดูลึกลงไป</p>
 
   {% if problem %}
     <div class="problem">{{ problem }}</div>
@@ -85,19 +51,16 @@
     {% set shown = groups | rejectattr('net', 'le', 0) | list %}
     {% set bar_total = shown | sum(attribute='net') %}
     {% if bar_total > 0 %}
-      {% set colour = {'drug':'var(--drug)', 'medical_supply':'var(--supply)',
-                       'material':'var(--material)', 'equipment':'var(--equip)',
-                       'food':'var(--food)',
-                       'other':'var(--other)'} %}
-      <div class="bar">
+      <div class="bar" style="gap:2px;background:transparent">
         {% for part in shown %}
-          <i style="width:{{ (part.net / bar_total * 100) | round(2) }}%;
-                    background:{{ colour.get(part.key, 'var(--other)') }}"></i>
+          <i data-tip="{{ part.name }} {{ money(part.net) }} บาท"
+             style="flex:0 0 calc({{ (part.net / bar_total * 100) | round(3) }}% - 2px);min-width:2px;
+                    background:var(--g-{{ part.key or 'other' }})"></i>
         {% endfor %}
       </div>
       <div class="legend">
         {% for part in shown %}
-          <span><i class="dot" style="background:{{ colour.get(part.key, 'var(--other)') }}"></i>{{ part.name }}
+          <span><i class="dot" style="background:var(--g-{{ part.key or 'other' }})"></i>{{ part.name }}
             <b>{{ '{:,.0f}'.format(part.net) }}</b> ({{ (part.net / bar_total * 100) | round(1) }}%)</span>
         {% endfor %}
       </div>
@@ -214,6 +177,4 @@
   </div>
 
   {% endif %}
-</div>
-</body>
-</html>
+{% endblock %}
