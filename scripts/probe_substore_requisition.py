@@ -210,6 +210,49 @@ def build_queries(case: dict) -> list[tuple]:
         GROUP BY ir.DIVISION, ir.DEPT, ir.SECTION, ir.DOCUMENTTYPE
         ORDER BY COUNT(*) DESC""", [], 600))
 
+    # ชื่อหมวดสินค้าของโรงพยาบาลเอง — ผู้ใช้สั่ง 17 ก.ย. 2569 ให้ดูได้ "ทุกประเภท ยา อาหาร พัสดุ
+    # งานจ้าง งานก่อสร้าง วัสดุคอมพิวเตอร์" ตอนนี้ชื่อกลุ่มในหน้าจออนุมานจากชื่อรายการตัวอย่าง
+    # ต้องหาตารางชื่อหมวดจริงแทน — ตารางรหัสใน SYSCONFIG ชุดไหนมีครบทั้ง 03, 7, 9, 11, 4
+    # (ค่า MAINCATEGORY ที่พบจริง) น่าจะเป็นตารางชื่อหมวด
+    for database in ("SSBSTOCK", "SSBHOSPITAL"):
+        queries.append((f"category_names_in_sysconfig:{database}", f"""
+            SELECT CTRLCODE, CODE, LTRIM(RTRIM(THAINAME)) AS THAINAME
+            FROM {database}.dbo.SYSCONFIG WITH (NOLOCK)
+            WHERE CTRLCODE IN (
+                SELECT CTRLCODE FROM {database}.dbo.SYSCONFIG WITH (NOLOCK)
+                WHERE LTRIM(RTRIM(CODE)) IN ('03', '7', '9', '11', '4')
+                GROUP BY CTRLCODE HAVING COUNT(DISTINCT LTRIM(RTRIM(CODE))) = 5)
+            ORDER BY CTRLCODE, CODE""", [], 800, DEPARTMENT_COLUMNS))
+
+    # ทะเบียนรายการมีช่องจัดกลุ่มชั้นรองไหม (หมวดย่อย / ประเภท) — ใช้แยกงานก่อสร้างออกจากงานจ้าง
+    queries.append(("stock_master_grouping_columns", """
+        SELECT TABLE_NAME, COLUMN_NAME, DATA_TYPE
+        FROM INFORMATION_SCHEMA.COLUMNS
+        WHERE TABLE_NAME = 'STOCK_MASTER'
+          AND (COLUMN_NAME LIKE '%CATEGORY%' OR COLUMN_NAME LIKE '%GROUP%'
+               OR COLUMN_NAME LIKE '%TYPE%' OR COLUMN_NAME LIKE '%CLASS%')
+        ORDER BY ORDINAL_POSITION""", [], 100, SCHEMA_COLUMNS))
+
+    # งานก่อสร้างกับวัสดุคอมพิวเตอร์อยู่หมวดไหน และซื้อ/จ้างไปเท่าไรใน 12 เดือน
+    queries.append(("named_work_by_category_12m", """
+        SELECT kind.KIND, sm.MAINCATEGORY, COUNT(DISTINCT sm.STOCKCODE) AS ITEMS,
+               COUNT(DISTINCT rd.RECEIVENO) AS RECEIPTS, SUM(rd.RECEIVEAMT) AS AMOUNT,
+               MIN(rd.STORE) AS FIRST_STORE, MAX(rd.STORE) AS LAST_STORE
+        FROM dbo.STOCK_MASTER sm WITH (NOLOCK)
+        CROSS APPLY (SELECT CASE
+            WHEN sm.ENGLISHNAME LIKE N'%ก่อสร้าง%' THEN 'construction'
+            WHEN sm.ENGLISHNAME LIKE N'%ปรับปรุง%' THEN 'renovation'
+            WHEN sm.ENGLISHNAME LIKE N'%คอมพิวเตอร์%' OR sm.ENGLISHNAME LIKE '%computer%'
+                 OR sm.ENGLISHNAME LIKE N'%หมึก%' OR sm.ENGLISHNAME LIKE '%toner%' THEN 'computer'
+            WHEN sm.ENGLISHNAME LIKE N'%จ้าง%' THEN 'hire'
+            END AS KIND) kind
+        LEFT JOIN dbo.SKRECVDTL rd WITH (NOLOCK)
+               ON rd.STOCKCODE = sm.STOCKCODE
+              AND rd.UPDATESTOCKDATETIME >= DATEADD(month, -12, GETDATE())
+        WHERE kind.KIND IS NOT NULL
+        GROUP BY kind.KIND, sm.MAINCATEGORY
+        ORDER BY kind.KIND, SUM(rd.RECEIVEAMT) DESC""", [], 200))
+
     store, day = case.get("reconcile_store"), case.get("reconcile_day")
     if store and day:
         # กระทบยอดวันเดียว — ตอบคำถามว่าเอกสาร "ขาย" รวมอะไรไว้แล้วบ้าง
