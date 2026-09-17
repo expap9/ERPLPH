@@ -44,12 +44,15 @@ def make_warehouse(path: Path):
     conn.execute("CREATE TABLE issues (period TEXT, store TEXT, irno TEXT, suffix TEXT, "
                  "movement_key TEXT, stock_code TEXT, qty REAL, value REAL, unit TEXT, "
                  "division TEXT, dept TEXT, section TEXT, document_type TEXT, direction TEXT)")
-    conn.execute("CREATE TABLE items (stock_code TEXT, name TEXT, item_group TEXT)")
+    conn.execute("CREATE TABLE items (stock_code TEXT, name TEXT, main_category TEXT, "
+                 "item_group TEXT)")
     for store, irno, div, dept, section, code, qty, value, doctype, direction in ROWS:
         conn.execute("INSERT INTO issues VALUES ('202609',?,?,'1','',?,?,?,'TAB',?,?,?,?,?)",
                      (store, irno, code, qty, value, div, dept, section, doctype, direction))
-    conn.execute("INSERT INTO items VALUES ('1000', 'PARACETAMOL', ?)", (categories.DRUG,))
-    conn.execute("INSERT INTO items VALUES ('6000', 'กระดาษ A4', ?)", (categories.MATERIAL,))
+    conn.execute("INSERT INTO items VALUES ('1000', 'PARACETAMOL', '11', ?)",
+                 (categories.DRUG,))
+    conn.execute("INSERT INTO items VALUES ('6000', 'กระดาษ A4', '6', ?)",
+                 (categories.MATERIAL,))
     conn.commit()
     return conn
 
@@ -112,6 +115,18 @@ class DepartmentUsageTests(unittest.TestCase):
         totals = {part["key"]: part["net"] for part in usage.group_totals(self.conn)}
         self.assertEqual(totals[categories.DRUG], 800.0)
         self.assertEqual(totals[categories.MATERIAL], 800.0)
+
+    def test_the_group_comes_from_the_category_not_from_what_was_saved_at_pull_time(self):
+        """การแบ่งกลุ่มต้องเปลี่ยนได้โดยไม่ต้องดึงข้อมูล 2 ล้านแถวใหม่
+
+        หมวด 03 ถูกแยกจาก "อื่น ๆ" มาเป็น "อาหารและโภชนาการ" เมื่อ 17 ก.ย. 2569
+        ถ้าอ่านจากช่องกลุ่มที่บันทึกไว้ตอนดึง หน้าจอจะยังแสดงกลุ่มเดิมจนกว่าจะดึงใหม่
+        """
+        self.conn.execute("UPDATE items SET item_group = 'ค่าเก่าที่ไม่ควรถูกใช้'")
+        totals = {part["key"]: part["net"] for part in usage.group_totals(self.conn)}
+        self.assertEqual(totals[categories.DRUG], 800.0)
+        self.assertEqual(usage.items_of(self.conn, ("208",))[0].group, "ยา")
+        self.assertIn("305", self.rows(group=categories.MATERIAL))
 
     def test_an_empty_warehouse_explains_itself_instead_of_showing_zero(self):
         empty = sqlite3.connect(":memory:")

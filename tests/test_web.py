@@ -96,11 +96,12 @@ def make_department_warehouse(path: Path):
         "movement_key TEXT, stock_code TEXT, qty REAL, value REAL, unit TEXT, "
         "division TEXT, dept TEXT, section TEXT, document_type TEXT, direction TEXT, "
         "issued_at TEXT)")
-    connection.execute("CREATE TABLE items (stock_code TEXT, name TEXT, item_group TEXT)")
+    connection.execute("CREATE TABLE items (stock_code TEXT, name TEXT, main_category TEXT, "
+                       "item_group TEXT)")
     connection.execute(
         "INSERT INTO issues VALUES ('202609','I2','A1','1','','1000',10,1000.0,'TAB',"
         "'208','02','','32','out','2026-09-08')")
-    connection.execute("INSERT INTO items VALUES ('1000', 'PARACETAMOL', 'drug')")
+    connection.execute("INSERT INTO items VALUES ('1000', 'PARACETAMOL', '11', 'drug')")
     connection.commit()
     connection.close()
 

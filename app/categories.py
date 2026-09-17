@@ -17,6 +17,7 @@ from typing import NamedTuple
 DRUG = "drug"
 MEDICAL_SUPPLY = "medical_supply"
 MATERIAL = "material"
+FOOD = "food"
 OTHER = "other"
 
 #: ไม่กรองหมวดเลย — ใช้เมื่อต้องการทั้งโรงพยาบาลในการดึงครั้งเดียว
@@ -37,7 +38,11 @@ GROUPS: tuple[Group, ...] = (
     Group(DRUG, "ยา", frozenset({"10", "11", "12", "14", "17"})),
     Group(MEDICAL_SUPPLY, "เวชภัณฑ์มิใช่ยา", frozenset({"2", "3"})),
     Group(MATERIAL, "พัสดุ", frozenset({"4", "5", "6", "7", "8"})),
-    Group(OTHER, "อื่น ๆ", frozenset()),  # ทุกหมวดที่เหลือ เช่น 9 จ้างเหมา, 03 อาหาร
+    # แยกออกจาก "อื่น ๆ" เมื่อ 17 ก.ย. 2569 หลังดึงข้อมูลทุกหมวดครั้งแรก: หมวด 03 คือ
+    # อาหารล้วน 360 รหัส 19.7 ล้านบาทต่อปี (นมผงทารก อาหารทางการแพทย์ เบเกอรี) และเป็น
+    # 90% ของยอดกลุ่มงานโภชนศาสตร์ เรียกว่า "อื่น ๆ" แล้วผู้บริหารตีความผิดแน่
+    Group(FOOD, "อาหารและโภชนาการ", frozenset({"03"})),
+    Group(OTHER, "อื่น ๆ", frozenset()),  # ทุกหมวดที่เหลือ เช่น 9 จ้างเหมา
 )
 
 GROUP_BY_KEY: dict[str, Group] = {group.key: group for group in GROUPS}

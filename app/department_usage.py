@@ -96,8 +96,11 @@ def _scope(months: int, latest: str, path: tuple[str, ...], store: str | None,
         where.append(f"{at}store = ?")
         values.append(store)
     if group:
-        where.append(f"{at}stock_code IN (SELECT stock_code FROM items WHERE item_group = ?)")
-        values.append(group)
+        # กรองจากหมวดที่บันทึกไว้ ไม่ใช่จากช่องกลุ่มที่คำนวณไว้ตอนดึง เพราะการแบ่งกลุ่ม
+        # เปลี่ยนได้ (หมวด 03 ถูกแยกออกมาเป็น "อาหารและโภชนาการ" เมื่อ 17 ก.ย. 2569)
+        # ถ้ายึดช่องที่เก็บไว้ ต้องดึงข้อมูล 2 ล้านแถวใหม่ทุกครั้งที่แบ่งกลุ่มใหม่
+        clause = categories.sql_category_filter(group, "main_category")
+        where.append(f"{at}stock_code IN (SELECT stock_code FROM items WHERE {clause})")
     return where, values
 
 
@@ -146,7 +149,7 @@ def items_of(conn, parent: Iterable[str], months: int = 12, limit: int = 40,
     path = departments.path_of(*list(parent)[:3] + [""] * (3 - len(list(parent)[:3])))
     where, values = _scope(months, latest, path, store, group, alias="i")
     rows = conn.execute(
-        "SELECT i.stock_code, COALESCE(m.name, ''), COALESCE(m.item_group, ''), "
+        "SELECT i.stock_code, COALESCE(m.name, ''), COALESCE(m.main_category, ''), "
         "       COALESCE(SUM(CASE WHEN i.direction = 'out' THEN i.qty ELSE -i.qty END), 0), "
         "       COALESCE(MAX(i.unit), ''), "
         "       COALESCE(SUM(CASE WHEN i.direction = 'out' THEN i.value ELSE -i.value END), 0), "
@@ -154,9 +157,11 @@ def items_of(conn, parent: Iterable[str], months: int = 12, limit: int = 40,
         "FROM issues i LEFT JOIN items m ON m.stock_code = i.stock_code "
         f"WHERE {' AND '.join(where)} "
         "GROUP BY i.stock_code ORDER BY 6 DESC LIMIT ?", values + [limit]).fetchall()
-    return [ItemRow(code, name, categories.group_name(group_key) if group_key else "",
+    return [ItemRow(code, name,
+                    categories.group_name(categories.group_of(main_category))
+                    if main_category else "",
                     qty, unit, net, slips)
-            for code, name, group_key, qty, unit, net, slips in rows]
+            for code, name, main_category, qty, unit, net, slips in rows]
 
 
 def group_totals(conn, parent: Iterable[str] = (), months: int = 12,
@@ -167,8 +172,10 @@ def group_totals(conn, parent: Iterable[str] = (), months: int = 12,
         return []
     path = departments.path_of(*list(parent)[:3] + [""] * (3 - len(list(parent)[:3])))
     where, values = _scope(months, latest, path, store, None, alias="i")
+    # จัดกลุ่มจากหมวดของรายการตอนนี้ ไม่ใช่กลุ่มที่คำนวณไว้ตอนดึง — ดูเหตุผลใน _scope
+    grouping = categories.sql_group_expression("m.main_category")
     rows = conn.execute(
-        "SELECT COALESCE(m.item_group, ''), "
+        f"SELECT CASE WHEN COALESCE(m.main_category, '') = '' THEN '' ELSE {grouping} END, "
         "       COALESCE(SUM(CASE WHEN i.direction = 'out' THEN i.value ELSE -i.value END), 0) "
         "FROM issues i LEFT JOIN items m ON m.stock_code = i.stock_code "
         f"WHERE {' AND '.join(where)} "

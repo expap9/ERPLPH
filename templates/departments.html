@@ -6,7 +6,8 @@
 <title>แต่ละแผนกเบิกอะไรไปเท่าไร · ERPLPH</title>
 <style>
   :root { --ink:#1b2430; --muted:#6b7684; --line:#dde3ea; --bg:#f4f6f9; --link:#2f5d9e;
-          --drug:#3d6fb4; --supply:#1d7a4c; --material:#a8631c; --other:#7a6b8a; }
+          --drug:#3d6fb4; --supply:#1d7a4c; --material:#a8631c; --food:#b0344c;
+          --other:#7a6b8a; }
   * { box-sizing:border-box; }
   body { margin:0; background:var(--bg); color:var(--ink); font-size:15px;
          font-family:"Sarabun","Leelawadee UI","Tahoma",sans-serif; }
@@ -85,7 +86,8 @@
     {% set bar_total = shown | sum(attribute='net') %}
     {% if bar_total > 0 %}
       {% set colour = {'drug':'var(--drug)', 'medical_supply':'var(--supply)',
-                       'material':'var(--material)', 'other':'var(--other)'} %}
+                       'material':'var(--material)', 'food':'var(--food)',
+                       'other':'var(--other)'} %}
       <div class="bar">
         {% for part in shown %}
           <i style="width:{{ (part.net / bar_total * 100) | round(2) }}%;
