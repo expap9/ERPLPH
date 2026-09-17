@@ -6,7 +6,7 @@
 <title>แต่ละแผนกเบิกอะไรไปเท่าไร · ERPLPH</title>
 <style>
   :root { --ink:#1b2430; --muted:#6b7684; --line:#dde3ea; --bg:#f4f6f9; --link:#2f5d9e;
-          --drug:#3d6fb4; --supply:#1d7a4c; --material:#a8631c; --food:#b0344c;
+          --drug:#3d6fb4; --supply:#1d7a4c; --material:#a8631c; --equip:#5c5aa8; --food:#b0344c;
           --other:#7a6b8a; }
   * { box-sizing:border-box; }
   body { margin:0; background:var(--bg); color:var(--ink); font-size:15px;
@@ -52,7 +52,7 @@
 <div class="wrap">
 
   <h1>แต่ละแผนกเบิกอะไรไปเท่าไร</h1>
-  <p class="sub">ทุกหน่วยงานที่เบิกของจากคลัง ทั้งยา เวชภัณฑ์ และพัสดุ · กดชื่อหน่วยงานเพื่อดูลึกลงไป
+  <p class="sub">ทุกหน่วยงานที่เบิกของจากคลัง ทั้งยา เวชภัณฑ์ พัสดุ ครุภัณฑ์ และอาหาร · กดชื่อหน่วยงานเพื่อดูลึกลงไป
     · <a href="/cut-status">คลังไหนข้อมูลค้าง</a></p>
 
   {% if problem %}
@@ -86,7 +86,8 @@
     {% set bar_total = shown | sum(attribute='net') %}
     {% if bar_total > 0 %}
       {% set colour = {'drug':'var(--drug)', 'medical_supply':'var(--supply)',
-                       'material':'var(--material)', 'food':'var(--food)',
+                       'material':'var(--material)', 'equipment':'var(--equip)',
+                       'food':'var(--food)',
                        'other':'var(--other)'} %}
       <div class="bar">
         {% for part in shown %}
@@ -103,11 +104,26 @@
     {% endif %}
   </div>
 
+  {%- set here -%}
+    {% if parent[0] %}&amp;div={{ parent[0] }}{% endif %}{% if parent[1] %}&amp;dept={{ parent[1] }}{% endif %}{% if parent[2] %}&amp;section={{ parent[2] }}{% endif %}
+  {%- endset -%}
+
   <div class="tabs">
     <span class="label">ช่วงเวลา</span>
     {% for choice in month_choices %}
       <a class="{{ 'on' if choice == months }}"
-         href="/departments?months={{ choice }}{% if parent[0] %}&amp;div={{ parent[0] }}{% endif %}{% if parent[1] %}&amp;dept={{ parent[1] }}{% endif %}{% if parent[2] %}&amp;section={{ parent[2] }}{% endif %}{% if group %}&amp;group={{ group }}{% endif %}">{{ choice }} เดือน</a>
+         href="/departments?months={{ choice }}{{ here }}{% if group %}&amp;group={{ group }}{% endif %}">{{ choice }} เดือน</a>
+    {% endfor %}
+  </div>
+
+  <div class="tabs">
+    <span class="label">กลุ่มของ</span>
+    <a class="{{ 'on' if not group }}" href="/departments?months={{ months }}{{ here }}">ทุกกลุ่ม</a>
+    {% for part in groups %}
+      {% if part.key %}
+        <a class="{{ 'on' if part.key == group }}"
+           href="/departments?months={{ months }}{{ here }}&amp;group={{ part.key }}">{{ part.name }}</a>
+      {% endif %}
     {% endfor %}
   </div>
 
@@ -192,7 +208,9 @@
     <b>ยังไม่รู้</b> — บางคลังบันทึกเดือนละใบ (ห้องผ่าตัดใบหนึ่งมีได้ถึง 1,468 บรรทัด)
     จำนวน “ใบเบิก” จึงเทียบข้ามคลังตรง ๆ ไม่ได้ ·
     ชื่อหน่วยงานใน <code>SSBHOSPITAL</code> กับ <code>SSBSTOCK</code> ไม่ตรงกันบางรหัส
-    ที่นี่ยึดฐานเดียวกับใบเบิก ยังไม่ได้ให้เจ้าหน้าที่ยืนยัน
+    ที่นี่ยึดฐานเดียวกับใบเบิก ยังไม่ได้ให้เจ้าหน้าที่ยืนยัน ·
+    <b>กลุ่ม “ครุภัณฑ์” แยกจากหมวด 7 ตามหลักฐานราคาต่อหน่วยและหน่วยนับ
+    ยังไม่ได้ให้เจ้าหน้าที่พัสดุยืนยันว่าตรงกับที่โรงพยาบาลใช้จริง</b>
   </div>
 
   {% endif %}
