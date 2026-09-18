@@ -1,0 +1,128 @@
+{% extends "base.html" %}
+{% block title %}งานช่าง · จ้างเหมา · โครงสร้างอาคาร{% endblock %}
+
+{% block content %}
+<h1>ระบบติดตามงานช่าง จ้างเหมาบริการ และโครงการโครงสร้าง</h1>
+<p class="sub">แยกการบริหารจัดการตามพฤติกรรมจริง: อะไหล่ช่างผูกเลขครุภัณฑ์, สัญญาจ้างเหมาคุม SLA และงานก่อสร้างคุมงวดงานพร้อมเตือนค่าปรับ</p>
+
+{% if problem %}
+<div class="problem">{{ problem }}</div>
+{% endif %}
+
+<!-- หมวด B: Biomedical & Maintenance -->
+<div class="card" style="margin-bottom: 24px;">
+  <h2>1. งานวิศวกรรมการแพทย์และช่างบำรุงรักษา (Biomedical & Facilities)</h2>
+  <p class="hint" style="color:var(--muted); font-size:13px; margin:-4px 0 12px;">ผูกประวัติอะไหล่กับรหัสครุภัณฑ์ (Asset ID) เพื่อตรวจจับเครื่องที่กินค่าซ่อมเกินคุ้ม และป้องกันเบิกอะไหล่ซ้ำซ้อนเครื่องติดประกัน</p>
+
+  <!-- Warranty Shield Alerts -->
+  {% if warranties %}
+  <div style="background:var(--note-bg); border:1px solid var(--note-line); border-radius:6px; padding:12px 14px; margin-bottom:16px;">
+    <h3 style="color:var(--slow); font-size:14px; margin:0 0 6px;">🛡️ ระบบป้องกันการเบิกอะไหล่ซ้ำซ้อนสัญญาประกัน (Warranty Overlap Shield)</h3>
+    {% for w in warranties %}
+    <div style="font-size:13.5px; margin-bottom:6px; line-height:1.5;">
+      <strong>[ใบแจ้งซ่อม {{ w.ticket_no }}]</strong> {{ w.asset_name }} ({{ w.asset_id }}) &mdash; <span class="pill late">ถูกล็อกระบบ</span> {{ w.message }}
+      <span style="color:var(--muted); font-size:12px;">(ประกันเหลืออีก {{ w.days_warranty_left }} วัน ถึง {{ w.warranty_end }})</span>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  <h3 style="font-size:15px; margin:14px 0 8px;">ครุภัณฑ์ที่มีค่าซ่อมสะสมสูงผิดปกติ (Repair-to-Cost Alert &gt; 50%)</h3>
+  <div class="scroll">
+    <table>
+      <thead>
+        <tr>
+          <th>รหัสครุภัณฑ์ (Asset ID)</th>
+          <th>ชื่อเครื่องมือ / อุปกรณ์</th>
+          <th>หน่วยงานที่ติดตั้ง</th>
+          <th class="num">ราคาซื้อเครื่อง</th>
+          <th class="num">ค่าซ่อมสะสม</th>
+          <th class="num">สัดส่วนค่าซ่อม</th>
+          <th>ข้อเสนอแนะทางวิศวกรรม</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for a in high_repairs %}
+        <tr>
+          <td><strong>{{ a.asset_id }}</strong></td>
+          <td>{{ a.asset_name }}</td>
+          <td>{{ a.department }}</td>
+          <td class="num">฿{{ money(a.acquisition_cost) }}</td>
+          <td class="num"><strong style="color:var(--late);">฿{{ money(a.accumulated_repair_cost) }}</strong></td>
+          <td class="num"><strong style="color:var(--late);">{{ a.ratio_pct }}%</strong></td>
+          <td><span class="pill {{ 'late' if a.status == 'RECOMMEND_REPLACE' else 'slow' }}">{{ a.recommendation }}</span></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="grid2">
+  <!-- หมวด C1: Service Contracts -->
+  <div class="card">
+    <h2>2. งานจ้างเหมาบริการ (Service Contracts - หมวด 9)</h2>
+    <p class="hint" style="color:var(--muted); font-size:13px; margin:-4px 0 12px;">ควบคุมวงเงินสัญญา วันสิ้นสุดสัญญา และคะแนนประเมินคุณภาพ SLA</p>
+    <div class="scroll">
+      <table>
+        <thead>
+          <tr>
+            <th>เลขที่สัญญา / โครงการ</th>
+            <th>ผู้รับจ้าง</th>
+            <th class="num">วงเงินสัญญา</th>
+            <th class="num">คะแนน SLA</th>
+            <th class="num">วันคงเหลือ</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for c in service_contracts %}
+          <tr>
+            <td><strong>{{ c.title }}</strong><br><span class="code">{{ c.contract_no }}</span></td>
+            <td>{{ c.vendor }}</td>
+            <td class="num">฿{{ short_money(c.budget) }}</td>
+            <td class="num"><span class="pill ok">{{ c.sla_score }}%</span></td>
+            <td class="num">
+              {% if c.days_left <= 60 %}
+              <span class="pill late">{{ c.days_left }} วัน (ตั้ง TOR)</span>
+              {% else %}
+              {{ c.days_left }} วัน
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- หมวด C2: Structural Projects -->
+  <div class="card">
+    <h2>3. งานโครงสร้างและก่อสร้างอาคาร (Structural Projects)</h2>
+    <p class="hint" style="color:var(--muted); font-size:13px; margin:-4px 0 12px;">ตรวจจับความคืบหน้าหน้างานจริง vs แผนงานสัญญา และความเสี่ยงค่าปรับรายวัน</p>
+    <div class="scroll">
+      <table>
+        <thead>
+          <tr>
+            <th>ชื่อโครงการ</th>
+            <th class="num">งบประมาณ</th>
+            <th class="num">แผน vs จริง</th>
+            <th class="num">ความล่าช้า</th>
+            <th class="num">เสี่ยงค่าปรับ</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for p in structural_projects %}
+          <tr>
+            <td><strong>{{ p.name }}</strong><br><span class="code">{{ p.current_milestone }}</span></td>
+            <td class="num">฿{{ short_money(p.budget) }}</td>
+            <td class="num">{{ p.planned_progress }}% / <strong style="color:var(--late);">{{ p.actual_progress }}%</strong></td>
+            <td class="num"><span class="pill late">ช้า {{ p.delay_days }} วัน</span></td>
+            <td class="num"><strong style="color:var(--late);">฿{{ money(p.penalty_risk) }}</strong></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}

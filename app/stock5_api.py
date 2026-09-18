@@ -1327,23 +1327,32 @@ def monitor_summary():
 
 @bp.route("/api/monitor/auto-sync/status")
 def auto_sync_status():
-    conn = _open()
-    snapshot = ""
-    if conn is not None:
-        try:
-            snapshot = overview.snapshot_day(conn)
-        finally:
-            conn.close()
-    label = f"{snapshot[6:8]}/{snapshot[4:6]}/{snapshot[:4]}" if snapshot else "-"
-    return jsonify({"enabled": False, "is_syncing": False, "last_status": "ok",
-                    "last_message": f"ข้อมูลถึง {label} · ดึงด้วย pull_warehouse_data.bat"})
+    import auto_sync
+    return jsonify(auto_sync.get_status())
 
 
 @bp.route("/api/monitor/auto-sync/trigger", methods=["POST"])
 @bp.route("/api/monitor/pull", methods=["POST"])
+def monitor_pull():
+    import auto_sync
+    result = auto_sync.trigger_sync(background=True)
+    return jsonify(result), 200
+
+
+@bp.route("/api/monitor/auto-sync/config", methods=["POST"])
+def auto_sync_config():
+    import auto_sync
+    body = request.get_json(silent=True) or {}
+    if "enabled" in body:
+        auto_sync.set_enabled(body["enabled"])
+    if "interval_seconds" in body:
+        auto_sync.set_interval(int(body["interval_seconds"]))
+    return jsonify(auto_sync.get_status()), 200
+
+
 @bp.route("/api/json/clear", methods=["POST"])
 def read_only_refused():
-    return jsonify({"status": "error", "message": "ERPLPH อ่านอย่างเดียว ดึงข้อมูลด้วย pull_warehouse_data.bat"}), 403
+    return jsonify({"status": "error", "message": "ERPLPH อ่านอย่างเดียว ข้อมูลถูกจัดการโดยระบบ Auto-Sync และ SQLite"}), 403
 
 
 @bp.route("/api/procurement/plan-summary")

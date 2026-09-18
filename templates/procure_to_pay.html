@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% block title %}วงจรจัดซื้อถึงเบิกจ่าย (PO to Pay){% endblock %}
+
+{% block content %}
+<h1>วงจรจัดซื้อถึงการเบิกจ่ายงบประมาณ (Procure-to-Pay Pipeline)</h1>
+<p class="sub">ติดตามการเดินทางของใบสั่งซื้อ: ออก PO &rarr; รับเข้าคลัง &rarr; จ่ายให้แผนก/คนไข้ &rarr; การเงินจ่ายเช็ค AP พร้อมคุมแผนงบประมาณ รพ.</p>
+
+{% if problem %}
+<div class="problem">{{ problem }}</div>
+{% endif %}
+
+<!-- Budget Progress Summary -->
+<div class="card" style="margin-bottom: 20px;">
+  <h2>การควบคุมงบประมาณเทียบกับแผนการใช้จ่ายประจำปี</h2>
+  <div class="tiles" style="margin: 14px 0;">
+    <div class="tile">
+      <div class="label">แผนงบประมาณประจำปี</div>
+      <div class="value">฿{{ short_money(annual_budget) }}</div>
+      <div class="hint">วงเงินจัดสรรทั้ง รพ.</div>
+    </div>
+    <div class="tile warn">
+      <div class="label">ภาระผูกพันตามใบสั่งซื้อ (PO)</div>
+      <div class="value">฿{{ short_money(total_committed) }}</div>
+      <div class="hint">คิดเป็น {{ budget_spent_pct }}% ของแผน</div>
+    </div>
+    <div class="tile">
+      <div class="label">ตรวจรับของเข้าคลังแล้ว</div>
+      <div class="value">฿{{ short_money(total_received) }}</div>
+      <div class="hint">มูลค่าของในคลังจริง</div>
+    </div>
+    <div class="tile ok">
+      <div class="label">การเงินตัดจ่ายเช็คแล้ว (AP Paid)</div>
+      <div class="value">฿{{ short_money(total_paid) }}</div>
+      <div class="hint">เงินสดจ่ายจริงจากคลัง</div>
+    </div>
+  </div>
+
+  <div style="background:var(--head); border-radius:6px; height:18px; overflow:hidden; position:relative; margin-top:8px;">
+    <div style="background:var(--nav-on); width:{{ [budget_spent_pct, 100]|min }}%; height:100%;" title="ผูกพันงบ {{ budget_spent_pct }}%"></div>
+  </div>
+  <div style="display:flex; justify-content:space-between; font-size:12px; color:var(--muted); margin-top:4px;">
+    <span>ใช้ไปแล้ว {{ budget_spent_pct }}%</span>
+    <span>คงเหลืองบประมาณที่ยังไม่ออก PO: ฿{{ short_money(annual_budget - total_committed) }}</span>
+  </div>
+</div>
+
+<!-- Pipeline Flow Stages -->
+<div class="card">
+  <h2>สถานะใบสั่งซื้อล่าสุด (PO Lifespan Tracker)</h2>
+  <p class="hint" style="color:var(--muted); font-size:13px; margin:-4px 0 12px;">แสดงความก้าวหน้า 4 ขั้นตอนของแต่ละใบสั่งซื้อ</p>
+  <div class="scroll">
+    <table>
+      <thead>
+        <tr>
+          <th>เลขที่ PO</th>
+          <th>บริษัทคู่ค้า</th>
+          <th>คลัง</th>
+          <th class="num">ยอดสั่งซื้อ</th>
+          <th class="num">ตรวจรับแล้ว</th>
+          <th class="num">จ่ายเงินแล้ว (AP)</th>
+          <th>สถานะการเงิน</th>
+          <th>สถานะการจ่ายใช้หน้างาน</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for p in pipeline_items %}
+        <tr>
+          <td><strong>{{ p.po_no }}</strong><br><span class="code">รับ: {{ p.rcv_date }}</span></td>
+          <td>{{ p.supplier }}</td>
+          <td>{{ p.store_name }}</td>
+          <td class="num">฿{{ money(p.po_ordered_amount) }}</td>
+          <td class="num">฿{{ money(p.received_amount) }}</td>
+          <td class="num">฿{{ money(p.ap_paid_amount) }}</td>
+          <td>
+            {% if p.ap_status == 'PAID' %}
+            <span class="pill ok">✓ จ่ายเงินแล้ว</span>
+            {% else %}
+            <span class="pill slow">⌛ รอเบิกจ่ายเงิน</span>
+            {% endif %}
+          </td>
+          <td>
+            <span class="pill ok">{{ p.dispensed_status }}</span>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

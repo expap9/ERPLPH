@@ -52,9 +52,17 @@ def clean_name(raw: object) -> str:
         return text
 
 
-def build(rows: list[dict], database: str) -> dict:
-    entries = []
-    for row in rows:
+def build(report: dict, database: str = PREFERRED_DATABASE) -> dict:
+    rows_stk = rows_from(report, "SSBSTOCK")
+    try:
+        rows_hosp = rows_from(report, "SSBHOSPITAL")
+    except Exception:
+        rows_hosp = []
+
+    by_path: dict[tuple[str, str, str], dict] = {}
+
+    # 1. Primary: SSBSTOCK
+    for row in rows_stk:
         level = departments.LEVEL_BY_CTRLCODE.get(row.get("CTRLCODE"))
         if level is None:
             continue
@@ -62,10 +70,32 @@ def build(rows: list[dict], database: str) -> dict:
         name = clean_name(row.get("THAINAME"))
         if not name:
             continue
-        entries.append({"level": level, "path": list(departments.split_code(code)), "name": name})
+        path = departments.split_code(code)
+        by_path[path] = {"level": level, "path": list(path), "name": name}
+
+    # 2. Supplement: SSBHOSPITAL (fill missing codes or prefer active name over retired)
+    for row in rows_hosp:
+        level = departments.LEVEL_BY_CTRLCODE.get(row.get("CTRLCODE"))
+        if level is None:
+            continue
+        code = str(row.get("CODE") or "")
+        name = clean_name(row.get("THAINAME"))
+        if not name:
+            continue
+        path = departments.split_code(code)
+        if path not in by_path:
+            by_path[path] = {"level": level, "path": list(path), "name": name}
+        elif departments.is_retired(by_path[path]["name"]) and not departments.is_retired(name):
+            by_path[path] = {"level": level, "path": list(path), "name": name}
+
+    entries = list(by_path.values())
     entries.sort(key=lambda entry: (entry["path"], entry["level"]))
-    return {"source": f"{database}.dbo.SYSCONFIG", "levels": dict(departments.LEVEL_BY_CTRLCODE),
-            "entries": entries}
+    source_label = "SSBSTOCK + SSBHOSPITAL.dbo.SYSCONFIG" if rows_hosp else f"{database}.dbo.SYSCONFIG"
+    return {
+        "source": source_label,
+        "levels": dict(departments.LEVEL_BY_CTRLCODE),
+        "entries": entries,
+    }
 
 
 def main(argv=None) -> int:
@@ -73,7 +103,7 @@ def main(argv=None) -> int:
     database = argv[0] if argv else PREFERRED_DATABASE
     report_path = newest_report(ROOT / "diagnostics")
     report = json.loads(report_path.read_text(encoding="utf-8"))
-    registry = build(rows_from(report, database), database)
+    registry = build(report, database)
 
     target = ROOT / departments.REGISTRY_PATH
     target.parent.mkdir(parents=True, exist_ok=True)

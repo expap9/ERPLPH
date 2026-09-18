@@ -1,0 +1,385 @@
+{% extends "base.html" %}
+{% block title %}TOP 10 จัดอันดับทุกมิติข้อมูล{% endblock %}
+
+{% block content %}
+<h1>TOP 10 จัดอันดับทุกมิติข้อมูลของโรงพยาบาล</h1>
+<p class="sub">
+  วิเคราะห์ลีดเดอร์บอร์ด 7 มิติ เพื่อการตัดสินใจเชิงนโยบาย บริหารสภาพคล่อง และควบคุมการใช้ทรัพยากร
+  {% if group %} · <span class="pill ok">กรองเฉพาะกลุ่ม: {{ group_name(group) }}</span>{% endif %}
+  {% if store %} · <span class="pill">คลัง: {{ store_name(store) }}</span>{% endif %}
+</p>
+
+{% if problem %}
+<div class="problem">{{ problem }}</div>
+{% endif %}
+
+<!-- แถบกรองประเภทของ (Category Filter) & ช่วงเวลา -->
+<div class="card" style="margin-bottom: 12px; padding: 12px 18px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px;">
+  <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+    <span style="font-weight: 700; font-size: 14px; color: var(--ink); display: inline-flex; align-items: center; gap: 6px; margin-right: 4px;">
+      <span>🏷️</span>
+      <span>ประเภทของ:</span>
+    </span>
+    
+    <a href="/top10?{{ query(group=None, store=store, months=months) }}"
+       class="pill"
+       style="text-decoration: none; font-size: 13px; padding: 5px 12px; border-radius: 999px; font-weight: 600; border: 1.5px solid var(--line); {{ 'background: var(--ink); color: var(--bg); border-color: var(--ink);' if not group else 'background: var(--card); color: var(--ink);' }}">
+      ทั้งหมด
+    </a>
+
+    {% for g in group_choices %}
+      <a href="/top10?{{ query(group=g.key, store=store, months=months) }}"
+         class="pill"
+         style="text-decoration: none; font-size: 13px; padding: 5px 12px; border-radius: 999px; font-weight: 600; border: 1.5px solid var(--line); display: inline-flex; align-items: center; gap: 6px; {{ 'background: var(--ink); color: var(--bg); border-color: var(--ink);' if group == g.key else 'background: var(--card); color: var(--ink);' }}">
+        <i class="dot" style="background: var(--g-{{ g.key }}); width: 8px; height: 8px; border-radius: 50%;"></i>
+        <span>{{ g.name_th }}</span>
+      </a>
+    {% endfor %}
+  </div>
+
+  <div style="font-size: 13px; color: var(--muted); display: flex; align-items: center; gap: 8px;">
+    <span>ช่วงเวลา:</span>
+    {% for choice in month_choices %}
+      <a href="/top10?{{ query(months=choice, group=group, store=store) }}"
+         style="text-decoration: none; padding: 3px 9px; border-radius: 6px; font-size: 12.5px; font-weight: 600; border: 1px solid var(--line); {{ 'background: var(--ink); color: var(--bg);' if choice == months else 'background: var(--head); color: var(--ink);' }}">
+        {{ choice }} เดือน
+      </a>
+    {% endfor %}
+  </div>
+</div>
+
+<div class="card" style="margin-bottom: 20px; padding: 12px 18px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 14px;">
+  <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
+    <label for="store-select" style="font-weight: 700; font-size: 14.5px; color: var(--ink); display: flex; align-items: center; gap: 6px;">
+      <span style="font-size: 18px;">🏬</span>
+      <span>เลือกคลังสำหรับมิติรายคลัง:</span>
+    </label>
+    <div style="position: relative; display: inline-flex; align-items: center;">
+      <select id="store-select"
+              onchange="location.href='/top10?store=' + encodeURIComponent(this.value) + '{% if group %}&amp;group={{ group }}{% endif %}{% if months %}&amp;months={{ months }}{% endif %}';"
+              style="appearance: none; -webkit-appearance: none; padding: 8px 38px 8px 14px; border-radius: 8px; border: 1.5px solid var(--line); background: var(--bg); color: var(--ink); font-size: 14px; font-weight: 600; min-width: 320px; cursor: pointer; outline: none; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">
+        <optgroup label="📦 คลังหลักและคลังกลาง">
+          {% for s in stores if s.code in ['1', '1R', '2', '3', '4', '8'] %}
+            <option value="{{ s.code }}" {{ 'selected' if selected_store == s.code }}>{{ s.name_th }} (รหัส {{ s.code }})</option>
+          {% endfor %}
+        </optgroup>
+        <optgroup label="💊 คลังยาย่อยและหน่วยบริการเภสัชกรรม">
+          {% for s in stores if s.code in ['I2', 'O5', 'O6', 'SMC', '99', 'ER', 'P3', '6', '7', 'O7', 'VAC'] %}
+            <option value="{{ s.code }}" {{ 'selected' if selected_store == s.code }}>{{ s.name_th }} (รหัส {{ s.code }})</option>
+          {% endfor %}
+        </optgroup>
+        <optgroup label="🏥 คลังเฉพาะทาง / ศูนย์บริการรักษา">
+          {% for s in stores if s.code not in ['1', '1R', '2', '3', '4', '8', 'I2', 'O5', 'O6', 'SMC', '99', 'ER', 'P3', '6', '7', 'O7', 'VAC'] %}
+            <option value="{{ s.code }}" {{ 'selected' if selected_store == s.code }}>{{ s.name_th }} (รหัส {{ s.code }})</option>
+          {% endfor %}
+        </optgroup>
+      </select>
+      <span style="position: absolute; right: 12px; pointer-events: none; color: var(--muted); font-size: 11px;">▼</span>
+    </div>
+  </div>
+
+  <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+    <span style="font-size: 13px; color: var(--muted);">คลังยอดนิยม:</span>
+    <a href="/top10?{{ query(store='1', group=group, months=months) }}" class="pill" style="text-decoration: none; border: 1px solid var(--line); font-size: 12.5px; padding: 4px 10px; {{ 'background: var(--ink); color: var(--bg); font-weight: 700;' if selected_store == '1' else 'background: var(--head); color: var(--ink);' }}">คลังพัสดุ (1)</a>
+    <a href="/top10?{{ query(store='2', group=group, months=months) }}" class="pill" style="text-decoration: none; border: 1px solid var(--line); font-size: 12.5px; padding: 4px 10px; {{ 'background: var(--ink); color: var(--bg); font-weight: 700;' if selected_store == '2' else 'background: var(--head); color: var(--ink);' }}">คลังยา (2)</a>
+    <a href="/top10?{{ query(store='3', group=group, months=months) }}" class="pill" style="text-decoration: none; border: 1px solid var(--line); font-size: 12.5px; padding: 4px 10px; {{ 'background: var(--ink); color: var(--bg); font-weight: 700;' if selected_store == '3' else 'background: var(--head); color: var(--ink);' }}">คลังจ่ายกลาง (3)</a>
+    <a href="/top10?{{ query(store='I2', group=group, months=months) }}" class="pill" style="text-decoration: none; border: 1px solid var(--line); font-size: 12.5px; padding: 4px 10px; {{ 'background: var(--ink); color: var(--bg); font-weight: 700;' if selected_store == 'I2' else 'background: var(--head); color: var(--ink);' }}">ห้องยาผู้ป่วยใน (I2)</a>
+  </div>
+</div>
+
+<div class="grid2" style="margin-bottom: 24px;">
+  <!-- 1. Top 10 PO ค้างส่ง -->
+  <div class="card">
+    <div style="display: flex; justify-content: space-between; align-items: baseline;">
+      <h2>1. Top 10 ใบสั่งซื้อ (PO) ค้างส่งเกินกำหนด</h2>
+      <a href="/purchasing" style="font-size: 12.5px; color: var(--link); text-decoration: none;" target="_blank">ดูจัดซื้อทั้งหมด ➔</a>
+    </div>
+    <p class="hint" style="color:var(--muted); font-size:13px; margin:-4px 0 12px;">ชี้เป้าคู่ค้าที่ล่าช้า และเสี่ยงต่อการขาดแคลนพัสดุ/ยาใน รพ. (คลิกเพื่อดูรายละเอียด)</p>
+    <div class="scroll">
+      <table>
+        <thead>
+          <tr>
+            <th>เลขที่ PO</th>
+            <th>บริษัทคู่ค้า</th>
+            <th>คลัง</th>
+            <th class="num">มูลค่าคงค้าง</th>
+            <th class="num">เกินกำหนด</th>
+            <th style="text-align:center;">รายละเอียด</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for p in overdue %}
+          <tr>
+            <td>
+              <a href="/items?q={{ p.po_no }}" style="font-weight: 700; color: var(--link); text-decoration: none;" target="_blank" title="ค้นหาประวัติ PO นี้">
+                {{ p.po_no }}
+              </a>
+            </td>
+            <td>
+              <a href="/items?q={{ p.supplier }}" style="color: inherit; text-decoration: none;" target="_blank" title="ค้นหาประวัติคู่ค้ารายนี้">
+                {{ p.supplier }}
+              </a>
+            </td>
+            <td>
+              <a href="/top10?store={{ p.store }}{% if group %}&amp;group={{ group }}{% endif %}{% if months %}&amp;months={{ months }}{% endif %}" style="text-decoration: none; color: var(--ink);">
+                {{ p.store_name }}
+              </a>
+            </td>
+            <td class="num">฿{{ money(p.value) }}</td>
+            <td class="num"><strong style="color:var(--late);">{{ p.days_overdue }} วัน</strong></td>
+            <td style="text-align:center;">
+              <a href="/items?q={{ p.po_no }}" class="pill {{ 'late' if p.urgency == 'CRITICAL' else 'slow' }}" style="text-decoration: none; font-size: 11.5px;" target="_blank">
+                🔎 ตรวจสอบ
+              </a>
+            </td>
+          </tr>
+          {% else %}
+          <tr><td colspan="6" style="text-align:center; color:var(--muted);">ไม่พบ PO ค้างส่งเกินกำหนด</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- 2. Top 10 อัตราใช้สูงสุด -->
+  <div class="card">
+    <div style="display: flex; justify-content: space-between; align-items: baseline;">
+      <h2>2. Top 10 รายการอัตราการใช้สูงสุด (Fast-Moving)</h2>
+      <a href="/items" style="font-size: 12.5px; color: var(--link); text-decoration: none;" target="_blank">ดูทุกรายการ ➔</a>
+    </div>
+    <p class="hint" style="color:var(--muted); font-size:13px; margin:-4px 0 12px;">สินค้าหมุนเวียนเร็วที่สุดใน รพ. ต้องรักษา Safety Stock ไม่ให้ขาดคลัง (คลิกเพื่อดูรายละเอียด)</p>
+    <div class="scroll">
+      <table>
+        <thead>
+          <tr>
+            <th>รหัส / ชื่อรายการ</th>
+            <th>หมวด</th>
+            <th class="num">อัตราใช้/เดือน (AMC)</th>
+            <th class="num">มูลค่าเบิกรวม</th>
+            <th style="text-align:center;">รายละเอียด</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for item in fast_moving %}
+          <tr>
+            <td>
+              <a href="/items/{{ item.stock_code }}" style="font-weight: 700; color: var(--link); text-decoration: none;" target="_blank">
+                {{ item.name }}
+              </a><br>
+              <span class="code">รหัส {{ item.stock_code }}</span>
+            </td>
+            <td><span class="pill ok" style="font-size: 11.5px;">{{ item.item_group }}</span></td>
+            <td class="num">{{ money(item.amc) }} {{ item.unit }}</td>
+            <td class="num">฿{{ money(item.total_value) }}</td>
+            <td style="text-align:center;">
+              <a href="/items/{{ item.stock_code }}" class="pill" style="text-decoration: none; font-size: 11.5px; background: var(--head); color: var(--ink);" target="_blank">
+                🔎 สถิติเบิก
+              </a>
+            </td>
+          </tr>
+          {% else %}
+          <tr><td colspan="5" style="text-align:center; color:var(--muted);">ไม่มีข้อมูลการเคลื่อนไหว</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<div class="grid2" style="margin-bottom: 24px;">
+  <!-- 3. Top 10 จัดซื้อบ่อยที่สุด -->
+  <div class="card">
+    <div style="display: flex; justify-content: space-between; align-items: baseline;">
+      <h2>3. Top 10 รายการจัดซื้อบ่อยที่สุด (High Frequency)</h2>
+      <a href="/purchasing" style="font-size: 12.5px; color: var(--link); text-decoration: none;" target="_blank">ตารางจัดซื้อ ➔</a>
+    </div>
+    <p class="hint" style="color:var(--muted); font-size:13px; margin:-4px 0 12px;">ชี้เป้าสินค้าที่ออกใบ PO ถี่ เพื่อวางแผนรอบการจัดซื้อและลดภาระงานเอกสาร</p>
+    <div class="scroll">
+      <table>
+        <thead>
+          <tr>
+            <th>รหัส / ชื่อรายการ</th>
+            <th>หมวด</th>
+            <th class="num">จำนวนรอบซื้อ</th>
+            <th class="num">ยอดซื้อรวม</th>
+            <th style="text-align:center;">รายละเอียด</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for f in frequent %}
+          <tr>
+            <td>
+              <a href="/items/{{ f.stock_code }}" style="font-weight: 700; color: var(--link); text-decoration: none;" target="_blank">
+                {{ f.name }}
+              </a><br>
+              <span class="code">รหัส {{ f.stock_code }}</span>
+            </td>
+            <td><span class="pill ok" style="font-size: 11.5px;">{{ f.item_group }}</span></td>
+            <td class="num"><span class="pill ok">{{ f.frequency }} รอบ</span></td>
+            <td class="num">฿{{ money(f.total_spent) }}</td>
+            <td style="text-align:center;">
+              <a href="/items/{{ f.stock_code }}" class="pill" style="text-decoration: none; font-size: 11.5px; background: var(--head); color: var(--ink);" target="_blank">
+                🔎 ประวัติซื้อ
+              </a>
+            </td>
+          </tr>
+          {% else %}
+          <tr><td colspan="5" style="text-align:center; color:var(--muted);">ไม่มีข้อมูลการจัดซื้อ</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- 4. Top 10 มูลค่าคงคลังสูงสุด -->
+  <div class="card">
+    <div style="display: flex; justify-content: space-between; align-items: baseline;">
+      <h2>4. Top 10 มูลค่าคงคลังสูงสุด (Capital Tied-up)</h2>
+      <a href="/items" style="font-size: 12.5px; color: var(--link); text-decoration: none;" target="_blank">ตรวจสอบสต็อก ➔</a>
+    </div>
+    <p class="hint" style="color:var(--muted); font-size:13px; margin:-4px 0 12px;">10 รายการที่กินเงินทุนหมุนเวียนของโรงพยาบาลมากที่สุด</p>
+    <div class="scroll">
+      <table>
+        <thead>
+          <tr>
+            <th>รหัส / ชื่อรายการ</th>
+            <th>หมวด</th>
+            <th class="num">คงคลัง</th>
+            <th class="num">มูลค่าคงคลัง</th>
+            <th style="text-align:center;">รายละเอียด</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for v in high_val %}
+          <tr>
+            <td>
+              <a href="/items/{{ v.stock_code }}" style="font-weight: 700; color: var(--link); text-decoration: none;" target="_blank">
+                {{ v.name }}
+              </a><br>
+              <span class="code">รหัส {{ v.stock_code }}</span>
+            </td>
+            <td><span class="pill ok" style="font-size: 11.5px;">{{ v.item_group }}</span></td>
+            <td class="num">{{ money(v.qty) }} {{ v.unit }}</td>
+            <td class="num"><strong style="color:var(--link);">฿{{ money(v.value) }}</strong></td>
+            <td style="text-align:center;">
+              <a href="/items/{{ v.stock_code }}" class="pill ok" style="text-decoration: none; font-size: 11.5px;" target="_blank">
+                🔎 รายล็อต
+              </a>
+            </td>
+          </tr>
+          {% else %}
+          <tr><td colspan="5" style="text-align:center; color:var(--muted);">ไม่มีข้อมูลคงคลัง</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<div class="grid2" style="margin-bottom: 24px;">
+  <!-- 5. Top 10 แผนกที่เบิกเยอะสุดทั้ง รพ. -->
+  <div class="card">
+    <div style="display: flex; justify-content: space-between; align-items: baseline;">
+      <h2>5. Top 10 หน่วยงานที่เบิกของมากที่สุดทั้ง รพ.</h2>
+      <a href="/departments{% if group %}?group={{ group }}{% endif %}" style="font-size: 12.5px; color: var(--link); text-decoration: none;" target="_blank">ดูทุกแผนก (ทั้ง รพ.) ➔</a>
+    </div>
+    <p class="hint" style="color:var(--muted); font-size:13px; margin:-4px 0 12px;">หน่วยงานที่เป็นศูนย์ต้นทุนการใช้วัสดุและเวชภัณฑ์สูงสุด (คลิกชื่อหน่วยงานเพื่อดูของที่เบิก)</p>
+    <div class="scroll">
+      <table>
+        <thead>
+          <tr>
+            <th>หน่วยงาน / หอผู้ป่วย</th>
+            <th class="num">จำนวนใบเบิก</th>
+            <th class="num">จำนวนชนิดของ</th>
+            <th class="num">มูลค่าเบิกสุทธิ</th>
+            <th style="text-align:center;">ของที่เบิก</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for d in top_depts %}
+          <tr>
+            <td>
+              <a href="/departments?div={{ d.division }}&amp;dept={{ d.dept }}{% if group %}&amp;group={{ group }}{% endif %}{% if months %}&amp;months={{ months }}{% endif %}" style="font-weight: 700; color: var(--link); text-decoration: none;" target="_blank" title="คลิกเพื่อดูรายการที่แผนกนี้เบิก">
+                {{ d.department_name }}
+              </a>
+              {% if d.division or d.dept %}
+                <br><span class="code">รหัส {{ d.division }}-{{ d.dept }}</span>
+              {% endif %}
+            </td>
+            <td class="num">{{ money(d.slips) }} ใบ</td>
+            <td class="num">{{ money(d.items_count) }} รายการ</td>
+            <td class="num"><strong style="color:var(--late);">฿{{ money(d.net_value) }}</strong></td>
+            <td style="text-align:center;">
+              <a href="/departments?div={{ d.division }}&amp;dept={{ d.dept }}{% if group %}&amp;group={{ group }}{% endif %}{% if months %}&amp;months={{ months }}{% endif %}" class="pill ok" style="text-decoration: none; font-size: 12px; font-weight: 600;" target="_blank">
+                🔎 ดูของที่เบิก
+              </a>
+            </td>
+          </tr>
+          {% else %}
+          <tr><td colspan="5" style="text-align:center; color:var(--muted);">ไม่มีข้อมูลการเบิกจ่าย</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- 6 & 7. มิติเฉพาะคลังหลักที่เลือก -->
+  <div class="card">
+    <div style="display: flex; justify-content: space-between; align-items: baseline;">
+      <h2>6 & 7. เจาะลึกเฉพาะ: {{ store_name(selected_store) }}</h2>
+      <a href="/departments?store={{ selected_store }}{% if group %}&amp;group={{ group }}{% endif %}" style="font-size: 12.5px; color: var(--link); text-decoration: none;" target="_blank">ดูคลังนี้ทั้งหมด ➔</a>
+    </div>
+    <p class="hint" style="color:var(--muted); font-size:13px; margin:-4px 0 12px;">รายการที่เบิกสูงสุด และหน่วยงานที่มารับของมากที่สุดในคลังนี้ (คลิกเพื่อดูรายละเอียด)</p>
+    <div class="grid2">
+      <div>
+        <h3 style="font-size:14px; margin:0 0 8px;">📦 รายการเบิกสูงสุด</h3>
+        <table style="font-size:13px;">
+          <tbody>
+            {% for item in store_items[:5] %}
+            <tr>
+              <td>
+                <a href="/items/{{ item.stock_code }}" style="font-weight: 600; text-decoration: none; color: var(--link);" target="_blank">
+                  {{ item.name }}
+                </a><br>
+                <span class="code">รหัส {{ item.stock_code }}</span>
+              </td>
+              <td class="num" style="font-weight: 700;">฿{{ money(item.total_value) }}</td>
+              <td style="text-align:right;">
+                <a href="/items/{{ item.stock_code }}" class="pill" style="text-decoration: none; font-size: 11px; padding: 2px 7px; background: var(--head); color: var(--ink);" target="_blank">🔎 ดูข้อมูล</a>
+              </td>
+            </tr>
+            {% else %}
+            <tr><td colspan="3" style="text-align:center; color:var(--muted);">ไม่มีข้อมูลการเบิก</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <div>
+        <h3 style="font-size:14px; margin:0 0 8px;">🏥 ผู้เบิกสูงสุด</h3>
+        <table style="font-size:13px;">
+          <tbody>
+            {% for req in store_reqs[:5] %}
+            <tr>
+              <td>
+                <a href="/departments?div={{ req.division }}&amp;dept={{ req.dept }}{% if group %}&amp;group={{ group }}{% endif %}{% if months %}&amp;months={{ months }}{% endif %}" style="font-weight: 600; text-decoration: none; color: var(--link);" target="_blank">
+                  {{ req.department_name }}
+                </a>
+                {% if req.division or req.dept %}
+                  <br><span class="code">รหัส {{ req.division }}-{{ req.dept }}</span>
+                {% endif %}
+              </td>
+              <td class="num" style="font-weight: 700; color: var(--late);">฿{{ money(req.net_value) }}</td>
+              <td style="text-align:right;">
+                <a href="/departments?div={{ req.division }}&amp;dept={{ req.dept }}{% if group %}&amp;group={{ group }}{% endif %}{% if months %}&amp;months={{ months }}{% endif %}" class="pill ok" style="text-decoration: none; font-size: 11px; padding: 2px 7px;" target="_blank">🔎 ดูของที่เบิก</a>
+              </td>
+            </tr>
+            {% else %}
+            <tr><td colspan="3" style="text-align:center; color:var(--muted);">ไม่มีข้อมูลผู้เบิก</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,131 @@
+{% extends "base.html" %}
+{% block title %}โอกาสประหยัดงบประมาณและเพิ่มประสิทธิภาพ (Hospital Cost Optimization){% endblock %}
+
+{% block content %}
+<h1>ศูนย์ตรวจจับโอกาสประหยัดงบประมาณและเพิ่มประสิทธิภาพ (Savings Engine)</h1>
+<p class="sub">ชี้เป้าเม็ดเงินที่ประหยัดได้ทันที: ส่งคืนยาตามสิทธิ์สัญญา, แลกเปลี่ยนยาใกล้หมดอายุข้ามวอร์ด (FEFO), และดึงรายได้กลับจากของที่ลืมคีย์คิดเงินคนไข้</p>
+
+{% if problem %}
+<div class="problem">{{ problem }}</div>
+{% endif %}
+
+<!-- Summary Opportunity Cards -->
+<div class="tiles" style="margin-bottom: 24px;">
+  {% for card in summary_cards %}
+  <div class="tile {{ card.badge_class }}">
+    <div style="display:flex; justify-content:space-between; align-items:center;">
+      <span class="label">{{ card.title }}</span>
+      <span class="pill {{ card.badge_class }}">{{ card.badge }}</span>
+    </div>
+    <div class="value">฿{{ money(card.value) }}</div>
+    <div class="hint">{{ card.hint }}</div>
+  </div>
+  {% endfor %}
+</div>
+
+<!-- 1. ยาที่ต้องเร่งทำเรื่องคืนบริษัท -->
+<div class="card" style="margin-bottom: 24px;">
+  <h2>1. รายการยา/เวชภัณฑ์ที่ต้องเร่งส่งคืนบริษัทคู่ค้า (Vendor Return Eligible)</h2>
+  <p class="hint" style="color:var(--muted); font-size:13px; margin:-4px 0 12px;">{{ near_expiry.action_guidance }} (ยอดรวมที่คืนได้: ฿{{ money(near_expiry.total_return_value) }})</p>
+  <div class="scroll">
+    <table>
+      <thead>
+        <tr>
+          <th>รหัส</th>
+          <th>ชื่อรายการ</th>
+          <th>ล็อต (Lot No.)</th>
+          <th>คลังจัดเก็บ</th>
+          <th class="num">วันหมดอายุ</th>
+          <th class="num">คงเหลือ (วัน)</th>
+          <th class="num">มูลค่าคืนได้</th>
+          <th>สถานะความเร่งด่วน</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in near_expiry.return_items %}
+        <tr>
+          <td><a href="/items/{{ item.stock_code }}">{{ item.stock_code }}</a></td>
+          <td><strong>{{ item.name }}</strong></td>
+          <td>{{ item.lot_no }}</td>
+          <td>{{ item.store_name }}</td>
+          <td class="num">{{ thai_day(item.expire_date) }}</td>
+          <td class="num"><strong style="color:var(--late);">{{ item.days_left }} วัน</strong></td>
+          <td class="num"><strong style="color:var(--ok);">฿{{ money(item.value) }}</strong></td>
+          <td>
+            {% if item.is_urgent %}
+            <span class="pill late">ด่วนมาก (&lt; 90 วัน)</span>
+            {% else %}
+            <span class="pill slow">เฝ้าระวัง (&lt; 180 วัน)</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="8" style="text-align:center; color:var(--muted);">ไม่พบรายการยาที่เข้าเกณฑ์ส่งคืนบริษัทในขณะนี้</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="grid2">
+  <!-- 2. FEFO Swap Board -->
+  <div class="card">
+    <h2>2. ตลาดแลกเปลี่ยนยา FEFO ข้ามวอร์ด (Inter-Ward FEFO Clearing)</h2>
+    <p class="hint" style="color:var(--muted); font-size:13px; margin:-4px 0 12px;">จับคู่ตึกที่ยาใกล้หมดอายุแต่ใช้น้อย กับตึกที่ใช้อัตราสูงเพื่อโอนไปใช้ให้หมดทันวันหมดอายุ</p>
+    <div class="scroll">
+      <table>
+        <thead>
+          <tr>
+            <th>รายการยา</th>
+            <th>จาก (วอร์ดใช้น้อย)</th>
+            <th>ไปที่ (วอร์ดใช้เร็ว)</th>
+            <th class="num">มูลค่า</th>
+            <th>ผลกระทบ</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for f in fefo_matches %}
+          <tr>
+            <td><strong>{{ f.item_name }}</strong><br><span class="code">เหลือ {{ f.days_to_expire }} วัน</span></td>
+            <td>{{ f.from_department }}</td>
+            <td><strong style="color:var(--link);">{{ f.to_department }}</strong></td>
+            <td class="num">฿{{ money(f.value) }}</td>
+            <td><span class="pill ok">{{ f.impact }}</span></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- 3. Unbilled Supplies -->
+  <div class="card">
+    <h2>3. เวชภัณฑ์ราคาสูงที่ยังไม่ลงชาร์จคนไข้ (Unbilled Supplies Alert)</h2>
+    <p class="hint" style="color:var(--muted); font-size:13px; margin:-4px 0 12px;">เบิกออกจากคลังไปแล้วเกิน 48 ชม. แต่ยังไม่มีการผูก HN คิดเงินในระบบคนไข้</p>
+    <div class="scroll">
+      <table>
+        <thead>
+          <tr>
+            <th>หอผู้ป่วย / แผนก</th>
+            <th>รายการเวชภัณฑ์</th>
+            <th class="num">มูลค่า</th>
+            <th class="num">ค้างลงชาร์จ</th>
+            <th>ความเสี่ยง</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for u in unbilled_supplies %}
+          <tr>
+            <td><strong>{{ u.ward }}</strong></td>
+            <td>{{ u.item_name }} ({{ u.qty }} ชิ้น)</td>
+            <td class="num"><strong style="color:var(--late);">฿{{ money(u.value) }}</strong></td>
+            <td class="num"><span class="pill late">{{ u.hours_unbilled }} ชม.</span></td>
+            <td style="font-size:12.5px; color:var(--muted);">{{ u.risk }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}

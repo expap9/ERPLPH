@@ -165,6 +165,22 @@ class DepartmentUsageTests(unittest.TestCase):
                           "'TAB','208','02','','32','out','PENDING')")
         self.assertEqual(self.rows()["208"].net, 800.0)
 
+    def test_top_requisitioners_returns_ranked_subunits(self):
+        reqs = usage.top_requisitioners(self.conn, parent=("208",))
+        self.assertTrue(len(reqs) >= 1)
+        self.assertEqual(reqs[0].code, "208-02")
+        self.assertEqual(reqs[0].net, 800.0)
+        self.assertEqual(reqs[0].slips, 2)
+        self.assertEqual(reqs[0].items, 1)
+
+    def test_target_summary_computes_net_slips_items_stores(self):
+        summary = usage.target_summary(self.conn, parent=("208",))
+        self.assertEqual(summary.net, 800.0)
+        self.assertEqual(summary.slips, 2)
+        self.assertEqual(summary.items, 1)
+        self.assertEqual(summary.stores, 1)
+
 
 if __name__ == "__main__":
     unittest.main()
+

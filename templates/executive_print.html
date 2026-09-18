@@ -1,0 +1,177 @@
+{% extends "base.html" %}
+{% block title %}รายงานสรุปผู้บริหารสำหรับที่ประชุม กวป. (Executive Briefing Sheet){% endblock %}
+
+{% block content %}
+<div class="no-print" style="margin-bottom:16px; display:flex; justify-content:space-between; align-items:center;">
+  <div>
+    <a href="/overview">&larr; กลับหน้าภาพรวม</a>
+    <span style="color:var(--muted); margin-left:12px;">เอกสารนี้จัดรูปแบบสำหรับการพิมพ์ A4 หนึ่งหน้าโดยเฉพาะ</span>
+  </div>
+  <button onclick="window.print()" style="padding:8px 18px; font-size:14px; font-weight:700; background:var(--nav-on); color:#fff; border:0; border-radius:6px; cursor:pointer;">🖨️ พิมพ์เอกสารหน้านี้ (Print / Export PDF)</button>
+</div>
+
+<div class="card" style="padding: 24px; border: 2px solid var(--line);">
+  <div style="border-bottom: 2px solid var(--ink); padding-bottom: 12px; margin-bottom: 16px; display:flex; justify-content:space-between; align-items:flex-end;">
+    <div>
+      <h1 style="font-size:20px; margin:0 0 4px;">รายงานสถานะพัสดุ คงคลัง และงบประมาณ (Executive Summary)</h1>
+      <div style="font-size:13px; color:var(--muted);">สำหรับนำเสนอในที่ประชุมคณะกรรมการบริหารโรงพยาบาล (กวป.) ประจำเดือน</div>
+    </div>
+    <div style="text-align:right; font-size:12px;">
+      <div><strong>วันที่ออกรายงาน:</strong> {{ generated_at }}</div>
+      <div><strong>ความสดใหม่ของข้อมูล:</strong> {{ freshness.last_sync_thai }} ({{ freshness.badge_label }})</div>
+    </div>
+  </div>
+
+  <!-- Highlights Tiles -->
+  <div class="tiles" style="grid-template-columns: repeat(4, 1fr); margin-bottom: 16px;">
+    <div class="tile" style="padding:8px 12px;">
+      <div class="label">มูลค่าพัสดุคงคลังรวม</div>
+      <div class="value" style="font-size:20px;">฿{{ short_money(consignment.total_gross_value) }}</div>
+      <div class="hint">เงินจม รพ. ฿{{ short_money(consignment.hospital_owned_value) }}</div>
+    </div>
+    <div class="tile ok" style="padding:8px 12px;">
+      <div class="label">สต๊อกฝากขาย (Consignment)</div>
+      <div class="value" style="font-size:20px;">฿{{ short_money(consignment.consignment_value) }}</div>
+      <div class="hint">{{ consignment.consignment_pct }}% (เงินไม่จม)</div>
+    </div>
+    <div class="tile warn" style="padding:8px 12px;">
+      <div class="label">เรื่องด่วนต้องสั่งการ</div>
+      <div class="value" style="font-size:20px;">{{ urgent_actions|length }} ประเด็น</div>
+      <div class="hint">สัญญา/PO เกินกำหนด/โครงการ</div>
+    </div>
+    <div class="tile late" style="padding:8px 12px;">
+      <div class="label">มูลค่ายาทำเรื่องคืนบริษัทได้</div>
+      <div class="value" style="font-size:20px;">฿{{ short_money(savings_summary[0].value) }}</div>
+      <div class="hint">เร่งดำเนินการใน 90 วัน</div>
+    </div>
+  </div>
+
+  <!-- Urgent Action Table -->
+  <div style="margin-bottom: 16px;">
+    <h2 style="font-size:14.5px; margin:0 0 6px; border-bottom:1px solid var(--line); padding-bottom:4px;">1. ประเด็นด่วนที่ฝ่ายบริหารต้องสั่งการในที่ประชุม (Action-Required Summary)</h2>
+    <table style="font-size:12px;">
+      <thead>
+        <tr>
+          <th style="width:70px;">ความเร่งด่วน</th>
+          <th>หัวข้อประเด็น</th>
+          <th>รายละเอียดและผลกระทบ</th>
+          <th>ข้อสั่งการแนะนำสำหรับผู้บริหาร</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for act in urgent_actions %}
+        <tr>
+          <td><span class="pill {{ 'late' if act.priority == 'HIGH' else 'slow' }}">{{ act.priority }}</span></td>
+          <td><strong>{{ act.title }}</strong></td>
+          <td>{{ act.detail }}</td>
+          <td><strong>👉 {{ act.recommended_action }}</strong></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <div class="grid2" style="gap:12px; margin-bottom: 16px;">
+    <!-- Stores Breakdown -->
+    <div>
+      <h2 style="font-size:14.5px; margin:0 0 6px; border-bottom:1px solid var(--line); padding-bottom:4px;">2. มูลค่าคงคลังแยกตามคลังหลัก</h2>
+      <table style="font-size:12px;">
+        <thead>
+          <tr>
+            <th>คลังหลัก</th>
+            <th class="num">ชนิดของ</th>
+            <th class="num">มูลค่าคงคลัง</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for st in main_stores %}
+          <tr>
+            <td>{{ st.name }} ({{ st.code }})</td>
+            <td class="num">{{ st.items }}</td>
+            <td class="num">฿{{ money(st.value) }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Top Overdue POs -->
+    <div>
+      <h2 style="font-size:14.5px; margin:0 0 6px; border-bottom:1px solid var(--line); padding-bottom:4px;">3. ใบสั่งซื้อ (PO) ค้างส่งสูงสุด</h2>
+      <table style="font-size:12px;">
+        <thead>
+          <tr>
+            <th>เลขที่ PO</th>
+            <th>บริษัทคู่ค้า</th>
+            <th class="num">เกิน (วัน)</th>
+            <th class="num">มูลค่าค้างส่ง</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for po in top_overdue_pos %}
+          <tr>
+            <td><strong>{{ po.po_no }}</strong></td>
+            <td>{{ po.supplier[:25] }}</td>
+            <td class="num"><strong style="color:var(--late);">{{ po.days_overdue }}</strong></td>
+            <td class="num">฿{{ money(po.value) }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="grid2" style="gap:12px;">
+    <!-- Top Fast Moving -->
+    <div>
+      <h2 style="font-size:14.5px; margin:0 0 6px; border-bottom:1px solid var(--line); padding-bottom:4px;">4. สินค้าที่มีอัตราการใช้สูงสุด (Fast-Moving)</h2>
+      <table style="font-size:12px;">
+        <thead>
+          <tr>
+            <th>ชื่อรายการ</th>
+            <th class="num">อัตราใช้/ด.</th>
+            <th class="num">มูลค่าเบิกสะสม</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for f in top_fast_moving %}
+          <tr>
+            <td><strong>{{ f.name }}</strong></td>
+            <td class="num">{{ money(f.amc) }} {{ f.unit }}</td>
+            <td class="num">฿{{ money(f.total_value) }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Top Departments -->
+    <div>
+      <h2 style="font-size:14.5px; margin:0 0 6px; border-bottom:1px solid var(--line); padding-bottom:4px;">5. หน่วยงานที่เบิกของสูงสุด</h2>
+      <table style="font-size:12px;">
+        <thead>
+          <tr>
+            <th>หน่วยงาน / หอผู้ป่วย</th>
+            <th class="num">จำนวนใบเบิก</th>
+            <th class="num">มูลค่าเบิกสุทธิ</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for d in top_departments %}
+          <tr>
+            <td><strong>{{ d.department_name }}</strong></td>
+            <td class="num">{{ d.slips }} ใบ</td>
+            <td class="num">฿{{ money(d.net_value) }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div style="margin-top:20px; padding-top:12px; border-top:1px solid var(--line); display:flex; justify-content:space-between; font-size:12px; color:var(--muted);">
+    <span>ระบบสารสนเทศเพื่อการบริหารจัดการพัสดุและคลังกลางโรงพยาบาล (ERPLPH)</span>
+    <span>ลงนามรับรอง: ................................................................ (ประธาน กวป.)</span>
+  </div>
+</div>
+{% endblock %}

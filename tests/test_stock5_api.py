@@ -167,9 +167,22 @@ class Stock5RouteTests(unittest.TestCase):
     def test_writing_is_refused_because_there_is_no_login_yet(self):
         build_warehouse()
         for path in ("/api/drugs/1000/pos", "/api/drugs/1000/investigation", "/api/drugs/1000/primary-vendor",
-                     "/api/pos/PO1/dispatch", "/api/pos/PO1/receive", "/api/monitor/pull"):
+                     "/api/pos/PO1/dispatch", "/api/pos/PO1/receive", "/api/json/clear"):
             with self.subTest(path=path):
                 self.assertEqual(self.client.post(path, json={}).status_code, 403)
+
+    def test_monitor_auto_sync_endpoints(self):
+        build_warehouse()
+        status_res = self.client.get("/api/monitor/auto-sync/status")
+        self.assertEqual(status_res.status_code, 200)
+        self.assertTrue(status_res.get_json()["enabled"])
+
+        pull_res = self.client.post("/api/monitor/pull", json={})
+        self.assertEqual(pull_res.status_code, 200)
+        self.assertEqual(pull_res.get_json()["status"], "success")
+
+        trigger_res = self.client.post("/api/monitor/auto-sync/trigger", json={})
+        self.assertEqual(trigger_res.status_code, 200)
 
     def test_scope_values_from_the_address_bar_are_validated(self):
         build_warehouse()

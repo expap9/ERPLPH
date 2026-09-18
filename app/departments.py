@@ -108,6 +108,20 @@ def name_of(division: object, dept: object = "", section: object = "") -> str:
     found = _by_path().get(key)
     if found is not None:
         return found.name
+
+    # 1. ชั้น section ไม่พบ ให้ลองดูชื่อชั้น dept
+    if key[2] and key[1]:
+        parent_dept = _by_path().get(path_of(key[0], key[1], ""))
+        if parent_dept is not None:
+            return f"{parent_dept.name} ({key[2]})"
+
+    # 2. ชั้น dept ไม่พบ ให้ลองดูชื่อชั้น division
+    if key[0]:
+        parent_div = _by_path().get(path_of(key[0], "", ""))
+        if parent_div is not None:
+            sub = "-".join(part for part in key[1:] if part)
+            return f"{parent_div.name} ({sub})" if sub else parent_div.name
+
     return "-".join(part for part in key if part) or "(ไม่ระบุหน่วยงาน)"
 
 

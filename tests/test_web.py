@@ -160,6 +160,17 @@ class DepartmentPageTests(unittest.TestCase):
         with mock.patch("database.connect", side_effect=AssertionError("ห้ามต่อฐานโรงพยาบาล")):
             self.assertEqual(self.render().status_code, 200)
 
+    def test_departments_split_screen_and_selected_parameter(self):
+        make_department_warehouse(self.db)
+        response = self.render("?selected=208")
+        self.assertEqual(response.status_code, 200)
+        body = response.get_data(as_text=True)
+        self.assertIn("departments-split", body)
+        self.assertIn("ใครเบิกมากที่สุด", body)
+        self.assertIn("ข้อมูลของที่เบิก", body)
+        self.assertIn("dept-search-input", body)
+
 
 if __name__ == "__main__":
     unittest.main()
+

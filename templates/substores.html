@@ -1,0 +1,1918 @@
+{% extends "base.html" %}
+{% block title %}คลังย่อย ห้องยา และหอผู้ป่วย (Sub-stores & Wards){% endblock %}
+
+{% block style %}
+  .wrap { max-width: 1520px; }
+
+  /* Store Selector Header */
+  .substore-header {
+    background: var(--card); border: 1px solid var(--line); border-radius: 10px;
+    padding: 16px 20px; margin-bottom: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+  }
+  .substore-header h1 { margin: 0 0 6px; font-size: 22px; display: flex; align-items: center; gap: 8px; }
+  .substore-header .sub { margin: 0 0 14px; color: var(--muted); font-size: 13.5px; }
+
+  /* Store Switcher Pills */
+  .store-selector-group {
+    display: flex; flex-direction: column; gap: 10px;
+  }
+  .store-selector-row {
+    display: flex; align-items: center; flex-wrap: wrap; gap: 6px;
+  }
+  .store-selector-row .row-label {
+    font-size: 13px; font-weight: 700; color: var(--muted); min-width: 110px;
+  }
+  .store-pill {
+    display: inline-flex; align-items: center; gap: 5px;
+    padding: 5px 12px; border-radius: 999px;
+    font-size: 13.5px; text-decoration: none;
+    border: 1px solid var(--line); background: var(--card); color: var(--ink);
+    transition: all .15s ease-in-out;
+  }
+  .store-pill:hover { border-color: var(--nav-on); background: var(--head); }
+  .store-pill.on {
+    background: var(--nav-on); color: #fff; border-color: var(--nav-on); font-weight: 600;
+    box-shadow: 0 2px 6px rgba(47, 93, 158, 0.25);
+  }
+
+
+  /* KPI Grid */
+  .kpi-grid {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+    gap: 12px; margin-bottom: 22px;
+  }
+  .kpi-card {
+    background: var(--card); border: 1px solid var(--line); border-radius: 8px;
+    padding: 14px 16px; box-shadow: 0 1px 2px rgba(0,0,0,0.03);
+  }
+  .kpi-card .label { font-size: 12.5px; color: var(--muted); margin-bottom: 4px; display: flex; align-items: center; justify-content: space-between; }
+  .kpi-card .value { font-size: 22px; font-weight: 700; color: var(--ink); font-variant-numeric: tabular-nums; }
+  .kpi-card .hint { font-size: 12px; color: var(--muted); margin-top: 4px; }
+  .kpi-card.alert-card { border-left: 4px solid var(--late); }
+  .kpi-card.warn-card { border-left: 4px solid var(--slow); }
+  .kpi-card.safe-card { border-left: 4px solid var(--ok); }
+
+  /* Content Cards */
+  .section-card {
+    background: var(--card); border: 1px solid var(--line); border-radius: 10px;
+    padding: 18px 20px; margin-bottom: 22px; box-shadow: 0 1px 3px rgba(0,0,0,0.03);
+  }
+  .section-card h2 {
+    margin: 0 0 4px; font-size: 17px; font-weight: 700;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .section-card .card-hint {
+    font-size: 13px; color: var(--muted); margin: 0 0 14px;
+  }
+
+  /* Tables & Sticky Headers */
+  .table-scroll-container {
+    overflow-y: auto;
+    position: relative;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--card);
+  }
+  .data-table {
+    width: 100%; border-collapse: separate; border-spacing: 0; font-size: 13.5px;
+  }
+  .data-table th, .data-table td {
+    padding: 9px 12px; text-align: left; border-bottom: 1px solid var(--line); vertical-align: middle;
+  }
+  .data-table th {
+    background: #f8fafc; font-size: 12.5px; color: var(--ink); font-weight: 700; white-space: nowrap;
+    position: sticky; top: 0; z-index: 25; border-bottom: 2px solid var(--line);
+    box-shadow: 0 2px 4px rgba(0,0,0,0.06);
+  }
+  .data-table td.num, .data-table th.num {
+    text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap;
+  }
+  .data-table tbody tr:hover { background: rgba(241, 245, 249, 0.7); }
+
+  /* Stock Code Link */
+  .stock-link {
+    font-size: 11.5px; color: var(--link); text-decoration: none; font-family: monospace;
+    background: rgba(47, 93, 158, 0.08); padding: 1px 5px; border-radius: 3px;
+  }
+  .stock-link:hover { background: rgba(47, 93, 158, 0.16); text-decoration: underline; }
+
+  /* Search & Filter Bar */
+  .filter-search-box {
+    display: flex; gap: 10px; align-items: center; margin-bottom: 12px;
+  }
+  .filter-search-box input {
+    flex: 1; max-width: 400px; padding: 7px 12px; font-size: 13.5px;
+    border: 1px solid var(--line); border-radius: 6px; background: var(--card); color: var(--ink);
+  }
+
+  /* Two Column Grid */
+  .split-grid {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 20px;
+  }
+  @media (max-width: 1024px) {
+    .split-grid { grid-template-columns: 1fr; }
+  }
+
+  /* Interactive Item Modal */
+  .modal-backdrop {
+    display: none; position: fixed; inset: 0; background: rgba(15, 23, 42, 0.65);
+    z-index: 2000; align-items: center; justify-content: center; backdrop-filter: blur(3px);
+  }
+  .modal-backdrop.open { display: flex; }
+  .modal-box {
+    background: var(--card); border-radius: 12px; width: 95%; max-width: 960px;
+    max-height: 88vh; overflow-y: auto; box-shadow: 0 12px 36px rgba(0,0,0,0.3);
+    border: 1px solid var(--line); padding: 22px 24px; position: relative;
+  }
+  .modal-close-btn {
+    position: absolute; top: 14px; right: 18px; font-size: 22px; font-weight: bold;
+    color: var(--muted); cursor: pointer; border: none; background: none; line-height: 1;
+  }
+  .modal-close-btn:hover { color: var(--ink); }
+{% endblock %}
+
+{% block content %}
+
+  <!-- Store Selector Header -->
+  <div class="substore-header">
+    <h1>
+      <span>🏬 ระบบติดตามคลังย่อยและวอร์ด (Sub-store & Ward Traceability)</span>
+      {% if is_all_stores %}
+        <span class="pill ok" style="font-size:12.5px; font-weight:700; background:rgba(16,185,129,0.15); border:1px solid rgba(16,185,129,0.35); color:#047857;">กำลังดู: 🏢 รวมทุกคลังในโรงพยาบาล</span>
+      {% elif is_ward %}
+        <span class="pill ok" style="font-size:12.5px; font-weight:600; background:rgba(37,99,235,0.12); border:1px solid rgba(37,99,235,0.3); color:#1d4ed8;">กำลังดู: {{ ward_info.name }} [{{ ward_info.dept_code }}]</span>
+      {% else %}
+        <span class="pill ok" style="font-size:12.5px; font-weight:600;">กำลังดู: {{ kpis.store_name }} ({{ current_store }})</span>
+      {% endif %}
+    </h1>
+    <p class="sub">
+      ติดตามการโอนยอดจากคลังใหญ่, อัตราการใช้ยาเฉลี่ย 3 เดือน, อัตราสำรองคลังย่อย (MOS), ยาใกล้หมดอายุ และการเบิกใช้ของหอผู้ป่วย
+    </p>
+
+    <!-- Store Dropdown Control & Time Window Card -->
+    <div style="background: var(--head); border: 1.5px solid var(--line); border-radius: 9px; padding: 12px 16px; display: flex; flex-direction: column; gap: 12px; margin-top: 10px;">
+      
+      <!-- Top Row: Select store & Shortcuts -->
+      <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 14px;">
+        <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
+          <label for="substore-select" style="font-weight: 700; font-size: 14px; color: var(--ink); display: flex; align-items: center; gap: 6px;">
+            <span style="font-size: 18px;">🎯</span>
+            <span>เลือกคลังย่อย / หอผู้ป่วย:</span>
+          </label>
+          <div style="position: relative; display: inline-flex; align-items: center;">
+            <select id="substore-select"
+                    onchange="location.href='/substores?store=' + encodeURIComponent(this.value) + '&months={{ months }}';"
+                    style="appearance: none; -webkit-appearance: none; padding: 8px 38px 8px 14px; border-radius: 8px; border: 1.5px solid var(--line); background: var(--card); color: var(--ink); font-size: 14px; font-weight: 600; min-width: 350px; cursor: pointer; outline: none; box-shadow: 0 1px 3px rgba(0,0,0,0.06);">
+              <option value="ALL" {{ 'selected' if current_store == 'ALL' }}>
+                🏢 รวมทุกคลังในโรงพยาบาล (Hospital-wide All Stores)
+              </option>
+              <optgroup label="💊 คลังยาย่อย (Pharmacy Sub-stores)">
+                {% for s in pharmacy_stores %}
+                  <option value="{{ s.code }}" {{ 'selected' if current_store == s.code }}>
+                    {{ s.icon }} {{ s.name }} [{{ s.code }}]
+                  </option>
+                {% endfor %}
+              </optgroup>
+              <optgroup label="🏥 คลังเฉพาะทาง / ศูนย์บริการรักษา (Clinical Stores)">
+                {% for s in clinical_stores %}
+                  <option value="{{ s.code }}" {{ 'selected' if current_store == s.code }}>
+                    {{ s.icon }} {{ s.name }} [{{ s.code }}]
+                  </option>
+                {% endfor %}
+              </optgroup>
+              <optgroup label="🛏️ หอผู้ป่วยและหออภิบาล (Inpatient Wards &amp; ICUs)">
+                {% for w in wards %}
+                  <option value="{{ w.code }}" {{ 'selected' if current_store == w.code or current_store == w.dept_code }}>
+                    {{ w.icon }} {{ w.name }} [{{ w.dept_code }}]
+                  </option>
+                {% endfor %}
+              </optgroup>
+            </select>
+            <span style="position: absolute; right: 12px; pointer-events: none; color: var(--muted); font-size: 11px;">▼</span>
+          </div>
+        </div>
+
+        <!-- คลังยอดนิยม / Quick shortcuts -->
+        <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
+          <span style="font-size: 12.5px; color: var(--muted); font-weight: 500;">ยอดนิยม:</span>
+          <a href="/substores?store=ALL&months={{ months }}"
+             class="pill"
+             style="text-decoration:none; border:1px solid var(--line); font-size:12px; padding:4px 10px; border-radius:14px; {{ 'background:var(--ink); color:var(--bg); font-weight:700;' if current_store == 'ALL' else 'background:var(--card); color:var(--ink);' }}">
+            🏢 รวมทุกคลัง
+          </a>
+          <a href="/substores?store=I2&months={{ months }}"
+             class="pill"
+             style="text-decoration:none; border:1px solid var(--line); font-size:12px; padding:4px 10px; border-radius:14px; {{ 'background:var(--ink); color:var(--bg); font-weight:700;' if current_store == 'I2' else 'background:var(--card); color:var(--ink);' }}">
+            🏥 IPD [I2]
+          </a>
+          <a href="/substores?store=O5&months={{ months }}"
+             class="pill"
+             style="text-decoration:none; border:1px solid var(--line); font-size:12px; padding:4px 10px; border-radius:14px; {{ 'background:var(--ink); color:var(--bg); font-weight:700;' if current_store == 'O5' else 'background:var(--card); color:var(--ink);' }}">
+            🏢 OPD ชั้น 8 [O5]
+          </a>
+          <a href="/substores?store=W:104-05&months={{ months }}"
+             class="pill"
+             style="text-decoration:none; border:1px solid var(--line); font-size:12px; padding:4px 10px; border-radius:14px; {{ 'background:var(--ink); color:var(--bg); font-weight:700;' if current_store in ('W:104-05', '104-05') else 'background:var(--card); color:var(--ink);' }}">
+            👶 NICU
+          </a>
+          <a href="/substores?store=W:102-08&months={{ months }}"
+             class="pill"
+             style="text-decoration:none; border:1px solid var(--line); font-size:12px; padding:4px 10px; border-radius:14px; {{ 'background:var(--ink); color:var(--bg); font-weight:700;' if current_store in ('W:102-08', '102-08') else 'background:var(--card); color:var(--ink);' }}">
+            🩺 ICU อายุรกรรม
+          </a>
+          <a href="/substores?store=W:209-13&months={{ months }}"
+             class="pill"
+             style="text-decoration:none; border:1px solid var(--line); font-size:12px; padding:4px 10px; border-radius:14px; {{ 'background:var(--ink); color:var(--bg); font-weight:700;' if current_store in ('W:209-13', '209-13') else 'background:var(--card); color:var(--ink);' }}">
+            ⭐ พิเศษนวมินทร์
+          </a>
+        </div>
+      </div>
+
+      <!-- Bottom Row: Time Window Selector (3, 6, 12, 18, 24 เดือน) -->
+      <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; border-top: 1px dashed var(--line); padding-top: 10px;">
+        <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+          <span style="font-size: 13px; font-weight: 700; color: var(--ink); display: inline-flex; align-items: center; gap: 5px;">
+            <span>⏱️</span>
+            <span>ช่วงเวลาย้อนหลัง:</span>
+          </span>
+          {% for m in month_choices %}
+            <a href="/substores?store={{ current_store }}&months={{ m }}"
+               class="pill"
+               style="text-decoration: none; font-size: 12.5px; padding: 4px 12px; border-radius: 14px; border: 1px solid {{ 'var(--nav-on)' if months == m else 'var(--line)' }}; {{ 'background: var(--nav-on); color: #fff; font-weight: 700; box-shadow: 0 2px 6px rgba(47, 93, 158, 0.25);' if months == m else 'background: var(--card); color: var(--ink);' }}">
+              {{ '★ ' if m == 18 else '' }}{{ m }} เดือน{{ ' (18 เดือน)' if m == 18 else '' }}
+            </a>
+          {% endfor %}
+        </div>
+        <div style="font-size: 12.5px; color: var(--muted);">
+          <span>แสดงข้อมูลย้อนหลัง: <strong>{{ months }} เดือน</strong> (ครอบคลุมรอบปีงบประมาณและข้อมูลรายเดือน)</span>
+        </div>
+      </div>
+
+      <!-- Quick Item Detail Search Bar -->
+      <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; border-top: 1px dashed var(--line); padding-top: 10px;">
+        <form onsubmit="event.preventDefault(); openItemModal('{{ current_store }}', document.getElementById('global-item-query').value);" style="display: flex; align-items: center; gap: 8px; flex: 1; max-width: 650px;">
+          <span style="font-size: 13px; font-weight: 700; color: var(--ink); white-space: nowrap; display: inline-flex; align-items: center; gap: 4px;">
+            <span>🔍</span>
+            <span>ค้นหายา/พัสดุเจาะลึก:</span>
+          </span>
+          <input type="text" id="global-item-query" placeholder="พิมพ์ชื่อยา, เวชภัณฑ์ หรือรหัสพัสดุ เพื่อดูประวัติการเบิก/รับ/วันหมดอายุ..." style="flex: 1; padding: 6px 12px; border-radius: 6px; border: 1.5px solid var(--line); background: var(--card); color: var(--ink); font-size: 13px;">
+          <button type="submit" class="pill" style="cursor: pointer; background: var(--nav-on); color: #fff; font-weight: 700; padding: 6px 14px; border: none; border-radius: 6px; font-size: 13px;">ค้นหาเจาะลึก</button>
+        </form>
+        <span style="font-size: 12px; color: var(--muted);">ดู Lot, วันหมดอายุ, AMC, MOS, ใบรับโอน, ใบเบิก และแนวโน้ม 18 เดือน</span>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Feature Navigation Tabs: Sub-stores vs Requisitions Leaders Dashboard -->
+  <div style="display: flex; gap: 8px; margin: 18px 0 20px; border-bottom: 2px solid var(--line); padding-bottom: 0;">
+    <a href="/substores?store={{ current_store }}&months={{ months }}&tab=substores"
+       style="padding: 10px 20px; border-radius: 8px 8px 0 0; text-decoration: none; font-size: 14px; font-weight: 700; display: flex; align-items: center; gap: 8px; {{ 'background: var(--card); color: var(--link); border: 1.5px solid var(--line); border-bottom: 2px solid var(--card); margin-bottom: -2px; box-shadow: 0 -2px 5px rgba(0,0,0,0.03);' if current_tab != 'leaders' else 'color: var(--muted); background: transparent; border: 1.5px solid transparent;' }}">
+      <span>🏬 รายละเอียดคลังย่อยและวอร์ด</span>
+    </a>
+    <a href="/substores?store={{ current_store }}&months={{ months }}&tab=leaders"
+       style="padding: 10px 20px; border-radius: 8px 8px 0 0; text-decoration: none; font-size: 14px; font-weight: 700; display: flex; align-items: center; gap: 8px; {{ 'background: var(--card); color: var(--link); border: 1.5px solid var(--line); border-bottom: 2px solid var(--card); margin-bottom: -2px; box-shadow: 0 -2px 5px rgba(0,0,0,0.03);' if current_tab == 'leaders' else 'color: var(--muted); background: transparent; border: 1.5px solid transparent;' }}">
+      <span>🏆 Dashboard ใครเบิกอะไรเยอะสุด (Top 5)</span>
+      <span class="pill" style="font-size: 11px; background: rgba(239,68,68,0.12); color: #dc2626; border: 1px solid rgba(239,68,68,0.25); padding: 1px 7px; font-weight: 700;">NEW</span>
+    </a>
+  </div>
+
+  {% if current_tab == 'leaders' %}
+    <div style="margin-bottom: 28px;">
+      <!-- Hero Banner -->
+      <div style="background: linear-gradient(135deg, #1e3a8a 0%, #0f172a 100%); color: #fff; border-radius: 12px; padding: 22px 26px; margin-bottom: 24px; box-shadow: 0 4px 15px rgba(0,0,0,0.1);">
+        <h2 style="margin: 0 0 8px; font-size: 22px; font-weight: 800; color: #fff; display: flex; align-items: center; gap: 10px;">
+          <span>🏆 Dashboard ใครเบิกอะไรเยอะบ้าง (Requisition Leaders)</span>
+        </h2>
+        <p style="margin: 0; font-size: 14px; color: #cbd5e1; line-height: 1.5;">
+          สรุปจัดอันดับ TOP 5 ยาและหน่วยงานที่เบิกจาก 3 ห้องยาหลัก (ห้องยาผู้ป่วยใน IPD, ห้องยาผู้ป่วยนอก OPD, ห้องเคมีบำบัด CHEMO)
+          และ TOP 5 พัสดุสิ้นเปลืองยอดนิยม (กระดาษ, หมึกพิมพ์, พัสดุทั่วไป) พร้อมหน่วยงานที่เบิกสูงสุด ย้อนหลัง {{ months }} เดือน
+        </p>
+      </div>
+
+      <!-- SECTION 1: 💊 ยา TOP 5 แต่ละห้องยา (IPD, OPD, CHEMO) -->
+      <div style="margin-bottom: 32px;">
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; border-left: 4px solid #3b82f6; padding-left: 12px; flex-wrap: wrap; gap: 10px;">
+          <div>
+            <h2 style="margin: 0; font-size: 19px; font-weight: 800; color: var(--ink); display: flex; align-items: center; gap: 8px;">
+              <span>💊 ยา TOP 5 และหน่วยงานที่เบิกสูงสุด (3 ห้องยาหลัก)</span>
+            </h2>
+            <div style="font-size: 12.5px; color: var(--muted); margin-top: 3px;">
+              ห้องยาผู้ป่วยใน (IPD) · ห้องยาผู้ป่วยนอก (OPD) · ห้องเตรียมยาเคมีบำบัด (CHEMO)
+            </div>
+          </div>
+          <span class="pill ok" style="font-size: 12px;">รอบข้อมูล {{ months }} เดือน</span>
+        </div>
+
+        <div style="display: flex; flex-direction: column; gap: 20px;">
+          {% for p_key, p_data in leaders_data.drugs.items() %}
+            <div class="section-card" style="margin-bottom: 0; border-top: 3px solid #3b82f6; padding: 18px 22px;">
+              <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; flex-wrap: wrap; gap: 10px;">
+                <div style="display: flex; align-items: center; gap: 10px;">
+                  <span style="font-size: 24px;">{{ p_data.icon }}</span>
+                  <div>
+                    <h3 style="margin: 0; font-size: 17px; font-weight: 700; color: var(--ink);">{{ p_data.title }}</h3>
+                    <div style="font-size: 12px; color: var(--muted); margin-top: 2px;">{{ p_data.desc }}</div>
+                  </div>
+                </div>
+                <span class="pill" style="font-size: 11.5px; background: rgba(59,130,246,0.12); color: #2563eb; font-weight: 700; border: 1px solid rgba(59,130,246,0.25);">คลัง {{ p_data.store_code }}</span>
+              </div>
+
+              <!-- Financial & Consumption KPI Strip -->
+              {% if p_data.metrics %}
+                {% set m = p_data.metrics %}
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; background: var(--head); border: 1px solid var(--line); border-radius: 10px; padding: 10px 14px; margin-bottom: 16px;">
+                  <div style="display: flex; flex-direction: column; gap: 3px; padding: 4px 8px;">
+                    <span style="font-size: 11px; color: var(--muted); font-weight: 600;">📥 รับโอนเข้าคลัง</span>
+                    <strong style="font-size: 15px; font-weight: 800; color: var(--ink);">{{ money(m.trans_in_val) }}</strong>
+                    <small style="font-size: 10.5px; color: var(--muted);">{{ '{:,}'.format(m.trans_in_slips) }} ใบรับโอน</small>
+                  </div>
+                  <div style="display: flex; flex-direction: column; gap: 3px; padding: 4px 8px;">
+                    <span style="font-size: 11px; color: var(--muted); font-weight: 600;">📤 ยอดเบิกจ่ายรวม</span>
+                    <strong style="font-size: 15px; font-weight: 800; color: #0284c7;">{{ money(m.issue_val) }}</strong>
+                    <small style="font-size: 10.5px; color: var(--muted);">{{ '{:,}'.format(m.issue_slips) }} ใบเบิก ({{ '{:,}'.format(m.issue_items) }} รายการ)</small>
+                  </div>
+                  <div style="display: flex; flex-direction: column; gap: 3px; padding: 4px 8px; background: rgba(245,158,11,0.08); border-radius: 6px; border-left: 2px solid #f59e0b;">
+                    <span style="font-size: 11px; color: var(--muted); font-weight: 600;">📊 Rate เฉลี่ย/เดือน</span>
+                    <strong style="font-size: 15px; font-weight: 800; color: #d97706;">{{ money(m.monthly_rate) }}</strong>
+                    <small style="font-size: 10.5px; color: var(--muted);">อัตราจ่ายเฉลี่ยต่อเดือน</small>
+                  </div>
+                  <div style="display: flex; flex-direction: column; gap: 3px; padding: 4px 8px;">
+                    <span style="font-size: 11px; color: var(--muted); font-weight: 600;">📅 สะสมปีงบ (ตั้งแต่ 1 ต.ค.)</span>
+                    <strong style="font-size: 15px; font-weight: 800; color: #4f46e5;">{{ money(m.fy_issue_val) }}</strong>
+                    <small style="font-size: 10.5px; color: var(--muted);">{{ '{:,}'.format(m.fy_issue_slips) }} ใบเบิกในปีงบ</small>
+                  </div>
+                  <div style="display: flex; flex-direction: column; gap: 3px; padding: 4px 8px;">
+                    <span style="font-size: 11px; color: var(--muted); font-weight: 600;">📦 คงคลังปัจจุบัน</span>
+                    <strong style="font-size: 15px; font-weight: 800; color: var(--ink);">{{ money(m.stock_val) }}</strong>
+                    <small style="font-size: 10.5px; color: var(--muted);">MOS: <strong style="color: #0284c7;">{{ m.mos }} เดือน</strong> ({{ '{:,}'.format(m.stock_items) }} รายการ)</small>
+                  </div>
+                </div>
+              {% endif %}
+
+              <!-- 2 Side-by-Side Tables -->
+              <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); gap: 18px;">
+                <!-- Sub-table 1: Top 5 Drugs -->
+                <div style="border: 1px solid var(--line); border-radius: 8px; overflow: hidden;">
+                  <div style="background: var(--head); padding: 8px 12px; border-bottom: 1px solid var(--line); display: flex; justify-content: space-between; align-items: center;">
+                    <span style="font-size: 12.5px; font-weight: 700; color: var(--ink);">💉 TOP 5 ยาที่มูลค่าเบิกสูงสุด</span>
+                    <small style="font-size: 11px; color: var(--muted);">เรียงตามมูลค่าเบิกจ่าย</small>
+                  </div>
+                  <table class="data-table" style="font-size: 12.5px; margin: 0;">
+                    <thead>
+                      <tr>
+                        <th style="width: 28px; text-align: center;">#</th>
+                        <th>ชื่อยาและรหัส</th>
+                        <th class="num" style="width: 100px;">จำนวน</th>
+                        <th class="num" style="width: 120px;">มูลค่า (บาท)</th>
+                        <th class="num" style="width: 60px;">สัดส่วน</th>
+                        <th style="width: 40px; text-align: center;">ดู</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {% for item in p_data.top_items %}
+                        <tr>
+                          <td style="text-align: center; font-weight: 700; font-size: 13px;">
+                            {{ '🥇' if loop.index == 1 else ('🥈' if loop.index == 2 else ('🥉' if loop.index == 3 else loop.index)) }}
+                          </td>
+                          <td>
+                            <strong>{{ item.name }}</strong><br>
+                            <a href="javascript:void(0)" onclick="openItemModal('{{ p_data.store_code.split(',')[0].strip() }}', '{{ item.stock_code }}')" class="stock-link" title="คลิกดูประวัติเจาะลึก">{{ item.stock_code }}</a>
+                          </td>
+                          <td class="num">{{ '{:,.0f}'.format(item.qty) }} <small style="color:var(--muted);">{{ item.unit }}</small></td>
+                          <td class="num" style="font-weight: 700; color: var(--ink);">{{ money(item.value) }}</td>
+                          <td class="num"><span class="pill" style="font-size: 10px; background: rgba(59,130,246,0.12); color: #2563eb; padding: 1px 5px;">{{ item.percent }}%</span></td>
+                          <td style="text-align: center;">
+                            <button type="button" class="pill" style="font-size: 10px; cursor: pointer; padding: 2px 6px; background: var(--head); border: 1px solid var(--line);"
+                                    onclick="openItemModal('{{ p_data.store_code.split(',')[0].strip() }}', '{{ item.stock_code }}')" title="เจาะลึก Lot/AMC/MOS">🔍</button>
+                          </td>
+                        </tr>
+                      {% endfor %}
+                    </tbody>
+                  </table>
+                </div>
+
+                <!-- Sub-table 2: Top 5 Requisitioning Departments -->
+                <div style="border: 1px solid var(--line); border-radius: 8px; overflow: hidden;">
+                  <div style="background: var(--head); padding: 8px 12px; border-bottom: 1px solid var(--line); display: flex; justify-content: space-between; align-items: center;">
+                    <span style="font-size: 12.5px; font-weight: 700; color: var(--ink);">🏢 TOP 5 ใครเบิกเยอะ (แผนก/วอร์ดที่เบิกสูงสุด)</span>
+                    <small style="font-size: 11px; color: var(--muted);">เรียงตามมูลค่าเบิกจ่าย</small>
+                  </div>
+                  <table class="data-table" style="font-size: 12.5px; margin: 0;">
+                    <thead>
+                      <tr>
+                        <th style="width: 28px; text-align: center;">#</th>
+                        <th>ชื่อแผนก / วอร์ด</th>
+                        <th class="num" style="width: 80px;">ใบเบิก</th>
+                        <th class="num" style="width: 120px;">มูลค่ารวม (บาท)</th>
+                        <th class="num" style="width: 60px;">สัดส่วน</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {% for dept in p_data.top_depts %}
+                        <tr>
+                          <td style="text-align: center; font-weight: 700; font-size: 13px;">
+                            {{ '🥇' if loop.index == 1 else ('🥈' if loop.index == 2 else ('🥉' if loop.index == 3 else loop.index)) }}
+                          </td>
+                          <td>
+                            <strong>{{ dept.name }}</strong>
+                            <span style="font-size: 11px; color: var(--muted); font-family: monospace;">({{ dept.dept_code }})</span>
+                            {% if dept.top_items %}
+                              <div style="margin-top: 5px; display: flex; flex-wrap: wrap; gap: 4px; align-items: center;">
+                                <span style="font-size: 10px; font-weight: 700; color: var(--muted); background: var(--head); padding: 1px 5px; border-radius: 4px; border: 1px solid var(--line);">📦 ยาเบิกหลัก:</span>
+                                {% for it in dept.top_items %}
+                                  <span style="font-size: 10.5px; background: rgba(59,130,246,0.06); color: var(--ink); padding: 1px 6px; border-radius: 4px; border: 1px solid rgba(59,130,246,0.2);" title="{{ it.stock_code }} - {{ it.name }} เบิก {{ '{:,.0f}'.format(it.qty) }} {{ it.unit }} ({{ money(it.value) }})">
+                                    {{ it.name }} <strong style="color: #0284c7;">({{ money(it.value) }})</strong>
+                                  </span>
+                                {% endfor %}
+                              </div>
+                            {% endif %}
+                          </td>
+                          <td class="num">{{ '{:,}'.format(dept.slips) }} ใบ</td>
+                          <td class="num" style="font-weight: 700; color: #059669;">{{ money(dept.value) }}</td>
+                          <td class="num"><span class="pill" style="font-size: 10px; background: rgba(16,185,129,0.12); color: #059669; padding: 1px 5px;">{{ dept.percent }}%</span></td>
+                        </tr>
+                      {% endfor %}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          {% endfor %}
+        </div>
+      </div>
+
+      <!-- SECTION 2: 📦 พัสดุสิ้นเปลือง TOP 5 (กระดาษ, หมึกพิมพ์, พัสดุทั่วไป) -->
+      <div>
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; border-left: 4px solid #10b981; padding-left: 12px; flex-wrap: wrap; gap: 10px;">
+          <div>
+            <h2 style="margin: 0; font-size: 19px; font-weight: 800; color: var(--ink); display: flex; align-items: center; gap: 8px;">
+              <span>📦 พัสดุสิ้นเปลือง TOP 5 และหน่วยงานที่เบิกสูงสุด</span>
+            </h2>
+            <div style="font-size: 12.5px; color: var(--muted); margin-top: 3px;">
+              กระดาษและแบบพิมพ์ · หมึกพิมพ์และริบบอน · พัสดุสิ้นเปลืองทั่วไป พร้อมข้อมูลจัดซื้อและใครเบิกเยอะ
+            </div>
+          </div>
+          <span class="pill ok" style="font-size: 12px; background: rgba(16,185,129,0.12); color: #059669; border-color: rgba(16,185,129,0.25);">คลังพัสดุ (คลัง 1)</span>
+        </div>
+
+        <div style="display: flex; flex-direction: column; gap: 20px;">
+          {% for s_key, s_data in leaders_data.supplies.items() %}
+            <div class="section-card" style="margin-bottom: 0; border-top: 3px solid #10b981; padding: 18px 22px;">
+              <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; flex-wrap: wrap; gap: 10px;">
+                <div style="display: flex; align-items: center; gap: 10px;">
+                  <span style="font-size: 24px;">{{ s_data.icon }}</span>
+                  <div>
+                    <h3 style="margin: 0; font-size: 17px; font-weight: 700; color: var(--ink);">{{ s_data.title }}</h3>
+                    <div style="font-size: 12px; color: var(--muted); margin-top: 2px;">{{ s_data.desc }}</div>
+                  </div>
+                </div>
+                <span class="pill ok" style="font-size: 11.5px; background: rgba(16,185,129,0.12); color: #059669; font-weight: 700; border: 1px solid rgba(16,185,129,0.25);">คลังพัสดุ 1</span>
+              </div>
+
+              <!-- Financial & Consumption KPI Strip -->
+              {% if s_data.metrics %}
+                {% set sm = s_data.metrics %}
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; background: var(--head); border: 1px solid var(--line); border-radius: 10px; padding: 10px 14px; margin-bottom: 16px;">
+                  <div style="display: flex; flex-direction: column; gap: 3px; padding: 4px 8px;">
+                    <span style="font-size: 11px; color: var(--muted); font-weight: 600;">🛒 ซื้อมาเท่าไหร่ (รับเข้า)</span>
+                    <strong style="font-size: 15px; font-weight: 800; color: var(--ink);">{{ money(sm.rcv_val) }}</strong>
+                    <small style="font-size: 10.5px; color: var(--muted);">{{ '{:,}'.format(sm.rcv_docs) }} ใบรับสินค้า</small>
+                  </div>
+                  <div style="display: flex; flex-direction: column; gap: 3px; padding: 4px 8px;">
+                    <span style="font-size: 11px; color: var(--muted); font-weight: 600;">📤 ยอดเบิกจ่ายรวม</span>
+                    <strong style="font-size: 15px; font-weight: 800; color: #0284c7;">{{ money(sm.issue_val) }}</strong>
+                    <small style="font-size: 10.5px; color: var(--muted);">{{ '{:,}'.format(sm.issue_slips) }} ใบเบิก ({{ '{:,}'.format(sm.issue_items) }} รายการ)</small>
+                  </div>
+                  <div style="display: flex; flex-direction: column; gap: 3px; padding: 4px 8px; background: rgba(245,158,11,0.08); border-radius: 6px; border-left: 2px solid #f59e0b;">
+                    <span style="font-size: 11px; color: var(--muted); font-weight: 600;">📊 Rate เฉลี่ย/เดือน</span>
+                    <strong style="font-size: 15px; font-weight: 800; color: #d97706;">{{ money(sm.monthly_rate) }}</strong>
+                    <small style="font-size: 10.5px; color: var(--muted);">อัตราใช้เฉลี่ยต่อเดือน</small>
+                  </div>
+                  <div style="display: flex; flex-direction: column; gap: 3px; padding: 4px 8px;">
+                    <span style="font-size: 11px; color: var(--muted); font-weight: 600;">📅 สะสมปีงบ (ตั้งแต่ 1 ต.ค.)</span>
+                    <strong style="font-size: 15px; font-weight: 800; color: #4f46e5;">{{ money(sm.fy_issue_val) }}</strong>
+                    <small style="font-size: 10.5px; color: var(--muted);">{{ '{:,}'.format(sm.fy_issue_slips) }} ใบเบิกในปีงบ</small>
+                  </div>
+                  <div style="display: flex; flex-direction: column; gap: 3px; padding: 4px 8px;">
+                    <span style="font-size: 11px; color: var(--muted); font-weight: 600;">📦 คงคลังปัจจุบัน</span>
+                    <strong style="font-size: 15px; font-weight: 800; color: var(--ink);">{{ money(sm.stock_val) }}</strong>
+                    <small style="font-size: 10.5px; color: var(--muted);">MOS: <strong style="color: #0284c7;">{{ sm.mos }} เดือน</strong> ({{ '{:,}'.format(sm.stock_items) }} รายการ)</small>
+                  </div>
+                </div>
+              {% endif %}
+
+              <!-- 2 Side-by-Side Tables -->
+              <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); gap: 18px;">
+                <!-- Sub-table 1: Top 5 Supply Items -->
+                <div style="border: 1px solid var(--line); border-radius: 8px; overflow: hidden;">
+                  <div style="background: var(--head); padding: 8px 12px; border-bottom: 1px solid var(--line); display: flex; justify-content: space-between; align-items: center;">
+                    <span style="font-size: 12.5px; font-weight: 700; color: var(--ink);">📋 TOP 5 รายการที่มีการเบิกสูงสุด</span>
+                    <small style="font-size: 11px; color: var(--muted);">เรียงตามมูลค่าเบิกจ่าย</small>
+                  </div>
+                  <table class="data-table" style="font-size: 12.5px; margin: 0;">
+                    <thead>
+                      <tr>
+                        <th style="width: 28px; text-align: center;">#</th>
+                        <th>รายการพัสดุและรหัส</th>
+                        <th class="num" style="width: 100px;">จำนวน</th>
+                        <th class="num" style="width: 120px;">มูลค่า (บาท)</th>
+                        <th class="num" style="width: 60px;">สัดส่วน</th>
+                        <th style="width: 40px; text-align: center;">ดู</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {% for item in s_data.top_items %}
+                        <tr>
+                          <td style="text-align: center; font-weight: 700; font-size: 13px;">
+                            {{ '🥇' if loop.index == 1 else ('🥈' if loop.index == 2 else ('🥉' if loop.index == 3 else loop.index)) }}
+                          </td>
+                          <td>
+                            <strong>{{ item.name }}</strong><br>
+                            <a href="javascript:void(0)" onclick="openItemModal('1', '{{ item.stock_code }}')" class="stock-link" title="คลิกดูประวัติเจาะลึก">{{ item.stock_code }}</a>
+                          </td>
+                          <td class="num">{{ '{:,.0f}'.format(item.qty) }} <small style="color:var(--muted);">{{ item.unit }}</small></td>
+                          <td class="num" style="font-weight: 700; color: var(--ink);">{{ money(item.value) }}</td>
+                          <td class="num"><span class="pill" style="font-size: 10px; background: rgba(59,130,246,0.12); color: #2563eb; padding: 1px 5px;">{{ item.percent }}%</span></td>
+                          <td style="text-align: center;">
+                            <button type="button" class="pill" style="font-size: 10px; cursor: pointer; padding: 2px 6px; background: var(--head); border: 1px solid var(--line);"
+                                    onclick="openItemModal('1', '{{ item.stock_code }}')" title="เจาะลึก Lot/ประวัติเบิก">🔍</button>
+                          </td>
+                        </tr>
+                      {% endfor %}
+                    </tbody>
+                  </table>
+                </div>
+
+                <!-- Sub-table 2: Top 5 Requisitioning Departments for Supplies -->
+                <div style="border: 1px solid var(--line); border-radius: 8px; overflow: hidden;">
+                  <div style="background: var(--head); padding: 8px 12px; border-bottom: 1px solid var(--line); display: flex; justify-content: space-between; align-items: center;">
+                    <span style="font-size: 12.5px; font-weight: 700; color: var(--ink);">🏢 TOP 5 ใครเบิกเยอะ (หน่วยงานที่เบิกสูงสุด)</span>
+                    <small style="font-size: 11px; color: var(--muted);">เรียงตามมูลค่าเบิกจ่าย</small>
+                  </div>
+                  <table class="data-table" style="font-size: 12.5px; margin: 0;">
+                    <thead>
+                      <tr>
+                        <th style="width: 28px; text-align: center;">#</th>
+                        <th>ชื่อหน่วยงาน</th>
+                        <th class="num" style="width: 80px;">ใบเบิก</th>
+                        <th class="num" style="width: 120px;">มูลค่ารวม (บาท)</th>
+                        <th class="num" style="width: 60px;">สัดส่วน</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {% for dept in s_data.top_depts %}
+                        <tr>
+                          <td style="text-align: center; font-weight: 700; font-size: 13px;">
+                            {{ '🥇' if loop.index == 1 else ('🥈' if loop.index == 2 else ('🥉' if loop.index == 3 else loop.index)) }}
+                          </td>
+                          <td>
+                            <strong>{{ dept.name }}</strong>
+                            <span style="font-size: 11px; color: var(--muted); font-family: monospace;">({{ dept.dept_code }})</span>
+                            {% if dept.top_items %}
+                              <div style="margin-top: 5px; display: flex; flex-wrap: wrap; gap: 4px; align-items: center;">
+                                <span style="font-size: 10px; font-weight: 700; color: var(--muted); background: var(--head); padding: 1px 5px; border-radius: 4px; border: 1px solid var(--line);">📦 พัสดุเบิกหลัก:</span>
+                                {% for it in dept.top_items %}
+                                  <span style="font-size: 10.5px; background: rgba(16,185,129,0.06); color: var(--ink); padding: 1px 6px; border-radius: 4px; border: 1px solid rgba(16,185,129,0.25);" title="{{ it.stock_code }} - {{ it.name }} เบิก {{ '{:,.0f}'.format(it.qty) }} {{ it.unit }} ({{ money(it.value) }})">
+                                    {{ it.name }} <strong style="color: #059669;">({{ money(it.value) }})</strong>
+                                  </span>
+                                {% endfor %}
+                              </div>
+                            {% endif %}
+                          </td>
+                          <td class="num">{{ '{:,}'.format(dept.slips) }} ใบ</td>
+                          <td class="num" style="font-weight: 700; color: #059669;">{{ money(dept.value) }}</td>
+                          <td class="num"><span class="pill" style="font-size: 10px; background: rgba(16,185,129,0.12); color: #059669; padding: 1px 5px;">{{ dept.percent }}%</span></td>
+                        </tr>
+                      {% endfor %}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          {% endfor %}
+        </div>
+      </div>
+        </div>
+      </div>
+    </div>
+  {% else %}
+
+  {% if is_ward %}
+
+    <!-- 5 KPI Blocks for Selected Ward -->
+    <div class="kpi-grid" style="grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));">
+      <div class="kpi-card">
+        <div class="label">💰 ยอดเบิกใช้ (เฉลี่ยรายเดือน)</div>
+        <div class="value" style="color:var(--link);">
+          {{ money(ward_kpis.monthly_avg) }} <small style="font-size:13px; font-weight:normal; color:var(--muted);">บาท/ด.</small>
+        </div>
+        <div style="font-size:12.5px; font-weight:600; color:var(--ink); margin-top:6px; border-top:1px dashed var(--line); padding-top:5px;">
+          <span>สะสมปีงบ (ตั้งแต่ 1 ต.ค.):</span>
+          <strong style="color:var(--link);">{{ money(ward_kpis.fy_total_val) }}</strong> บาท
+        </div>
+        <div class="hint">{{ ward_kpis.fy_label }} · รวม {{ months }} ด.: {{ money(ward_kpis.total_val) }} บาท ({{ '{:,}'.format(ward_kpis.slips) }} ใบเบิก)</div>
+      </div>
+
+      <div class="kpi-card">
+        <div class="label">📈 อัตราใช้เฉลี่ย 3 เดือน (AMC)</div>
+        <div class="value">{{ money(ward_kpis.amc) }} บาท</div>
+        <div class="hint">3 ด. ล่าสุดรวม {{ money(ward_kpis.val_3m) }} บาท</div>
+      </div>
+
+      <div class="kpi-card">
+        <div class="label">📦 จำนวนรายการที่เบิกใช้</div>
+        <div class="value">{{ '{:,}'.format(ward_kpis.items_count) }} รายการ</div>
+        <div class="hint">เวชภัณฑ์ ยา และวัสดุสิ้นเปลือง</div>
+      </div>
+
+      <div class="kpi-card">
+        <div class="label">📅 มูลค่าเบิกในเดือนปัจจุบัน</div>
+        <div class="value">{{ money(ward_kpis.val_current_month) }} บาท</div>
+        <div class="hint">งวดปัจจุบัน</div>
+      </div>
+
+      <div class="kpi-card safe-card">
+        <div class="label">🏬 แหล่งคลังที่เบิกหลัก</div>
+        <div class="value" style="font-size:17px; font-weight:700;">{{ ward_sources[0].store_name if ward_sources else '-' }}</div>
+        <div class="hint">เบิกจากทั้งหมด {{ ward_sources|length }} คลัง</div>
+      </div>
+    </div>
+
+    <!-- Ward Section 1: ข้อมูลการเบิกใช้รายเดือนย้อนหลัง {{ months }} เดือน -->
+    <div class="section-card">
+      <h2>
+        <span style="display:flex; align-items:center; gap:8px;">
+          <span>📅</span>
+          <span>ข้อมูลการเบิกใช้รายเดือนย้อนหลัง {{ months }} เดือน (Monthly Requisition Trend)</span>
+        </span>
+        <span class="pill ok" style="font-size:12px; font-weight:600;">{{ ward_monthly_trend.months_count }} เดือนย้อนหลัง</span>
+      </h2>
+      <div class="card-hint">
+        สถิติการเบิกยาและเวชภัณฑ์รายเดือนของ {{ ward_info.name }} แยกสัดส่วนระหว่างคลังยาและคลังพัสดุ/จ่ายกลาง
+      </div>
+
+      <!-- Quick Summary Stat Cards -->
+      <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:12px; margin-bottom:16px;">
+        <div style="background:var(--head); border:1px solid var(--line); border-radius:8px; padding:10px 14px;">
+          <div style="font-size:12px; color:var(--muted); margin-bottom:2px;">💰 เบิกใช้รวมทั้งสิ้น ({{ months }} ด.)</div>
+          <div style="font-size:18px; font-weight:700; color:var(--ink);">{{ money(ward_monthly_trend.total_val) }} บาท</div>
+          <div style="font-size:11.5px; color:var(--muted); margin-top:2px;">เฉลี่ยเดือนละ {{ money(ward_monthly_trend.avg_val) }} บาท</div>
+        </div>
+        <div style="background:var(--head); border:1px solid var(--line); border-radius:8px; padding:10px 14px;">
+          <div style="font-size:12px; color:var(--muted); margin-bottom:2px;">📈 เดือนที่เบิกมูลค่าสูงสุด (Peak Month)</div>
+          <div style="font-size:18px; font-weight:700; color:var(--late);">{{ ward_monthly_trend.peak_month or '-' }}</div>
+          <div style="font-size:11.5px; color:var(--muted); margin-top:2px;">ยอดเบิก {{ money(ward_monthly_trend.peak_val) }} บาท</div>
+        </div>
+        <div style="background:var(--head); border:1px solid var(--line); border-radius:8px; padding:10px 14px;">
+          <div style="font-size:12px; color:var(--muted); margin-bottom:2px;">📋 จำนวนใบเบิกและชนิดรายการ</div>
+          <div style="font-size:18px; font-weight:700; color:var(--ink);">{{ '{:,}'.format(ward_monthly_trend.total_slips) }} ใบเบิก</div>
+          <div style="font-size:11.5px; color:var(--muted); margin-top:2px;">รวม {{ ward_monthly_trend.months_count }} งวดบัญชี</div>
+        </div>
+      </div>
+
+      <!-- Monthly Breakdown Table -->
+      <div class="table-scroll-container" style="max-height:420px;">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th style="width:40px; text-align:center;">#</th>
+              <th>งวดบัญชี / เดือน</th>
+              <th class="num" style="min-width:180px;">ยอดเบิกใช้รวม (บาท)</th>
+              <th class="num">เบิกจากคลังยา (บาท)</th>
+              <th class="num">เบิกจากพัสดุ/จ่ายกลาง (บาท)</th>
+              <th class="num">จำนวนใบเบิก</th>
+              <th class="num">ชนิดรายการ</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for m in ward_monthly_trend.months_data %}
+              <tr>
+                <td style="text-align:center; color:var(--muted); font-size:12px;">{{ loop.index }}</td>
+                <td>
+                  <strong>{{ m.period_thai }}</strong>
+                  <span class="code" style="margin-left:4px;">{{ m.period }}</span>
+                </td>
+                <td class="num">
+                  <div style="font-weight:700; color:var(--ink);">{{ money(m.total_val) }}</div>
+                  <div style="height:5px; background:var(--head); border-radius:3px; overflow:hidden; margin-top:3px;">
+                    <div style="width:{{ m.bar_pct }}%; height:100%; background:var(--link); border-radius:3px;"></div>
+                  </div>
+                </td>
+                <td class="num">
+                  <span style="font-weight:600; color:#059669;">{{ money(m.drug_val) }}</span>
+                  <small style="color:var(--muted); margin-left:4px;">({{ m.drug_pct }}%)</small>
+                </td>
+                <td class="num">
+                  <span style="font-weight:600; color:#2563eb;">{{ money(m.supply_val) }}</span>
+                  <small style="color:var(--muted); margin-left:4px;">({{ m.supply_pct }}%)</small>
+                </td>
+                <td class="num">{{ '{:,}'.format(m.slips) }}</td>
+                <td class="num">{{ '{:,}'.format(m.items_count) }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Section 2: แหล่งคลังที่จ่ายของให้หอผู้ป่วยนี้ -->
+    <div class="section-card">
+      <h2>
+        <span>🏬 สรุปการเบิกแยกตามคลังต้นทาง (Requisitions by Source Store)</span>
+        <span class="sub-count" style="font-size:12px; font-weight:normal;">{{ months }} เดือนย้อนหลัง</span>
+      </h2>
+      <div class="card-hint">มูลค่าและจำนวนครั้งที่ {{ ward_info.name }} เบิกจากคลังยา คลังพัสดุ งานจ่ายกลาง หรือคลังเฉพาะทาง</div>
+
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th style="width:40px; text-align:center;">อันดับ</th>
+            <th>คลังต้นทาง</th>
+            <th class="num">มูลค่าเบิก (บาท)</th>
+            <th class="num" style="min-width:140px;">สัดส่วน (%)</th>
+            <th class="num">จำนวนใบเบิก</th>
+            <th class="num">จำนวนชนิดรายการ</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for s in ward_sources %}
+            <tr>
+              <td style="text-align:center; color:var(--muted); font-size:12px;">{{ loop.index }}</td>
+              <td>
+                <a href="/substores?store={{ s.store }}" style="color:var(--link); font-weight:700; text-decoration:none;">
+                  {{ s.store_name }}
+                </a>
+                <span class="code" style="margin-left:4px;">คลัง {{ s.store }}</span>
+              </td>
+              <td class="num" style="font-weight:700; color:var(--ink);">{{ money(s.value) }}</td>
+              <td class="num">
+                <div style="display:flex; align-items:center; justify-content:flex-end; gap:8px;">
+                  <span style="font-weight:600;">{{ '{:.1f}'.format(s.percent) }}%</span>
+                  <div style="width:70px; height:6px; background:var(--head); border-radius:3px; overflow:hidden;">
+                    <div style="width:{{ s.percent }}%; height:100%; background:var(--link); border-radius:3px;"></div>
+                  </div>
+                </div>
+              </td>
+              <td class="num">{{ '{:,}'.format(s.slips) }}</td>
+              <td class="num">{{ '{:,}'.format(s.items_count) }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Section 2: รายการยาและเวชภัณฑ์ที่หอผู้ป่วยนี้เบิกใช้สูงสุด -->
+    <div class="section-card">
+      <h2>
+        <span>📊 รายการยาและเวชภัณฑ์ที่หอผู้ป่วยเบิกใช้สูงสุด (Top Medicines &amp; Supplies)</span>
+        <span class="sub-count" style="font-size:12px; font-weight:normal;">แสดง {{ ward_top_items|length }} รายการแรก</span>
+      </h2>
+      <div class="card-hint">รายการยาและเวชภัณฑ์ที่ {{ ward_info.name }} เบิกไปใช้จริงมากที่สุด เพื่อการวางแผนสำรองหน้างาน (Floor Stock)</div>
+
+      <div class="filter-search-box">
+        <input type="search"
+               id="ward-item-search"
+               placeholder="🔍 พิมพ์ชื่อยา, เวชภัณฑ์ หรือรหัส เพื่อกรองรายการทันที..."
+               oninput="filterWardItems(this.value)">
+      </div>
+
+      <div class="table-scroll-container" style="max-height:500px;">
+        <table class="data-table" id="ward-items-table">
+          <thead>
+            <tr>
+              <th style="width:40px; text-align:center;">อันดับ</th>
+              <th>รหัสพัสดุ</th>
+              <th>ชื่อยา / เวชภัณฑ์</th>
+              <th class="num">จำนวนที่เบิก</th>
+              <th>หน่วยนับ</th>
+              <th class="num">มูลค่ารวม (บาท)</th>
+              <th class="num">จำนวนใบเบิก</th>
+              <th>เบิกล่าสุด</th>
+              <th style="width:70px; text-align:center;">เจาะลึก</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for it in ward_top_items %}
+              <tr class="ward-item-row" data-name="{{ it.name.lower() }}" data-code="{{ it.stock_code.lower() }}">
+                <td style="text-align:center; color:var(--muted); font-size:12px;">{{ loop.index }}</td>
+                <td>
+                  <a href="javascript:void(0)" onclick="openItemModal('{{ current_store }}', '{{ it.stock_code }}')" class="stock-link" title="คลิกดูประวัติเจาะลึก">{{ it.stock_code }}</a>
+                </td>
+                <td>
+                  <strong>{{ it.name }}</strong>
+                </td>
+                <td class="num" style="font-weight:600;">{{ '{:,.0f}'.format(it.qty) if it.qty == it.qty|int else '{:,.2f}'.format(it.qty) }}</td>
+                <td><span style="color:var(--muted); font-size:12px;">{{ it.unit }}</span></td>
+                <td class="num" style="font-weight:700; color:var(--ink);">{{ money(it.value) }}</td>
+                <td class="num">{{ '{:,}'.format(it.req_count) }}</td>
+                <td style="font-size:12px; color:var(--muted); font-family:monospace;">{{ it.last_issued }}</td>
+                <td style="text-align:center;">
+                  <button type="button" class="pill" style="font-size:11px; cursor:pointer; background:var(--head); border:1px solid var(--line);"
+                          onclick="openItemModal('{{ current_store }}', '{{ it.stock_code }}')">🔍 ดู</button>
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+  {% else %}
+
+    <!-- 6 KPI Blocks for Selected Sub-store or Hospital-wide -->
+    <div class="kpi-grid">
+      <div class="kpi-card">
+        <div class="label">💰 {{ 'มูลค่าคงคลังรวมทั้ง รพ.' if is_all_stores else 'มูลค่าคงคลังปัจจุบัน (On-hand)' }}</div>
+        <div class="value" style="color:var(--link);">{{ money(kpis.stock_value) }} บาท</div>
+        <div class="hint">
+          {% if is_all_stores %}
+            {{ '{:,}'.format(kpis.stock_items) }} รายการ ใน {{ kpis.stores_count }} คลังทั่ว รพ.
+          {% else %}
+            {{ '{:,}'.format(kpis.stock_items) }} รายการในคลังย่อย
+          {% endif %}
+        </div>
+      </div>
+
+      <div class="kpi-card">
+        <div class="label">📈 อัตราใช้เฉลี่ย 3 เดือน (AMC)</div>
+        <div class="value">{{ money(kpis.monthly_amc) }} บาท</div>
+        <div class="hint">{{ 'ตัดจ่ายเฉลี่ยทั้ง รพ./เดือน' if is_all_stores else 'ตัดจ่ายเฉลี่ยต่อเดือน' }}</div>
+      </div>
+
+      <div class="kpi-card {{ 'alert-card' if kpis.mos_overall < 0.5 else ('warn-card' if kpis.mos_overall > 2.5 else 'safe-card') }}">
+        <div class="label">⏱️ {{ 'อัตราสำรองภาพรวม (MOS)' if is_all_stores else 'อัตราสำรองคลังย่อย (MOS)' }}</div>
+        <div class="value">{{ kpis.mos_overall }} เดือน</div>
+        <div class="hint">
+          {% if kpis.mos_overall < 0.5 %}
+            <span style="color:var(--late); font-weight:600;">⚠ เสี่ยงยาขาด (< 15 วัน)</span>
+          {% elif kpis.mos_overall > 2.5 %}
+            <span style="color:var(--slow); font-weight:600;">⚡ สต็อกบวม (> 2.5 เดือน)</span>
+          {% else %}
+            <span style="color:var(--ok); font-weight:600;">✓ เกณฑ์สำรองปลอดภัย</span>
+          {% endif %}
+        </div>
+      </div>
+
+      <div class="kpi-card">
+        <div class="label">📥 {{ 'ยอดรับโอนภาพรวม' if is_all_stores else 'ยอดรับโอนจากคลังใหญ่' }} (เฉลี่ยรายเดือน)</div>
+        <div class="value" style="color:var(--link);">
+          {{ money(kpis.monthly_trans_avg) }} <small style="font-size:13px; font-weight:normal; color:var(--muted);">บาท/ด.</small>
+        </div>
+        <div style="font-size:12.5px; font-weight:600; color:var(--ink); margin-top:6px; border-top:1px dashed var(--line); padding-top:5px;">
+          <span>สะสมปีงบ (ตั้งแต่ 1 ต.ค.):</span>
+          <strong style="color:var(--link);">{{ money(kpis.fy_trans_in_val) }}</strong> บาท
+        </div>
+        <div class="hint">{{ kpis.fy_label }} · รวม {{ months }} ด.: {{ money(kpis.trans_in_val) }} บาท ({{ '{:,}'.format(kpis.trans_in_slips) }} ใบรับ)</div>
+      </div>
+
+      <div class="kpi-card">
+        <div class="label">📤 {{ 'ยอดตัดจ่ายรวมทั้ง รพ.' if is_all_stores else 'ยอดจ่ายให้ผู้ป่วย/วอร์ด' }} (เฉลี่ยรายเดือน)</div>
+        <div class="value" style="color:var(--ink);">
+          {{ money(kpis.monthly_disp_avg) }} <small style="font-size:13px; font-weight:normal; color:var(--muted);">บาท/ด.</small>
+        </div>
+        <div style="font-size:12.5px; font-weight:600; color:var(--ink); margin-top:6px; border-top:1px dashed var(--line); padding-top:5px;">
+          <span>สะสมปีงบ (ตั้งแต่ 1 ต.ค.):</span>
+          <strong style="color:#2563eb;">{{ money(kpis.fy_disp_val) }}</strong> บาท
+        </div>
+        <div class="hint">{{ kpis.fy_label }} · รวม {{ months }} ด.: {{ money(kpis.disp_val) }} บาท ({{ '{:,}'.format(kpis.disp_slips) }} ใบจ่าย)</div>
+      </div>
+
+      <div class="kpi-card {{ 'alert-card' if kpis.expiring_items > 0 else 'safe-card' }}">
+        <div class="label">⏳ ยาใกล้หมดอายุ (&lt; 8 ด.)</div>
+        <div class="value" style="{{ 'color:var(--late);' if kpis.expiring_items > 0 else '' }}">
+          {{ '{:,}'.format(kpis.expiring_items) }} รายการ
+        </div>
+        <div class="hint">ต้องเฝ้าระวังหรือส่งคืนคลัง</div>
+      </div>
+    </div>
+
+    {% if is_all_stores %}
+      <!-- SECTION: สรุปแยกตามกลุ่มคลัง (Store Groups: ยา, พัสดุ, จ่ายกลาง, เฉพาะทาง) -->
+      <div class="section-card">
+        <h2>
+          <span style="display:flex; align-items:center; gap:8px;">
+            <span>🏬</span>
+            <span>สรุปการใช้และตัดจ่ายแยกตามกลุ่มคลัง (Store Groups Breakdown)</span>
+          </span>
+          <span class="pill ok" style="font-size:12px; font-weight:600;">{{ all_groups|length }} กลุ่มคลัง</span>
+        </h2>
+        <div class="card-hint">
+          เปรียบเทียบอัตราตัดจ่ายเฉลี่ยรายเดือน, ยอดสะสมปีงบประมาณ (นับตั้งแต่ 1 ต.ค. เป็นต้นมา), และมูลค่าคงคลังตามกลุ่ม
+        </div>
+
+        <!-- Group Cards Grid -->
+        <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(270px, 1fr)); gap:14px; margin-bottom:18px;">
+          {% for g in all_groups %}
+            <div style="background:var(--head); border:1.5px solid var(--line); border-radius:10px; padding:14px 16px;">
+              <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:6px;">
+                <span style="font-size:15px; font-weight:700; color:var(--ink);">{{ g.name }}</span>
+                <span class="pill {{ g.badge_class }}" style="font-size:11px; font-weight:700;">{{ g.share_pct }}% ของ รพ.</span>
+              </div>
+              <div style="font-size:11.5px; color:var(--muted); margin-bottom:10px; line-height:1.4;">{{ g.desc }}</div>
+              
+              <div style="display:flex; flex-direction:column; gap:5px; font-size:13px; border-top:1px dashed var(--line); padding-top:8px;">
+                <div>
+                  <span style="color:var(--muted);">เฉลี่ยตัดจ่าย/เดือน:</span>
+                  <strong style="color:var(--ink); float:right;">{{ money(g.monthly_disp_avg) }} บาท/ด.</strong>
+                </div>
+                <div>
+                  <span style="color:var(--muted);">สะสมปีงบ (ตั้งแต่ 1 ต.ค.):</span>
+                  <strong style="color:var(--link); float:right;">{{ money(g.fy_disp_val) }} บาท</strong>
+                </div>
+                <div>
+                  <span style="color:var(--muted);">คงคลังกลุ่ม:</span>
+                  <span style="float:right; font-weight:600;">{{ money(g.stock_value) }} บาท</span>
+                </div>
+                <div>
+                  <span style="color:var(--muted);">จำนวนรายการ:</span>
+                  <span style="float:right;">{{ '{:,}'.format(g.stock_items) }} รายการ</span>
+                </div>
+              </div>
+
+              <!-- Stores in Group Pills -->
+              <div style="margin-top:10px; padding-top:8px; border-top:1px solid var(--line); display:flex; flex-wrap:wrap; gap:4px;">
+                {% for st in g.stores_list %}
+                  <a href="/substores?store={{ st.code }}&months={{ months }}"
+                     class="pill"
+                     style="text-decoration:none; font-size:11px; padding:2px 7px; background:var(--card); border:1px solid var(--line); color:var(--ink);"
+                     title="{{ st.name }}">
+                    {{ st.code }} ({{ st.name[:10] }})
+                  </a>
+                {% endfor %}
+              </div>
+            </div>
+          {% endfor %}
+        </div>
+
+        <!-- Group Comparison Table -->
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th style="width:40px; text-align:center;">#</th>
+              <th>กลุ่มคลัง</th>
+              <th class="num" style="min-width:160px;">เฉลี่ยตัดจ่าย/ด. (บาท)</th>
+              <th class="num" style="min-width:170px;">สะสมปีงบ (ตั้งแต่ 1 ต.ค.)</th>
+              <th class="num" style="min-width:130px;">สัดส่วนการใช้ (%)</th>
+              <th class="num">รับโอนสะสมปีงบ</th>
+              <th class="num">มูลค่าคงคลังกลุ่ม</th>
+              <th class="num">รายการ</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for g in all_groups %}
+              <tr>
+                <td style="text-align:center; color:var(--muted); font-size:12px;">{{ loop.index }}</td>
+                <td>
+                  <strong>{{ g.name }}</strong>
+                  <div style="font-size:11.5px; color:var(--muted);">{{ g.desc }}</div>
+                </td>
+                <td class="num">
+                  <strong style="color:var(--ink);">{{ money(g.monthly_disp_avg) }}</strong>
+                  <span style="font-size:11.5px; color:var(--muted);">บ./ด.</span>
+                </td>
+                <td class="num">
+                  <strong style="color:var(--link);">{{ money(g.fy_disp_val) }}</strong>
+                  <span style="font-size:11.5px; color:var(--muted);">บาท</span>
+                </td>
+                <td class="num">
+                  <div style="display:flex; align-items:center; justify-content:flex-end; gap:6px;">
+                    <strong>{{ g.share_pct }}%</strong>
+                    <div style="width:50px; height:6px; background:var(--head); border-radius:3px; overflow:hidden;">
+                      <div style="width:{{ g.share_pct }}%; height:100%; background:var(--link); border-radius:3px;"></div>
+                    </div>
+                  </div>
+                </td>
+                <td class="num">{{ money(g.fy_trans_in_val) }}</td>
+                <td class="num" style="font-weight:600;">{{ money(g.stock_value) }}</td>
+                <td class="num">{{ '{:,}'.format(g.stock_items) }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      <!-- SECTION: 50 รายการที่มีการตัดจ่ายสูงสุดทั้งโรงพยาบาล -->
+      <div class="section-card">
+        <h2>
+          <span>📊 50 รายการที่มีการตัดจ่ายสูงสุดทั้งโรงพยาบาล (Top 50 Dispensed Items)</span>
+          <span class="sub-count" style="font-size:12.5px; font-weight:normal;">รอบ {{ months }} เดือนย้อนหลัง</span>
+        </h2>
+        <div class="card-hint">รายการยาและเวชภัณฑ์ที่โรงพยาบาลใช้งานมูลค่ารวมสูงสุด พร้อมระบุจำนวนคลังที่เบิกใช้</div>
+
+        <div class="filter-search-box">
+          <input type="search" id="top50-search-input" placeholder="🔍 พิมพ์ค้นหารหัส หรือชื่อยา..." oninput="filterTop50Table(this.value)">
+        </div>
+
+        <div class="table-scroll-container" style="max-height:500px;">
+          <table class="data-table" id="top50-table">
+            <thead>
+              <tr>
+                <th style="width:36px; text-align:center;">#</th>
+                <th>รหัสและชื่อรายการ</th>
+                <th>หมวด</th>
+                <th class="num">จำนวนที่ใช้</th>
+                <th>หน่วย</th>
+                <th class="num">มูลค่าตัดจ่ายรวม (บาท)</th>
+                <th class="num">ใบจ่าย</th>
+                <th class="num">จำนวนคลัง</th>
+                <th style="width:70px;">เจาะลึก</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for it in hospital_top_items %}
+                <tr class="top50-row" data-name="{{ it.name|lower }}" data-code="{{ it.stock_code|lower }}">
+                  <td style="text-align:center; color:var(--muted); font-size:12px;">{{ loop.index }}</td>
+                  <td>
+                    <strong>{{ it.name }}</strong><br>
+                    <a href="javascript:void(0)" onclick="openItemModal('ALL', '{{ it.stock_code }}')" class="stock-link">{{ it.stock_code }}</a>
+                  </td>
+                  <td><span class="cat-badge cat-drug">{{ it.group }}</span></td>
+                  <td class="num" style="font-weight:600;">{{ '{:,.0f}'.format(it.qty) if it.qty == it.qty|int else '{:,.2f}'.format(it.qty) }}</td>
+                  <td><span style="color:var(--muted); font-size:12px;">{{ it.unit }}</span></td>
+                  <td class="num" style="font-weight:700; color:var(--ink);">{{ money(it.value) }}</td>
+                  <td class="num">{{ '{:,}'.format(it.req_count) }}</td>
+                  <td class="num">{{ it.store_count }} คลัง</td>
+                  <td>
+                    <button type="button" class="pill" style="font-size:11px; cursor:pointer; background:var(--head); border:1px solid var(--line);"
+                            onclick="openItemModal('ALL', '{{ it.stock_code }}')">🔍 ดู</button>
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    {% endif %}
+
+
+    <!-- SECTION 1: ยาและพัสดุที่คลังใหญ่ยังไม่โอนยอดมา / ค้างส่ง & จ่ายไม่ครบ (Pending & Shortfall Alert) -->
+    <div class="section-card">
+      <h2>
+        <span>🚨 ยาและพัสดุที่คลังใหญ่ยังไม่โอนยอดมา / ค้างจ่าย (Pending &amp; Shortfall Alert)</span>
+        <span class="sub-count" style="font-size:12.5px; font-weight:normal;">พบ {{ pending_transfers | length }} รายการ</span>
+      </h2>
+      <div class="card-hint">
+        ติดตามใบเบิก/โอนจากคลังยาใหญ่ (คลัง 2, 7) และคลังพัสดุ (คลัง 1, 3) ที่ยังไม่ได้รับการยืนยันรับเข้า, คลังใหญ่ของหมด (Backorder), หรือตัดจ่ายมาไม่ครบ (ย้อนหลัง 1 ปี)
+      </div>
+
+      {% if pending_transfers %}
+        <div class="filter-search-box" style="margin-bottom: 10px;">
+          <input type="search" id="pending-search-input" placeholder="🔍 ค้นหาเลขที่ใบโอน, รหัส, ชื่อยา/พัสดุ หรือหน่วยงานปลายทาง..." oninput="filterPendingTable(this.value)">
+        </div>
+
+        <div class="table-scroll-container" style="max-height: 480px;">
+          <table class="data-table" id="pending-transfers-table">
+            <thead>
+              <tr>
+                <th>เลขที่ใบโอน</th>
+                <th>เวลาที่ตัดจ่าย</th>
+                <th>คลังต้นทาง</th>
+                <th>คลัง/หน่วยงานปลายทาง</th>
+                <th style="text-align:center;">หมวด</th>
+                <th>รายการยา / พัสดุ</th>
+                <th class="num">ขอเบิก</th>
+                <th class="num">จ่ายจริง</th>
+                <th class="num">มูลค่า (บาท)</th>
+                <th>สถานะและการแจ้งเตือน</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for p in pending_transfers %}
+                <tr class="pending-row" data-search="{{ p.irno|lower }} {{ p.stock_code|lower }} {{ p.name|lower }} {{ p.dest_name|lower }} {{ p.dest_dept_code|lower }} {{ p.from_store|lower }} {{ p.category|lower }}">
+                  <td><strong>{{ p.irno }}</strong></td>
+                  <td style="white-space:nowrap; font-size:12.5px;">{{ p.date }}</td>
+                  <td>
+                    <span class="pill" style="font-size:11.5px; background:var(--head); border:1px solid var(--line); white-space:nowrap;">
+                      {{ p.from_store }}
+                    </span>
+                  </td>
+                  <td>
+                    <strong style="color:var(--ink);">{{ p.dest_name or '—' }}</strong>
+                    {% if p.dest_dept_code %}
+                      <br><span class="dept-code-tag" style="font-size:10.5px; padding:1px 5px; background:rgba(0,0,0,0.05); border-radius:3px; color:var(--muted); font-family:monospace;">{{ p.dest_dept_code }}</span>
+                    {% endif %}
+                  </td>
+                  <td style="text-align:center;">
+                    <span class="pill {{ p.category_badge or 'ok' }}" style="font-size:11px; font-weight:700;">
+                      {{ '💊 ยา' if p.category == 'ยา' else '📦 พัสดุ' }}
+                    </span>
+                  </td>
+                  <td>
+                    <strong>{{ p.name }}</strong><br>
+                    <a href="javascript:void(0)" onclick="openItemModal('{{ current_store }}', '{{ p.stock_code }}')" class="stock-link" title="คลิกดูรายละเอียดเจาะลึก">{{ p.stock_code }}</a>
+                  </td>
+                  <td class="num">{{ '{:,.0f}'.format(p.requested_qty) }} <small style="color:var(--muted);">{{ p.unit }}</small></td>
+                  <td class="num" style="{{ 'color:var(--late); font-weight:700;' if p.dispatched_qty < p.requested_qty else 'font-weight:600;' }}">
+                    {{ '{:,.0f}'.format(p.dispatched_qty) }} <small style="color:var(--muted);">{{ p.unit }}</small>
+                  </td>
+                  <td class="num" style="font-weight:700; color:var(--ink);">{{ money(p.value) }}</td>
+                  <td>
+                    {% if p.status == 'SHORTAGE' %}
+                      <span class="pill late" style="font-size:11.5px;">{{ p.status_label }}</span>
+                    {% elif p.status == 'PARTIAL' %}
+                      <span class="pill slow" style="font-size:11.5px;">{{ p.status_label }}</span>
+                    {% else %}
+                      <span class="pill ok" style="font-size:11.5px;">{{ p.status_label }}</span>
+                    {% endif %}
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% else %}
+        <div style="padding:16px; color:var(--muted); text-align:center; background:var(--bg); border-radius:6px;">
+          ✓ ไม่พบใบโอนค้างส่งหรือรายการค้างจ่ายจากคลังใหญ่ในขณะนี้
+        </div>
+      {% endif %}
+    </div>
+
+
+    <!-- SECTION: ข้อมูลรายเดือนย้อนหลัง {{ months }} เดือน (Monthly Historical In-Out Flow) -->
+    <div class="section-card">
+      <h2>
+        <span style="display:flex; align-items:center; gap:8px;">
+          <span>📅</span>
+          <span>ข้อมูลรายเดือนย้อนหลัง {{ months }} เดือน (Monthly In-Out Flow &amp; Trend)</span>
+        </span>
+        <span class="pill ok" style="font-size:12px; font-weight:600;">{{ substore_monthly_trend.months_count }} เดือนย้อนหลัง</span>
+      </h2>
+      <div class="card-hint">
+        เปรียบเทียบยอดรับโอนเข้าจากคลังใหญ่ (ชนิด 35 เข้า) กับยอดตัดจ่ายให้ผู้ป่วย/วอร์ด (ชนิด 32 ออก) รายเดือนย้อนหลัง {{ months }} เดือน
+      </div>
+
+      <!-- Quick Summary Stat Cards -->
+      <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:12px; margin-bottom:16px;">
+        <div style="background:var(--head); border:1px solid var(--line); border-radius:8px; padding:10px 14px;">
+          <div style="font-size:12px; color:var(--muted); margin-bottom:2px;">📥 รับโอนเข้าคลังใหญ่รวม ({{ months }} ด.)</div>
+          <div style="font-size:18px; font-weight:700; color:var(--link);">{{ money(substore_monthly_trend.total_trans_in) }} บาท</div>
+          <div style="font-size:11.5px; color:var(--muted); margin-top:2px;">
+            เฉลี่ย {{ money(substore_monthly_trend.avg_trans_in) }} บ./ด. · {{ '{:,}'.format(substore_monthly_trend.total_trans_slips) }} ใบรับโอน
+          </div>
+        </div>
+        <div style="background:var(--head); border:1px solid var(--line); border-radius:8px; padding:10px 14px;">
+          <div style="font-size:12px; color:var(--muted); margin-bottom:2px;">📤 ตัดจ่ายผู้ป่วย/วอร์ดรวม ({{ months }} ด.)</div>
+          <div style="font-size:18px; font-weight:700; color:var(--ink);">{{ money(substore_monthly_trend.total_disp) }} บาท</div>
+          <div style="font-size:11.5px; color:var(--muted); margin-top:2px;">
+            เฉลี่ย {{ money(substore_monthly_trend.avg_disp) }} บ./ด. · {{ '{:,}'.format(substore_monthly_trend.total_disp_slips) }} ใบจ่าย
+          </div>
+        </div>
+        <div style="background:var(--head); border:1px solid var(--line); border-radius:8px; padding:10px 14px;">
+          <div style="font-size:12px; color:var(--muted); margin-bottom:2px;">⚖️ ดุลรับ-จ่ายสุทธิ (Net In-Out Flow)</div>
+          <div style="font-size:18px; font-weight:700; color:{{ '#059669' if substore_monthly_trend.net_overall >= 0 else '#dc2626' }};">
+            {{ '+' if substore_monthly_trend.net_overall > 0 else '' }}{{ money(substore_monthly_trend.net_overall) }} บาท
+          </div>
+          <div style="font-size:11.5px; color:var(--muted); margin-top:2px;">
+            {{ 'รับเข้ามากกว่าจ่ายออก' if substore_monthly_trend.net_overall >= 0 else 'จ่ายออกมากกว่ารับเข้า' }}
+          </div>
+        </div>
+      </div>
+
+      <!-- Monthly Breakdown Table -->
+      <div class="table-scroll-container" style="max-height:440px;">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th style="width:40px; text-align:center;">#</th>
+              <th>งวดบัญชี / เดือน</th>
+              <th class="num" style="min-width:170px;">ยอดรับโอนเข้า (บาท)</th>
+              <th class="num">ใบรับโอน / ชนิดยา</th>
+              <th class="num" style="min-width:170px;">ยอดตัดจ่ายออก (บาท)</th>
+              <th class="num">ใบจ่าย / ชนิดยา</th>
+              <th class="num">ผลต่างสุทธิ (Net Flow)</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for m in substore_monthly_trend.months_data %}
+              <tr>
+                <td style="text-align:center; color:var(--muted); font-size:12px;">{{ loop.index }}</td>
+                <td>
+                  <strong>{{ m.period_thai }}</strong>
+                  <span class="code" style="margin-left:4px;">{{ m.period }}</span>
+                </td>
+                <td class="num">
+                  <div style="font-weight:700; color:var(--link);">{{ money(m.trans_in_val) }}</div>
+                  <div style="height:5px; background:var(--head); border-radius:3px; overflow:hidden; margin-top:3px;">
+                    <div style="width:{{ m.bar_in_pct }}%; height:100%; background:var(--link); border-radius:3px;"></div>
+                  </div>
+                </td>
+                <td class="num">
+                  <span style="font-weight:600;">{{ '{:,}'.format(m.trans_in_slips) }}</span> ใบ
+                  <small style="color:var(--muted);">({{ '{:,}'.format(m.trans_in_items) }} ชนิด)</small>
+                </td>
+                <td class="num">
+                  <div style="font-weight:700; color:var(--ink);">{{ money(m.disp_val) }}</div>
+                  <div style="height:5px; background:var(--head); border-radius:3px; overflow:hidden; margin-top:3px;">
+                    <div style="width:{{ m.bar_out_pct }}%; height:100%; background:#8b5cf6; border-radius:3px;"></div>
+                  </div>
+                </td>
+                <td class="num">
+                  <span style="font-weight:600;">{{ '{:,}'.format(m.disp_slips) }}</span> ใบ
+                  <small style="color:var(--muted);">({{ '{:,}'.format(m.disp_items) }} ชนิด)</small>
+                </td>
+                <td class="num">
+                  {% if m.net_val > 0 %}
+                    <span class="pill ok" style="font-size:12px; font-weight:600;">+{{ money(m.net_val) }}</span>
+                  {% elif m.net_val < 0 %}
+                    <span class="pill slow" style="font-size:12px; font-weight:600;">{{ money(m.net_val) }}</span>
+                  {% else %}
+                    <span class="pill" style="font-size:12px; font-weight:600; background:var(--head);">0.00</span>
+                  {% endif %}
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+
+    <!-- SECTION 2: 3-Month AMC & MOS (Months of Supply) -->
+    <div class="section-card">
+      <h2>
+        <span>⏱️ อัตราการใช้ยาทุกรายการเฉลี่ย 3 เดือน (AMC) และอัตราสำรองคลังย่อย (MOS)</span>
+        <span class="sub-count" style="font-size:12.5px; font-weight:normal;">แสดง {{ amc_mos_list | length }} รายการ</span>
+      </h2>
+      <div class="card-hint">
+        คำนวณจากยอดตัดจ่ายจริง 3 เดือนย้อนหลัง ÷ 3 · MOS บอกว่าของในคลังย่อยจะพอใช้อีกกี่เดือน (เกณฑ์ปลอดภัย: 0.5 - 1.5 เดือน)
+      </div>
+
+      <div class="filter-search-box">
+        <input type="search" id="amc-search-input" placeholder="🔍 พิมพ์ค้นหารหัส หรือชื่อยา..." oninput="filterAmcTable(this.value)">
+        <span style="font-size:12.5px; color:var(--muted);">
+          เกณฑ์: <span class="pill late" style="font-size:11px;">&lt; 0.5 ด. เสี่ยงขาด</span>
+          <span class="pill ok" style="font-size:11px;">0.5-1.5 ด. ปลอดภัย</span>
+          <span class="pill slow" style="font-size:11px;">&gt; 2.5 ด. สต็อกบวม</span>
+        </span>
+      </div>
+
+      <div class="table-scroll-container" style="max-height:480px;">
+        <table class="data-table" id="amc-table">
+          <thead>
+            <tr>
+              <th style="width:36px;">#</th>
+              <th>รหัสและชื่อยา</th>
+              <th>หมวด</th>
+              <th class="num">คงคลัง (On-hand)</th>
+              <th class="num">มูลค่าคงคลัง (บาท)</th>
+              <th class="num">ใช้เฉลี่ย/ด. (AMC)</th>
+              <th class="num">มูลค่าใช้/ด.</th>
+              <th class="num">MOS (เดือน)</th>
+              <th>สถานะความเสี่ยง</th>
+              <th style="width:70px; text-align:center;">เจาะลึก</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for item in amc_mos_list %}
+              <tr class="amc-row" data-name="{{ item.name | lower }}" data-code="{{ item.stock_code | lower }}">
+                <td style="text-align:center; color:var(--muted); font-size:12px;">{{ loop.index }}</td>
+                <td>
+                  <strong>{{ item.name }}</strong><br>
+                  <a href="javascript:void(0)" onclick="openItemModal('{{ current_store }}', '{{ item.stock_code }}')" class="stock-link" title="คลิกดูประวัติเจาะลึก">{{ item.stock_code }}</a>
+                </td>
+                <td><span class="cat-badge cat-drug">{{ item.group }}</span></td>
+                <td class="num">{{ '{:,.0f}'.format(item.on_hand_qty) }} <small style="color:var(--muted);">{{ item.unit }}</small></td>
+                <td class="num" style="font-weight:600;">{{ money(item.on_hand_val) }}</td>
+                <td class="num">{{ '{:,.1f}'.format(item.amc_qty) }} <small style="color:var(--muted);">{{ item.unit }}</small></td>
+                <td class="num">{{ money(item.amc_val) }}</td>
+                <td class="num" style="font-size:15px; font-weight:700; color:var(--ink);">
+                  {{ item.mos if item.mos < 90 else '—' }}
+                </td>
+                <td>
+                  <span class="pill {{ item.badge_class }}">{{ item.status_label }}</span>
+                </td>
+                <td style="text-align:center;">
+                  <button type="button" class="pill" style="font-size:11px; cursor:pointer; background:var(--head); border:1px solid var(--line);"
+                          onclick="openItemModal('{{ current_store }}', '{{ item.stock_code }}')">🔍 ดู</button>
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+
+    <!-- TWO COLUMN: ยาที่คลังใหญ่โอนมาแล้ว vs ยาที่ใกล้หมดอายุ -->
+    <div class="split-grid">
+
+      <!-- ยาที่คลังยาใหญ่โอนยอดมาแล้ว -->
+      <div class="section-card">
+        <h2>
+          <span>📥 ยาที่คลังยาใหญ่โอนยอดมาแล้ว (Transfers Received)</span>
+          <span class="sub-count" style="font-size:12px; font-weight:normal;">Top 50 รายการ</span>
+        </h2>
+        <div class="card-hint">รายการยาที่คลังหลัก (คลัง 2, 7) โอนตัดจ่ายเข้า {{ kpis.store_name }} สำเร็จแล้ว</div>
+
+        <div class="table-scroll-container" style="max-height:400px;">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>รายการยา</th>
+                <th class="num">จำนวนรับโอน</th>
+                <th class="num">มูลค่ารวม (บาท)</th>
+                <th class="num">ใบโอน</th>
+                <th style="width:65px; text-align:center;">เจาะลึก</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for t in transfers_received %}
+                <tr>
+                  <td>
+                    <strong>{{ t.name }}</strong><br>
+                    <a href="javascript:void(0)" onclick="openItemModal('{{ current_store }}', '{{ t.stock_code }}')" class="stock-link" title="คลิกดูประวัติเจาะลึก">{{ t.stock_code }}</a>
+                  </td>
+                  <td class="num">{{ '{:,.0f}'.format(t.qty) }} <small style="color:var(--muted);">{{ t.unit }}</small></td>
+                  <td class="num" style="font-weight:600;">{{ money(t.value) }}</td>
+                  <td class="num">{{ '{:,}'.format(t.slips) }}</td>
+                  <td style="text-align:center;">
+                    <button type="button" class="pill" style="font-size:11px; cursor:pointer; background:var(--head); border:1px solid var(--line);"
+                            onclick="openItemModal('{{ current_store }}', '{{ t.stock_code }}')">🔍 ดู</button>
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- ยาและเวชภัณฑ์ใกล้หมดอายุ / หมดอายุแล้ว (แยก 2 Tabs) -->
+      <div class="section-card">
+        <h2>
+          <span>⏳ สถานะอายุยาและเวชภัณฑ์ใน {{ kpis.store_name }}</span>
+          <span class="sub-count" style="font-size:12px; font-weight:normal;">รวม {{ expiring_data.total_count }} รายการ</span>
+        </h2>
+        <div class="card-hint">
+          กรองเฉพาะรายการที่มีของจริงในคลัง (Qty &gt; 0) · ไม่แสดงข้อมูลเก่าเกิน 6 เดือนที่ผ่านมา
+        </div>
+
+        <!-- Tab Buttons Switcher -->
+        <div style="display:flex; gap:8px; margin-bottom:12px;">
+          <button type="button" id="tab-btn-soon" class="pill"
+                  style="cursor:pointer; padding:6px 14px; font-size:12.5px; font-weight:700; border:1px solid var(--nav-on); background:var(--nav-on); color:#fff;"
+                  onclick="switchExpiryTab('soon')">
+            ⏳ ใกล้หมดอายุ (8 เดือน)
+            <span style="background:rgba(255,255,255,0.25); padding:1px 7px; border-radius:10px; margin-left:4px; font-size:11.5px;">{{ expiring_data.count_soon }}</span>
+          </button>
+          <button type="button" id="tab-btn-expired" class="pill"
+                  style="cursor:pointer; padding:6px 14px; font-size:12.5px; font-weight:700; border:1px solid var(--line); background:var(--card); color:var(--ink);"
+                  onclick="switchExpiryTab('expired')">
+            🚨 หมดอายุแล้ว (ย้อนหลัง 6 ด.)
+            <span style="background:var(--late); color:#fff; padding:1px 7px; border-radius:10px; margin-left:4px; font-size:11.5px;">{{ expiring_data.count_expired }}</span>
+          </button>
+        </div>
+
+        <!-- Panel 1: ใกล้หมดอายุ (ไปข้างหน้า 8 เดือน) -->
+        <div id="expiry-panel-soon" class="table-scroll-container" style="max-height:380px;">
+          {% if expiring_data.expiring_soon %}
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>รายการยา / Lot#</th>
+                  <th>วันหมดอายุ</th>
+                  <th>ระยะเวลา</th>
+                  <th class="num">คงเหลือ</th>
+                  <th class="num">มูลค่า (บาท)</th>
+                  <th style="width:65px; text-align:center;">เจาะลึก</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for e in expiring_data.expiring_soon %}
+                  <tr>
+                    <td>
+                      <strong>{{ e.name }}</strong><br>
+                      <span class="code">Lot: {{ e.lot_no }} · </span>
+                      <a href="javascript:void(0)" onclick="openItemModal('{{ current_store }}', '{{ e.stock_code }}')" class="stock-link" title="คลิกดูประวัติเจาะลึก">{{ e.stock_code }}</a>
+                    </td>
+                    <td><strong>{{ e.expire_date }}</strong></td>
+                    <td><span class="pill {{ e.badge_class }}">{{ e.urgency_label }}</span></td>
+                    <td class="num">{{ '{:,.0f}'.format(e.qty) }} <small style="color:var(--muted);">{{ e.unit }}</small></td>
+                    <td class="num" style="font-weight:600;">{{ money(e.value) }}</td>
+                    <td style="text-align:center;">
+                      <button type="button" class="pill" style="font-size:11px; cursor:pointer; background:var(--head); border:1px solid var(--line);"
+                              onclick="openItemModal('{{ current_store }}', '{{ e.stock_code }}')">🔍 ดู</button>
+                    </td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          {% else %}
+            <div style="padding:20px; text-align:center; color:var(--muted); background:var(--bg); border-radius:6px;">
+              ✓ ไม่มียาหรือเวชภัณฑ์ที่ใกล้หมดอายุในอีก 8 เดือนข้างหน้า
+            </div>
+          {% endif %}
+        </div>
+
+        <!-- Panel 2: หมดอายุแล้ว (ย้อนหลัง 6 เดือน) -->
+        <div id="expiry-panel-expired" class="table-scroll-container" style="max-height:380px; display:none;">
+          {% if expiring_data.already_expired %}
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>รายการยา / Lot#</th>
+                  <th>วันหมดอายุ</th>
+                  <th>สถานะ</th>
+                  <th class="num">คงค้างในคลัง</th>
+                  <th class="num">มูลค่าสูญเปล่า (บาท)</th>
+                  <th style="width:65px; text-align:center;">เจาะลึก</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for e in expiring_data.already_expired %}
+                  <tr>
+                    <td>
+                      <strong>{{ e.name }}</strong><br>
+                      <span class="code">Lot: {{ e.lot_no }} · </span>
+                      <a href="javascript:void(0)" onclick="openItemModal('{{ current_store }}', '{{ e.stock_code }}')" class="stock-link" title="คลิกดูประวัติเจาะลึก">{{ e.stock_code }}</a>
+                    </td>
+                    <td><strong style="color:var(--late);">{{ e.expire_date }}</strong></td>
+                    <td><span class="pill late">{{ e.urgency_label }}</span></td>
+                    <td class="num">{{ '{:,.0f}'.format(e.qty) }} <small style="color:var(--muted);">{{ e.unit }}</small></td>
+                    <td class="num" style="font-weight:700; color:var(--late);">{{ money(e.value) }}</td>
+                    <td style="text-align:center;">
+                      <button type="button" class="pill" style="font-size:11px; cursor:pointer; background:var(--head); border:1px solid var(--line);"
+                              onclick="openItemModal('{{ current_store }}', '{{ e.stock_code }}')">🔍 ดู</button>
+                    </td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          {% else %}
+            <div style="padding:20px; text-align:center; color:var(--muted); background:var(--bg); border-radius:6px;">
+              ✓ ไม่พบยาที่หมดอายุตกค้างในคลังย่อย (ย้อนหลัง 6 เดือน)
+            </div>
+          {% endif %}
+        </div>
+
+      </div>
+
+    </div>
+
+
+    <!-- SECTION 4: ยาที่หอผู้ป่วยเบิก (Ward Dispensations) -->
+    <div class="section-card">
+      <h2>
+        <span>🏥 ยาที่หอผู้ป่วยเบิก (Ward Dispensations from {{ kpis.store_name }})</span>
+        <span class="sub-count" style="font-size:12.5px; font-weight:normal;">20 อันดับหอผู้ป่วยที่เบิกมูลค่าสูงสุด</span>
+      </h2>
+      <div class="card-hint">
+        แสดงการตัดจ่ายยาจาก {{ kpis.store_name }} ต่อไปยังหอผู้ป่วย (Wards), แผนกวิกฤต (ICU), และห้องตรวจต่างๆ
+      </div>
+
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th style="width:40px;">อันดับ</th>
+            <th>หอผู้ป่วย / หน่วยงานที่เบิก</th>
+            <th class="num">ยอดจ่ายสุทธิ (บาท)</th>
+            <th class="num">จำนวนใบเบิก</th>
+            <th class="num">ชนิดรายการ</th>
+            <th>ตัวอย่างยาที่เบิกมูลค่าสูงสุด</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for w in ward_dispensations %}
+            <tr>
+              <td style="text-align:center; color:var(--muted); font-size:12px;">{{ loop.index }}</td>
+              <td>
+                <a href="/substores?store=W:{{ w.code }}" style="color:var(--link); font-weight:700; text-decoration:none;">
+                  {{ w.name }} ↗
+                </a><br>
+                <span class="code">รหัส {{ w.code }}</span>
+              </td>
+              <td class="num" style="font-weight:700; color:var(--ink);">{{ money(w.value) }}</td>
+              <td class="num">{{ '{:,}'.format(w.slips) }}</td>
+              <td class="num">{{ '{:,}'.format(w.items_count) }}</td>
+              <td>
+                {% for drug in w.top_drugs %}
+                  <span style="display:inline-block; background:var(--head); padding:1px 6px; border-radius:4px; font-size:11.5px; margin-right:4px;">
+                    {{ drug }}
+                  </span>
+                {% endfor %}
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+  {% endif %}
+  {% endif %}
+
+  <!-- Interactive Item Detail Modal -->
+  <div id="item-detail-modal" class="modal-backdrop" onclick="if(event.target===this) closeItemModal();">
+    <div class="modal-box">
+      <button type="button" class="modal-close-btn" onclick="closeItemModal()" title="ปิดหน้าต่าง">✕</button>
+      
+      <div id="modal-loading" style="padding:40px; text-align:center; color:var(--muted);">
+        <div style="font-size:24px; margin-bottom:8px;">⏳</div>
+        <div>กำลังโหลดข้อมูลประวัติยา/พัสดุ...</div>
+      </div>
+
+      <div id="modal-error" style="display:none; padding:30px; text-align:center; color:var(--late);">
+        <div style="font-size:24px; margin-bottom:8px;">⚠️</div>
+        <div id="modal-error-msg">ไม่พบข้อมูล</div>
+      </div>
+
+      <div id="modal-content" style="display:none;">
+        <!-- Header -->
+        <div style="margin-bottom:16px; padding-bottom:12px; border-bottom:1.5px solid var(--line);">
+          <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:4px;">
+            <span id="modal-item-group" class="cat-badge cat-drug">หมวด</span>
+            <span id="modal-item-store" class="pill ok">คลัง</span>
+            <span id="modal-item-retired" class="pill late" style="display:none;">ยกเลิกใช้งานแล้ว</span>
+          </div>
+          <h2 id="modal-item-name" style="margin:4px 0 2px; font-size:20px; font-weight:800; color:var(--ink);">ชื่อยา/พัสดุ</h2>
+          <div style="font-size:13px; color:var(--muted); font-family:monospace;">
+            รหัสพัสดุ: <strong id="modal-item-code" style="color:var(--link);">—</strong>
+            <span id="modal-trade-name-box" style="margin-left:8px;">(ชื่อการค้า: <span id="modal-item-trade"></span>)</span>
+          </div>
+        </div>
+
+        <!-- KPI Badges Grid -->
+        <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(170px, 1fr)); gap:10px; margin-bottom:18px;">
+          <div style="background:var(--head); border:1px solid var(--line); border-radius:8px; padding:10px 14px;">
+            <div style="font-size:11.5px; color:var(--muted);">คงคลังปัจจุบัน (On-hand)</div>
+            <div style="font-size:17px; font-weight:700; color:var(--ink);" id="modal-kpi-onhand">0</div>
+            <div style="font-size:12px; color:var(--muted); font-weight:600;" id="modal-kpi-onhand-val">0 บาท</div>
+          </div>
+          <div style="background:var(--head); border:1px solid var(--line); border-radius:8px; padding:10px 14px;">
+            <div style="font-size:11.5px; color:var(--muted);">อัตราใช้เฉลี่ย 3 เดือน (AMC)</div>
+            <div style="font-size:17px; font-weight:700; color:var(--ink);" id="modal-kpi-amc">0</div>
+            <div style="font-size:12px; color:var(--muted); font-weight:600;" id="modal-kpi-amc-val">0 บาท/ด.</div>
+          </div>
+          <div style="background:var(--head); border:1px solid var(--line); border-radius:8px; padding:10px 14px;">
+            <div style="font-size:11.5px; color:var(--muted);">อัตราสำรอง (MOS)</div>
+            <div style="font-size:17px; font-weight:800; color:var(--link);" id="modal-kpi-mos">—</div>
+            <div style="font-size:11px;" id="modal-kpi-status-badge"></div>
+          </div>
+          <div style="background:var(--head); border:1px solid var(--line); border-radius:8px; padding:10px 14px;">
+            <div style="font-size:11.5px; color:var(--muted);">จำนวน Lot ในคลัง</div>
+            <div style="font-size:17px; font-weight:700; color:var(--ink);" id="modal-kpi-lots">0 Lot</div>
+            <div style="font-size:11.5px; color:var(--muted);">วันหมดอายุเร็วสุด: <span id="modal-kpi-nearest-exp">—</span></div>
+          </div>
+        </div>
+
+        <!-- Section 1: ล็อตและวันหมดอายุ (Lots & Expiry) -->
+        <div style="margin-bottom:18px;">
+          <h3 style="font-size:14px; font-weight:700; margin:0 0 6px; color:var(--ink); display:flex; align-items:center; justify-content:space-between;">
+            <span>📦 ทะเบียน Lot คงคลังและวันหมดอายุ</span>
+            <span id="modal-lots-count-badge" class="sub-count" style="font-size:11.5px;">0 Lot</span>
+          </h3>
+          <div style="max-height:180px; overflow-y:auto; border:1px solid var(--line); border-radius:6px;">
+            <table class="data-table" style="font-size:12.5px; margin:0; border:none;">
+              <thead>
+                <tr>
+                  <th>Lot No.</th>
+                  <th>วันหมดอายุ</th>
+                  <th>สถานะอายุ</th>
+                  <th class="num">คงเหลือ</th>
+                  <th class="num">มูลค่า (บาท)</th>
+                  <th>คลังที่เก็บ</th>
+                  <th>รับเข้าล่าสุด</th>
+                </tr>
+              </thead>
+              <tbody id="modal-lots-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Section 2: ประวัติรับโอนจากคลังใหญ่ (Transfers Received) -->
+        <div style="margin-bottom:18px;">
+          <h3 style="font-size:14px; font-weight:700; margin:0 0 6px; color:var(--ink); display:flex; align-items:center; justify-content:space-between;">
+            <span>📥 ประวัติการรับโอนจากคลังใหญ่ (Doc 35)</span>
+            <span id="modal-trans-count-badge" class="sub-count" style="font-size:11.5px;">ล่าสุด 15 ใบ</span>
+          </h3>
+          <div style="max-height:180px; overflow-y:auto; border:1px solid var(--line); border-radius:6px;">
+            <table class="data-table" style="font-size:12.5px; margin:0; border:none;">
+              <thead>
+                <tr>
+                  <th>เลขที่ใบโอน</th>
+                  <th>วันที่โอน</th>
+                  <th>คลังรับเข้า</th>
+                  <th class="num">จำนวนรับ</th>
+                  <th class="num">มูลค่า (บาท)</th>
+                  <th>สถานะ</th>
+                </tr>
+              </thead>
+              <tbody id="modal-trans-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Section 3: ประวัติการตัดจ่าย / เบิกใช้ (Dispensations Out) -->
+        <div style="margin-bottom:18px;">
+          <h3 style="font-size:14px; font-weight:700; margin:0 0 6px; color:var(--ink); display:flex; align-items:center; justify-content:space-between;">
+            <span>📤 ประวัติการตัดจ่ายให้ผู้ป่วย / วอร์ด (Doc 32)</span>
+            <span id="modal-disp-count-badge" class="sub-count" style="font-size:11.5px;">ล่าสุด 15 ใบ</span>
+          </h3>
+          <div style="max-height:180px; overflow-y:auto; border:1px solid var(--line); border-radius:6px;">
+            <table class="data-table" style="font-size:12.5px; margin:0; border:none;">
+              <thead>
+                <tr>
+                  <th>เลขที่ใบจ่าย</th>
+                  <th>วันที่จ่าย</th>
+                  <th>แผนก/หอผู้ป่วยที่เบิก</th>
+                  <th>คลังที่จ่าย</th>
+                  <th class="num">จำนวนจ่าย</th>
+                  <th class="num">มูลค่า (บาท)</th>
+                </tr>
+              </thead>
+              <tbody id="modal-disp-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Section 4: แนวโน้ม 18 เดือน (18-Month Movement History) -->
+        <div>
+          <h3 style="font-size:14px; font-weight:700; margin:0 0 6px; color:var(--ink);">
+            <span>📊 สรุปความเคลื่อนไหวรายเดือนย้อนหลัง 18 เดือน</span>
+          </h3>
+          <div style="max-height:180px; overflow-y:auto; border:1px solid var(--line); border-radius:6px;">
+            <table class="data-table" style="font-size:12.5px; margin:0; border:none;">
+              <thead>
+                <tr>
+                  <th>งวด (Period)</th>
+                  <th class="num">รับเข้า (จำนวน)</th>
+                  <th class="num">รับเข้า (บาท)</th>
+                  <th class="num">ตัดจ่าย (จำนวน)</th>
+                  <th class="num">ตัดจ่าย (บาท)</th>
+                  <th class="num">ใบงาน</th>
+                </tr>
+              </thead>
+              <tbody id="modal-trend-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- Interactive Client-Side JavaScript -->
+  <script>
+    function filterAmcTable(query) {
+      query = (query || '').trim().toLowerCase();
+      const table = document.getElementById('amc-table');
+      if (!table) return;
+      const rows = table.getElementsByClassName('amc-row');
+      for (let row of rows) {
+        const name = row.getAttribute('data-name') || '';
+        const code = row.getAttribute('data-code') || '';
+        if (!query || name.includes(query) || code.includes(query)) {
+          row.style.display = '';
+        } else {
+          row.style.display = 'none';
+        }
+      }
+    }
+
+    function filterWardItems(query) {
+      query = (query || '').trim().toLowerCase();
+      const table = document.getElementById('ward-items-table');
+      if (!table) return;
+      const rows = table.getElementsByClassName('ward-item-row');
+      for (let row of rows) {
+        const name = row.getAttribute('data-name') || '';
+        const code = row.getAttribute('data-code') || '';
+        if (!query || name.includes(query) || code.includes(query)) {
+          row.style.display = '';
+        } else {
+          row.style.display = 'none';
+        }
+      }
+    }
+
+    function filterTop50Table(query) {
+      query = (query || '').trim().toLowerCase();
+      const table = document.getElementById('top50-table');
+      if (!table) return;
+      const rows = table.getElementsByClassName('top50-row');
+      for (let row of rows) {
+        const name = row.getAttribute('data-name') || '';
+        const code = row.getAttribute('data-code') || '';
+        if (!query || name.includes(query) || code.includes(query)) {
+          row.style.display = '';
+        } else {
+          row.style.display = 'none';
+        }
+      }
+    }
+
+    function switchExpiryTab(tabName) {
+      const pSoon = document.getElementById('expiry-panel-soon');
+      const pExpired = document.getElementById('expiry-panel-expired');
+      const btnSoon = document.getElementById('tab-btn-soon');
+      const btnExpired = document.getElementById('tab-btn-expired');
+      if (!pSoon || !pExpired) return;
+
+      if (tabName === 'soon') {
+        pSoon.style.display = 'block';
+        pExpired.style.display = 'none';
+        btnSoon.style.background = 'var(--nav-on)';
+        btnSoon.style.borderColor = 'var(--nav-on)';
+        btnSoon.style.color = '#fff';
+        btnExpired.style.background = 'var(--card)';
+        btnExpired.style.borderColor = 'var(--line)';
+        btnExpired.style.color = 'var(--ink)';
+      } else {
+        pSoon.style.display = 'none';
+        pExpired.style.display = 'block';
+        btnExpired.style.background = 'var(--nav-on)';
+        btnExpired.style.borderColor = 'var(--nav-on)';
+        btnExpired.style.color = '#fff';
+        btnSoon.style.background = 'var(--card)';
+        btnSoon.style.borderColor = 'var(--line)';
+        btnSoon.style.color = 'var(--ink)';
+      }
+    }
+
+    function closeItemModal() {
+      const modal = document.getElementById('item-detail-modal');
+      if (modal) modal.classList.remove('open');
+    }
+
+    function fmtNum(n, dec = 0) {
+      return Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: dec, maximumFractionDigits: dec });
+    }
+
+    function openItemModal(store, code) {
+      if (!code) return;
+      const modal = document.getElementById('item-detail-modal');
+      const loading = document.getElementById('modal-loading');
+      const errBox = document.getElementById('modal-error');
+      const content = document.getElementById('modal-content');
+
+      if (!modal) return;
+      modal.classList.add('open');
+      loading.style.display = 'block';
+      errBox.style.display = 'none';
+      content.style.display = 'none';
+
+      fetch(`/api/substores/item-detail?store=${encodeURIComponent(store)}&code=${encodeURIComponent(code)}`)
+        .then(res => res.json())
+        .then(res => {
+          loading.style.display = 'none';
+          if (!res || res.status !== 'success' || !res.data || !res.data.found) {
+            errBox.style.display = 'block';
+            document.getElementById('modal-error-msg').textContent = (res && res.message) ? res.message : `ไม่พบข้อมูลยา/พัสดุสำหรับ "${code}"`;
+            return;
+          }
+          const d = res.data;
+          content.style.display = 'block';
+
+          // Header
+          document.getElementById('modal-item-name').textContent = d.item.name || d.item.stock_code;
+          document.getElementById('modal-item-code').textContent = d.item.stock_code;
+          document.getElementById('modal-item-group').textContent = d.item.group_name || 'ทั่วไป';
+          document.getElementById('modal-item-store').textContent = `ข้อมูลของ: ${store === 'ALL' ? 'รวมทั้งโรงพยาบาล' : store}`;
+
+          if (d.item.trade_name) {
+            document.getElementById('modal-trade-name-box').style.display = 'inline';
+            document.getElementById('modal-item-trade').textContent = d.item.trade_name;
+          } else {
+            document.getElementById('modal-trade-name-box').style.display = 'none';
+          }
+
+          document.getElementById('modal-item-retired').style.display = d.item.retired ? 'inline-block' : 'none';
+
+          // KPIs
+          document.getElementById('modal-kpi-onhand').innerHTML = `${fmtNum(d.on_hand.qty)} <small style="font-size:12px; font-weight:normal; color:var(--muted);">${d.item.base_unit}</small>`;
+          document.getElementById('modal-kpi-onhand-val').textContent = `${fmtNum(d.on_hand.value, 2)} บาท`;
+          document.getElementById('modal-kpi-amc').innerHTML = `${fmtNum(d.kpis.amc_qty, 1)} <small style="font-size:12px; font-weight:normal; color:var(--muted);">${d.item.base_unit}</small>`;
+          document.getElementById('modal-kpi-amc-val').textContent = `${fmtNum(d.kpis.amc_val, 2)} บาท/ด.`;
+          document.getElementById('modal-kpi-mos').textContent = (d.kpis.mos < 90) ? `${d.kpis.mos} เดือน` : '—';
+
+          let statusBadge = '';
+          if (d.on_hand.qty === 0 && d.kpis.amc_qty > 0) {
+            statusBadge = '<span class="pill late">🚨 ยาหมดคลัง</span>';
+          } else if (d.kpis.mos < 0.5 && d.kpis.amc_qty > 0) {
+            statusBadge = '<span class="pill late">⚠ เสี่ยงขาด (< 15 วัน)</span>';
+          } else if (d.kpis.mos > 2.5 && d.kpis.amc_qty > 0) {
+            statusBadge = '<span class="pill slow">⚡ สต็อกบวม (> 2.5 ด.)</span>';
+          } else if (d.kpis.amc_qty === 0 && d.on_hand.qty > 0) {
+            statusBadge = '<span class="pill slow">💤 นิ่งสนิท 3 เดือน</span>';
+          } else {
+            statusBadge = '<span class="pill ok">✓ สำรองพอดี</span>';
+          }
+          document.getElementById('modal-kpi-status-badge').innerHTML = statusBadge;
+
+          document.getElementById('modal-kpi-lots').textContent = `${d.on_hand.lots_count} Lot`;
+          let nearestExp = '—';
+          if (d.on_hand.lots && d.on_hand.lots.length > 0) {
+            nearestExp = d.on_hand.lots[0].expire_date || '—';
+          }
+          document.getElementById('modal-kpi-nearest-exp').textContent = nearestExp;
+
+          // Lots Table
+          const lotsTbody = document.getElementById('modal-lots-tbody');
+          lotsTbody.innerHTML = '';
+          if (d.on_hand.lots && d.on_hand.lots.length > 0) {
+            d.on_hand.lots.forEach(l => {
+              let expBadge = '';
+              if (l.days_left < 0) expBadge = `<span class="pill late">หมดอายุแล้ว ${Math.abs(l.days_left)} วัน</span>`;
+              else if (l.days_left <= 90) expBadge = `<span class="pill late">เหลือ ${l.days_left} วัน (< 3 ด.)</span>`;
+              else if (l.days_left <= 240) expBadge = `<span class="pill slow">เหลือ ${l.days_left} วัน</span>`;
+              else expBadge = `<span class="pill ok">ปกติ (${l.days_left} วัน)</span>`;
+
+              lotsTbody.innerHTML += `
+                <tr>
+                  <td><strong>${l.lot_no}</strong></td>
+                  <td>${l.expire_date}</td>
+                  <td>${expBadge}</td>
+                  <td class="num">${fmtNum(l.qty)} <small style="color:var(--muted);">${l.unit}</small></td>
+                  <td class="num" style="font-weight:600;">${fmtNum(l.value, 2)}</td>
+                  <td>${l.store_name}</td>
+                  <td style="color:var(--muted); font-size:11.5px;">${l.last_in_date || '—'}</td>
+                </tr>
+              `;
+            });
+          } else {
+            lotsTbody.innerHTML = '<tr><td colspan="7" style="text-align:center; color:var(--muted); padding:14px;">ไม่มี Lot คงคลังในขณะนี้</td></tr>';
+          }
+
+          // Transfers In Table
+          const transTbody = document.getElementById('modal-trans-tbody');
+          transTbody.innerHTML = '';
+          if (d.transfers_in && d.transfers_in.length > 0) {
+            d.transfers_in.forEach(t => {
+              transTbody.innerHTML += `
+                <tr>
+                  <td><strong>${t.irno}</strong></td>
+                  <td>${t.issued_at || t.period_thai}</td>
+                  <td>${t.store_name}</td>
+                  <td class="num">${fmtNum(t.qty)} <small style="color:var(--muted);">${t.unit}</small></td>
+                  <td class="num" style="font-weight:600;">${fmtNum(t.value, 2)}</td>
+                  <td><span class="pill ok">${t.status}</span></td>
+                </tr>
+              `;
+            });
+          } else {
+            transTbody.innerHTML = '<tr><td colspan="6" style="text-align:center; color:var(--muted); padding:14px;">ไม่มีประวัติรับโอนเข้า</td></tr>';
+          }
+
+          // Dispensations Table
+          const dispTbody = document.getElementById('modal-disp-tbody');
+          dispTbody.innerHTML = '';
+          if (d.dispensations && d.dispensations.length > 0) {
+            d.dispensations.forEach(dp => {
+              dispTbody.innerHTML += `
+                <tr>
+                  <td><strong>${dp.irno}</strong></td>
+                  <td>${dp.issued_at || dp.period_thai}</td>
+                  <td><strong>${dp.target_dept || '—'}</strong></td>
+                  <td>${dp.source_store || '—'}</td>
+                  <td class="num">${fmtNum(dp.qty)} <small style="color:var(--muted);">${dp.unit}</small></td>
+                  <td class="num" style="font-weight:600;">${fmtNum(dp.value, 2)}</td>
+                </tr>
+              `;
+            });
+          } else {
+            dispTbody.innerHTML = '<tr><td colspan="6" style="text-align:center; color:var(--muted); padding:14px;">ไม่มีประวัติตัดจ่ายให้ผู้ป่วย/วอร์ด</td></tr>';
+          }
+
+          // Trend Table
+          const trendTbody = document.getElementById('modal-trend-tbody');
+          trendTbody.innerHTML = '';
+          if (d.trend && d.trend.length > 0) {
+            d.trend.forEach(tr => {
+              trendTbody.innerHTML += `
+                <tr>
+                  <td><strong>${tr.period_thai}</strong> (${tr.period})</td>
+                  <td class="num">${fmtNum(tr.in_qty)}</td>
+                  <td class="num">${fmtNum(tr.in_val, 2)}</td>
+                  <td class="num" style="font-weight:600;">${fmtNum(tr.out_qty)}</td>
+                  <td class="num" style="font-weight:600; color:var(--ink);">${fmtNum(tr.out_val, 2)}</td>
+                  <td class="num">${fmtNum(tr.slips)}</td>
+                </tr>
+              `;
+            });
+          } else {
+            trendTbody.innerHTML = '<tr><td colspan="6" style="text-align:center; color:var(--muted); padding:14px;">ไม่มีข้อมูลความเคลื่อนไหว</td></tr>';
+          }
+        })
+        .catch(err => {
+          loading.style.display = 'none';
+          errBox.style.display = 'block';
+          document.getElementById('modal-error-msg').textContent = 'เกิดข้อผิดพลาดในการโหลดข้อมูล: ' + err;
+        });
+    }
+
+    // Live Filter for Pending & Shortfall Alert Table
+    function filterPendingTable(q) {
+      q = (q || '').trim().toLowerCase();
+      var rows = document.querySelectorAll('.pending-row');
+      rows.forEach(function(r) {
+        var text = r.getAttribute('data-search') || '';
+        r.style.display = (!q || text.indexOf(q) !== -1) ? '' : 'none';
+      });
+    }
+
+    // Close on Escape key
+    document.addEventListener('keydown', function(e) {
+      if (e.key === 'Escape') closeItemModal();
+    });
+  </script>
+
+{% endblock %}

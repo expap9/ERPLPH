@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+{% block title %}ธรรมาภิบาลพัสดุและควบคุมความเสี่ยง (Governance & Audit Risk){% endblock %}
+
+{% block content %}
+<h1>ธรรมาภิบาลพัสดุและการควบคุมความเสี่ยง (Governance & Leakage Control)</h1>
+<p class="sub">ตรวจจับความเสี่ยงการแบ่งซื้อแบ่งจ้าง (Split PO) เพื่อปิดช่องโหว่การถูกทักท้วงจาก สตง./ป.ป.ช., สรุปเรื่องด่วนที่ต้องสั่งการ และแยกสต๊อกฝากขาย</p>
+
+{% if problem %}
+<div class="problem">{{ problem }}</div>
+{% endif %}
+
+<!-- Action-Required Inbox -->
+<div class="card" style="margin-bottom: 24px; border-left: 5px solid var(--late);">
+  <h2>📥 กล่องเรื่องด่วนที่ผู้บริหารต้องสั่งการ (Action-Required Inbox)</h2>
+  <p class="hint" style="color:var(--muted); font-size:13px; margin:-4px 0 12px;">รวบรวมประเด็นวิกฤตที่ต้องลงนามหรือมีคำสั่งเชิงบริหารทันที</p>
+  
+  {% for act in actions %}
+  <div style="background:var(--head); border-radius:6px; padding:12px 14px; margin-bottom:10px; display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:8px;">
+    <div style="max-width:80%;">
+      <div style="display:flex; align-items:center; gap:8px; margin-bottom:4px;">
+        <span class="pill {{ 'late' if act.priority == 'HIGH' else 'slow' }}">{{ act.priority }}</span>
+        <strong style="font-size:14.5px;">{{ act.title }}</strong>
+      </div>
+      <div style="font-size:13px; color:var(--ink); margin-bottom:4px;">{{ act.detail }}</div>
+      <div style="font-size:12.5px; color:var(--muted);">👉 <strong>ข้อสั่งการแนะนำ:</strong> {{ act.recommended_action }}</div>
+    </div>
+    <div>
+      <a href="{{ act.link }}" class="pill ok" style="text-decoration:none; padding:5px 12px;">ไปหน้าจัดการ &rarr;</a>
+    </div>
+  </div>
+  {% else %}
+  <p style="color:var(--ok); font-weight:600;">✓ ไม่พบประเด็นความเสี่ยงวิกฤตที่ต้องสั่งการด่วนในขณะนี้</p>
+  {% endfor %}
+</div>
+
+<!-- Consignment Stock Separator -->
+<div class="card" style="margin-bottom: 24px;">
+  <h2>การแยกวิเคราะห์มูลค่าคลัง: สินค้าของ รพ. vs สต๊อกฝากขาย (Consignment)</h2>
+  <p class="hint" style="color:var(--muted); font-size:13px; margin:-4px 0 12px;">{{ consignment.explanation }}</p>
+  
+  <div class="tiles">
+    <div class="tile">
+      <div class="label">มูลค่าพัสดุรวมทั้งระบบ</div>
+      <div class="value">฿{{ short_money(consignment.total_gross_value) }}</div>
+      <div class="hint">100% รวมทุกรายการใน รพ.</div>
+    </div>
+    <div class="tile">
+      <div class="label">เงินจมจริงของ รพ. (Hospital-Owned)</div>
+      <div class="value" style="color:var(--link);">฿{{ short_money(consignment.hospital_owned_value) }}</div>
+      <div class="hint">คิดเป็น {{ consignment.owned_pct }}% ของคลังรวม</div>
+    </div>
+    <div class="tile ok">
+      <div class="label">สต๊อกฝากขาย (Consignment)</div>
+      <div class="value" style="color:var(--ok);">฿{{ short_money(consignment.consignment_value) }}</div>
+      <div class="hint">คิดเป็น {{ consignment.consignment_pct }}% (เงินไม่จม)</div>
+    </div>
+  </div>
+</div>
+
+<!-- Split PO Detection -->
+<div class="card">
+  <h2>ตรวจจับความเสี่ยงการแบ่งซื้อแบ่งจ้าง (Split PO Detection)</h2>
+  <p class="hint" style="color:var(--muted); font-size:13px; margin:-4px 0 12px;">ตรวจพบการออก PO ไม่เกิน 500,000 บาทหลายใบ ในช่วงเวลาใกล้กัน ให้บริษัทเดียวกัน ในกลุ่มสินค้าเดียวกัน</p>
+
+  <div class="scroll">
+    <table>
+      <thead>
+        <tr>
+          <th>บริษัทคู่ค้า</th>
+          <th>หมวดสินค้า</th>
+          <th class="num">จำนวน PO ย่อย</th>
+          <th class="num">มูลค่ารวม</th>
+          <th>ระดับความเสี่ยง</th>
+          <th>ข้อสังเกตทางระเบียบพัสดุ (สตง./ป.ป.ช.)</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for sp in split_pos %}
+        <tr>
+          <td><strong>{{ sp.supplier }}</strong></td>
+          <td>{{ sp.item_group }}</td>
+          <td class="num"><strong style="color:var(--late);">{{ sp.po_count }} ใบ</strong></td>
+          <td class="num">฿{{ money(sp.combined_value) }}</td>
+          <td><span class="pill {{ 'late' if sp.risk_level == 'HIGH' else 'slow' }}">{{ sp.risk_level }}</span></td>
+          <td style="font-size:12.5px; color:var(--muted);">{{ sp.audit_risk_note }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="6" style="text-align:center; color:var(--muted);">ไม่พบความเสี่ยงการแบ่งซื้อแบ่งจ้างในรอบระยะเวลานี้</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

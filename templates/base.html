@@ -43,16 +43,97 @@
   body { margin:0; background:var(--bg); color:var(--ink); font-size:15px;
          font-family:"Sarabun","Leelawadee UI","Tahoma",sans-serif; }
   a { color:var(--link); }
-  nav.top { background:var(--nav); color:var(--nav-ink); }
-  nav.top .in { max-width:1240px; margin:0 auto; padding:0 16px; display:flex; flex-wrap:wrap;
-                align-items:center; gap:4px 18px; }
-  nav.top .brand { font-weight:700; padding:12px 0; margin-right:8px; }
-  nav.top a { color:var(--nav-ink); text-decoration:none; padding:12px 2px; font-size:14.5px;
-              border-bottom:3px solid transparent; }
-  nav.top a.on { border-bottom-color:var(--nav-on); font-weight:600; }
-  nav.top form { margin-left:auto; padding:7px 0; }
-  nav.top input { width:230px; max-width:60vw; padding:6px 10px; border-radius:6px; border:0;
-                  font:inherit; font-size:14px; }
+  /* Modern Two-Tier Enterprise Navigation */
+  nav.top {
+    background: #0f172a;
+    color: var(--nav-ink);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    box-shadow: 0 4px 18px rgba(0, 0, 0, 0.22);
+  }
+  .nav-topbar {
+    border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+    padding: 8px 0;
+  }
+  .nav-topbar-in {
+    max-width: 1520px; margin: 0 auto; padding: 0 20px;
+    display: flex; align-items: center; justify-content: space-between; gap: 16px;
+  }
+  .brand-block {
+    display: flex; align-items: center; gap: 10px; flex-shrink: 0;
+  }
+  .brand-title {
+    font-size: 20px; font-weight: 800; letter-spacing: 0.6px;
+    color: #ffffff; text-decoration: none; display: flex; align-items: center;
+  }
+  .brand-title:hover { color: #38bdf8; }
+  .brand-divider {
+    color: rgba(255, 255, 255, 0.22); font-size: 14px; font-weight: 300;
+  }
+  .brand-subtitle {
+    color: #94a3b8; font-size: 13px; font-weight: 500;
+  }
+  .nav-top-right {
+    display: flex; align-items: center; gap: 12px; margin-left: auto;
+  }
+  .nav-search-wrap {
+    position: relative; display: flex; align-items: center;
+  }
+  .nav-search-wrap .search-icon {
+    position: absolute; left: 11px; color: #94a3b8; pointer-events: none;
+  }
+  .nav-search-wrap input[type="search"] {
+    width: 250px; max-width: 40vw; padding: 6px 14px 6px 32px;
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    border-radius: 20px; color: #f8fafc; font: inherit; font-size: 13px;
+    outline: none; transition: all .18s ease;
+  }
+  .nav-search-wrap input[type="search"]:focus {
+    background: rgba(255, 255, 255, 0.15);
+    border-color: #38bdf8;
+    box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.25);
+    width: 290px;
+  }
+  .nav-search-wrap input[type="search"]::placeholder {
+    color: #94a3b8; font-size: 12.5px;
+  }
+  .nav-menubar {
+    background: rgba(15, 23, 42, 0.6);
+  }
+  .nav-menubar-in {
+    max-width: 1520px; margin: 0 auto; padding: 0 16px;
+  }
+  .nav-items-scroll {
+    display: flex; align-items: center; gap: 2px;
+    overflow-x: auto; scrollbar-width: none; -ms-overflow-style: none;
+    padding: 0;
+  }
+  .nav-items-scroll::-webkit-scrollbar { display: none; }
+  .nav-item {
+    display: inline-flex; align-items: center; gap: 5px;
+    padding: 9px 12px; color: #cbd5e1; font-size: 13.5px; font-weight: 500;
+    text-decoration: none; border-bottom: 2.5px solid transparent;
+    white-space: nowrap; transition: all .15s ease; border-radius: 6px 6px 0 0;
+  }
+  .nav-item:hover {
+    color: #ffffff; background: rgba(255, 255, 255, 0.06);
+  }
+  .nav-item.on {
+    color: #ffffff; font-weight: 700;
+    border-bottom-color: #38bdf8;
+    background: rgba(56, 189, 248, 0.1);
+  }
+  .nav-item-savings {
+    color: #fde047 !important;
+  }
+  .nav-item-ext {
+    color: #7dd3fc;
+  }
+  @media (max-width: 860px) {
+    .brand-subtitle, .brand-divider { display: none; }
+    .nav-search-wrap input[type="search"] { width: 160px; }
+    .nav-search-wrap input[type="search"]:focus { width: 200px; }
+  }
   .wrap { max-width:1240px; margin:0 auto; padding:22px 16px 56px; }
   h1 { font-size:22px; margin:0 0 4px; }
   h2 { font-size:17px; margin:26px 0 10px; }
@@ -101,23 +182,126 @@
     nav.top input { width:100%; max-width:none; }
     .tile .value { font-size:20px; }
   }
+  @media print {
+    nav.top, .no-print, form, .tabs { display: none !important; }
+    body { background: #fff !important; color: #000 !important; font-size: 11pt; }
+    .wrap { max-width: 100% !important; padding: 0 !important; margin: 0 !important; }
+    .card { border: 1px solid #999 !important; box-shadow: none !important; break-inside: avoid; margin-bottom: 12px; }
+    a { text-decoration: none !important; color: #000 !important; }
+    table { border: 1px solid #666 !important; font-size: 10pt; }
+    th, td { border-bottom: 1px solid #ccc !important; padding: 5px 8px !important; }
+  }
+  .nav-exec-btn:hover {
+    background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%) !important;
+    filter: brightness(1.12);
+    box-shadow: 0 4px 14px rgba(2, 132, 199, 0.4) !important;
+    transform: translateY(-1px);
+    color: #fff !important;
+  }
+  .nav-sync-chip:hover {
+    filter: brightness(1.15);
+  }
   {% block style %}{% endblock %}
 </style>
 </head>
 <body>
-<nav class="top"><div class="in">
-  <span class="brand">ERPLPH</span>
-  <a href="/dashboard">หน้าจอหลัก (แบบ Stock5)</a>
-  <a href="/overview" class="{{ 'on' if active == 'overview' }}">ภาพรวม</a>
-  <a href="/items" class="{{ 'on' if active == 'items' }}">ค้นหารายการ</a>
-  <a href="/departments" class="{{ 'on' if active == 'departments' }}">แต่ละแผนกเบิกอะไร</a>
-  <a href="/lists/expiring" class="{{ 'on' if active == 'lists' }}">ใกล้หมดอายุ · ค้างนิ่ง</a>
-  <a href="/cut-status" class="{{ 'on' if active == 'cut' }}">คลังไหนข้อมูลค้าง</a>
-  <form action="/items" method="get" role="search">
-    <input type="search" name="q" placeholder="ค้นรหัสหรือชื่อ ยา พัสดุ ครุภัณฑ์ งานจ้าง…"
-           value="{{ search_text or '' }}" aria-label="ค้นหารายการ">
-  </form>
-</div></nav>
+<nav class="top">
+  <!-- Tier 1: Brand & Executive Utilities (Search, Sync Status, Exec Brief) -->
+  <div class="nav-topbar">
+    <div class="nav-topbar-in">
+      <div class="brand-block">
+        <a href="/overview" class="brand-title">ERPLPH</a>
+        <span class="brand-divider">|</span>
+        <span class="brand-subtitle">ระบบบริหารข้อมูลคลังและพัสดุ รพ.ลำปาง</span>
+      </div>
+
+      <div class="nav-top-right">
+        <!-- Search Input with Vector Icon -->
+        <form action="/items" method="get" role="search" style="margin:0;">
+          <div class="nav-search-wrap">
+            <svg class="search-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="11" cy="11" r="8"></circle>
+              <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+            </svg>
+            <input type="search" name="q" placeholder="ค้นรหัสหรือชื่อ ยา พัสดุ ครุภัณฑ์..."
+                   value="{{ search_text or '' }}" aria-label="ค้นหารายการ">
+          </div>
+        </form>
+
+        <!-- Live Sync Status Chip -->
+        {% if data_freshness %}
+        <div class="nav-sync-chip"
+             title="SSB Data Pipeline Sync: {{ data_freshness.last_sync_iso or data_freshness.last_sync_en }}"
+             style="display:inline-flex; align-items:center; gap:6px; padding:4px 11px; border-radius:20px; font-size:12px; font-weight:500; cursor:default;
+                    {% if data_freshness.status == 'fresh' %}
+                      background:rgba(16,185,129,0.12); border:1px solid rgba(52,211,153,0.35); color:#a7f3d0;
+                    {% elif data_freshness.status == 'warning' %}
+                      background:rgba(245,158,11,0.12); border:1px solid rgba(245,158,11,0.35); color:#fde68a;
+                    {% else %}
+                      background:rgba(239,68,68,0.12); border:1px solid rgba(239,68,68,0.35); color:#fecaca;
+                    {% endif %}">
+          <span style="width:6px; height:6px; border-radius:50%; display:inline-block;
+                       {% if data_freshness.status == 'fresh' %}
+                         background:#34d399; box-shadow:0 0 6px #34d399;
+                       {% elif data_freshness.status == 'warning' %}
+                         background:#fbbf24; box-shadow:0 0 6px #fbbf24;
+                       {% else %}
+                         background:#f87171; box-shadow:0 0 6px #f87171;
+                       {% endif %}"></span>
+          <span style="font-family:ui-monospace,SFMono-Regular,Consolas,monospace; font-size:11.5px; opacity:0.9;">
+            {{ data_freshness.last_sync_en or data_freshness.last_sync_thai }}
+          </span>
+          <span style="font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:0.4px; padding:1px 5px; border-radius:4px;
+                       {% if data_freshness.status == 'fresh' %}
+                         background:rgba(52,211,153,0.25); color:#34d399;
+                       {% elif data_freshness.status == 'warning' %}
+                         background:rgba(245,158,11,0.25); color:#fbbf24;
+                       {% else %}
+                         background:rgba(239,68,68,0.25); color:#f87171;
+                       {% endif %}">
+            {{ data_freshness.badge_label_en or 'LIVE' }}
+          </span>
+        </div>
+        {% endif %}
+
+        <!-- Executive Briefing Sheet Button -->
+        <a href="/executive-print"
+           target="_blank"
+           title="Print 1-Page Executive Summary (A4 / PDF) for Hospital Board Meeting"
+           class="nav-exec-btn"
+           style="display:inline-flex; align-items:center; gap:6px; padding:4px 12px; border-radius:20px;
+                  background:linear-gradient(135deg, #0284c7 0%, #0369a1 100%);
+                  border:1px solid rgba(56,189,248,0.45); color:#ffffff; font-size:12px; font-weight:600;
+                  text-decoration:none; box-shadow:0 2px 6px rgba(2,132,199,0.3); transition:all .18s ease; cursor:pointer;">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;">
+            <polyline points="6 9 6 2 18 2 18 9"></polyline>
+            <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path>
+            <rect x="6" y="14" width="12" height="8"></rect>
+          </svg>
+          <span>Exec Brief</span>
+        </a>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tier 2: Dedicated Module Navigation Bar -->
+  <div class="nav-menubar">
+    <div class="nav-menubar-in">
+      <div class="nav-items-scroll">
+        <a href="/overview" class="nav-item {{ 'on' if active == 'overview' }}">📊 ภาพรวม</a>
+        <a href="/top10" class="nav-item {{ 'on' if active == 'top10' }}">🏆 TOP 10</a>
+        <a href="/procure-to-pay" class="nav-item {{ 'on' if active == 'p2p' }}">📑 PO-จ่ายเงิน</a>
+        <a href="/substores" class="nav-item {{ 'on' if active == 'substores' }}">🏬 คลังย่อย-วอร์ด</a>
+        <a href="/departments" class="nav-item {{ 'on' if active == 'departments' }}">👥 แผนกเบิกอะไร</a>
+        <a href="/projects" class="nav-item {{ 'on' if active == 'projects' }}">🔧 ช่าง·จ้างเหมา·โครงการ</a>
+        <a href="/governance" class="nav-item {{ 'on' if active == 'governance' }}">⚖️ ธรรมาภิบาล &amp; เสี่ยง</a>
+        <a href="/savings" class="nav-item nav-item-savings {{ 'on' if active == 'savings' }}">★ โอกาสประหยัดงบ</a>
+        <a href="/lists/expiring" class="nav-item {{ 'on' if active == 'lists' }}">⏳ ใกล้หมดอายุ</a>
+        <a href="http://172.16.13.102/stock" target="_blank" class="nav-item nav-item-ext" title="ระบบข้อมูลคลังยา (Stock5)">💊 ข้อมูลคลังยา ↗</a>
+      </div>
+    </div>
+  </div>
+</nav>
 <div class="wrap">
 {% block content %}{% endblock %}
 </div>

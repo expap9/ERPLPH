@@ -197,3 +197,78 @@ def group_totals(conn, parent: Iterable[str] = (), months: int = 12,
         "GROUP BY 1 ORDER BY 2 DESC", values).fetchall()
     return [{"key": key, "name": categories.group_name(key) if key else "ยังไม่ระบุหมวด",
              "net": net} for key, net in rows]
+
+
+class RequisitionerRow(NamedTuple):
+    path: tuple[str, str, str]
+    code: str
+    name: str
+    full_name: str
+    net: float
+    slips: int
+    items: int
+
+
+def top_requisitioners(conn, parent: Iterable[str] = (), months: int = 12, limit: int = 10,
+                       store: str | None = None, group: str | None = None,
+                       latest: str | None = None) -> list[RequisitionerRow]:
+    """ใครเบิกมากที่สุด — หน่วยงานย่อย/หอผู้ป่วย หรือหน่วยเบิกที่มีมูลค่าสูงสุด"""
+    latest = latest or latest_period(conn)
+    if not latest:
+        return []
+    path = departments.path_of(*list(parent)[:3] + [""] * (3 - len(list(parent)[:3])))
+    where, values = _scope(months, latest, path, store, group, alias="i")
+
+    sql = (f"SELECT i.division, i.dept, i.section, "
+           f"       COALESCE(SUM({net('value', 'i')}), 0) as net_val, "
+           "       COUNT(DISTINCT i.irno) as slips, "
+           "       COUNT(DISTINCT i.stock_code) as item_cnt "
+           f"FROM issues i WHERE {' AND '.join(where)} "
+           "GROUP BY i.division, i.dept, i.section "
+           "ORDER BY net_val DESC LIMIT ?")
+    rows = conn.execute(sql, values + [limit]).fetchall()
+
+    results = []
+    for row in rows:
+        div, dpt, sec = row[0], row[1], row[2]
+        key = departments.path_of(div, dpt, sec)
+        code_label = "-".join([p for p in key if p]) or "ไม่ระบุ"
+        name = departments.name_of(*key)
+        full_name = departments.full_name(*key)
+        net_val, slips, item_cnt = row[3], row[4], row[5]
+        if net_val <= 0 and slips == 0:
+            continue
+        results.append(RequisitionerRow(
+            key, code_label, name, full_name, net_val, slips, item_cnt
+        ))
+    return results
+
+
+class TargetSummary(NamedTuple):
+    net: float
+    slips: int
+    items: int
+    stores: int
+
+
+def target_summary(conn, parent: Iterable[str] = (), months: int = 12,
+                   store: str | None = None, group: str | None = None,
+                   latest: str | None = None) -> TargetSummary:
+    """สรุปยอดรวมของหน่วยงานที่เลือก (หรือทั้งโรงพยาบาล)"""
+    latest = latest or latest_period(conn)
+    if not latest:
+        return TargetSummary(0.0, 0, 0, 0)
+    path = departments.path_of(*list(parent)[:3] + [""] * (3 - len(list(parent)[:3])))
+    where, values = _scope(months, latest, path, store, group, alias="i")
+    row = conn.execute(
+        f"SELECT COALESCE(SUM({net('value', 'i')}), 0), "
+        "       COUNT(DISTINCT i.irno), COUNT(DISTINCT i.stock_code), COUNT(DISTINCT i.store) "
+        f"FROM issues i WHERE {' AND '.join(where)}", values).fetchone()
+    return TargetSummary(
+        row[0] if row else 0.0,
+        row[1] if row else 0,
+        row[2] if row else 0,
+        row[3] if row else 0,
+    )
+
+

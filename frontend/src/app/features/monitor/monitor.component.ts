@@ -38,6 +38,9 @@ export class MonitorComponent implements OnInit, OnDestroy {
   departmentSearch = '';
   selectedDepartment: any = null;
   modalDrugSearch = '';
+  leadersData: any = null;
+  loadingLeaders = false;
+  leadersMonths = 18;
   // ขอบเขตของ ERPLPH — Stock5 ดูได้แค่ยาของคลัง 2 ที่นี่ดูได้ทุกประเภทของ ทุกคลัง
   scopeGroup = '';
   scopeStore = '';
@@ -213,6 +216,35 @@ export class MonitorComponent implements OnInit, OnDestroy {
       },
       error: () => {}
     });
+
+    this.loadLeaders();
+  }
+
+  loadLeaders(months?: number): void {
+    if (months) {
+      this.leadersMonths = months;
+    }
+    this.loadingLeaders = true;
+    this.api.requisitionLeaders(this.leadersMonths).subscribe({
+      next: (res: any) => {
+        this.loadingLeaders = false;
+        if (res?.status === 'success' && res.data) {
+          this.leadersData = res.data;
+        }
+        this.cdr.detectChanges();
+      },
+      error: () => {
+        this.loadingLeaders = false;
+        this.cdr.detectChanges();
+      }
+    });
+  }
+
+  getMedal(index: number): string {
+    if (index === 0) return '🥇';
+    if (index === 1) return '🥈';
+    if (index === 2) return '🥉';
+    return String(index + 1);
   }
 
   liveSync(): void {
@@ -723,10 +755,69 @@ export class MonitorComponent implements OnInit, OnDestroy {
     this.cdr.detectChanges();
   }
 
+  leaderDeptModal: any = null;
+
+  openDeptBreakdown(dept: any, scope: string, scopeTitle: string): void {
+    this.leaderDeptModal = {
+      dept,
+      scope,
+      scopeTitle,
+      loading: true,
+      data: null,
+      search: '',
+    };
+    document.body.style.overflow = 'hidden';
+    this.cdr.detectChanges();
+
+    this.api.requisitionLeadersDeptBreakdown({
+      months: this.leadersMonths,
+      div: dept.division || '',
+      dept: dept.dept || '',
+      sec: dept.section || '',
+      scope: scope,
+    }).subscribe({
+      next: (res: any) => {
+        if (this.leaderDeptModal) {
+          this.leaderDeptModal.loading = false;
+          if (res?.status === 'success') {
+            this.leaderDeptModal.data = res.data;
+          }
+          this.cdr.detectChanges();
+        }
+      },
+      error: () => {
+        if (this.leaderDeptModal) {
+          this.leaderDeptModal.loading = false;
+          this.cdr.detectChanges();
+        }
+      }
+    });
+  }
+
+  closeDeptBreakdown(): void {
+    this.leaderDeptModal = null;
+    document.body.style.overflow = '';
+    this.cdr.detectChanges();
+  }
+
+  get filteredDeptBreakdownItems(): any[] {
+    if (!this.leaderDeptModal?.data?.items) return [];
+    const q = (this.leaderDeptModal.search || '').trim().toLowerCase();
+    if (!q) return this.leaderDeptModal.data.items;
+    return this.leaderDeptModal.data.items.filter((it: any) =>
+      String(it.stock_code || '').toLowerCase().includes(q) ||
+      String(it.name || '').toLowerCase().includes(q) ||
+      String(it.unit || '').toLowerCase().includes(q)
+    );
+  }
+
   @HostListener('window:keydown.escape')
   onEscapePress(): void {
     if (this.selectedDepartment) {
       this.closeDepartmentModal();
+    }
+    if (this.leaderDeptModal) {
+      this.closeDeptBreakdown();
     }
   }
 

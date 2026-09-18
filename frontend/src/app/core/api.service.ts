@@ -81,6 +81,19 @@ export class ApiService {
   triggerMonitorAutoSync(): Observable<any> {
     return this.http.post('/api/monitor/auto-sync/trigger', {});
   }
+  requisitionLeaders(months = 18): Observable<any> {
+    return this.http.get('/api/requisition-leaders', { params: new HttpParams().set('months', months) });
+  }
+
+  requisitionLeadersDeptBreakdown(params: { months?: number; div?: string; dept?: string; sec?: string; scope?: string }): Observable<any> {
+    let httpParams = new HttpParams();
+    if (params.months) httpParams = httpParams.set('months', params.months);
+    if (params.div) httpParams = httpParams.set('div', params.div);
+    if (params.dept) httpParams = httpParams.set('dept', params.dept);
+    if (params.sec) httpParams = httpParams.set('sec', params.sec);
+    if (params.scope) httpParams = httpParams.set('scope', params.scope);
+    return this.http.get('/api/requisition-leaders/dept-breakdown', { params: httpParams });
+  }
 
   searchDocuments(query = '', limit = 25): Observable<any> {
     const params = new HttpParams().set('q', query).set('limit', limit);

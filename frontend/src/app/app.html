@@ -19,7 +19,7 @@
     <nav aria-label="เมนูหลัก">
       @for (item of navigation; track item.path) {
         @if (item.external) {
-          <a [href]="item.path" [title]="item.label + ' (' + item.detail + ')'">
+          <a [href]="item.path" [target]="item.path.startsWith('http') ? '_blank' : '_self'" [title]="item.label + ' (' + item.detail + ')'">
             <span class="nav-icon">{{ item.icon }}</span>
             <span class="nav-copy"><strong>{{ item.label }}</strong><small>{{ item.detail }}</small></span>
           </a>

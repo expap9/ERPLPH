@@ -1,25 +1,514 @@
 {% extends "base.html" %}
 {% block title %}แต่ละแผนกเบิกอะไรไปเท่าไร{% endblock %}
 {% block style %}
-  .crumb { margin:0 0 14px; font-size:14px; }
-  .crumb a, .crumb span { display:inline-block; }
-  .crumb .sep { color:var(--muted); margin:0 6px; }
-  .headline { background:var(--card); border:1px solid var(--line); border-radius:8px;
-              padding:16px 18px; margin-bottom:16px; }
-  .headline .big { font-size:32px; font-weight:700; font-variant-numeric:tabular-nums; }
-  .headline .what { color:var(--muted); margin-top:2px; }
-  .bar { display:flex; height:22px; border-radius:4px; overflow:hidden; margin:14px 0 8px;
-         background:var(--line); }
-  .bar i { display:block; }
-  .legend { font-size:13.5px; color:var(--muted); }
-  .legend b { color:var(--ink); font-variant-numeric:tabular-nums; }
-  .legend span { margin-right:16px; white-space:nowrap; }
-  .share { display:block; height:4px; background:var(--g-drug); border-radius:2px; margin-top:4px; }
+  /* ปรับแต่งความกว้างหน้าจอสำหรับ Split Screen ให้กว้างเต็มตา */
+  .wrap { max-width: 1520px; }
+
+  /* Breadcrumb & Top Bar */
+  .dept-header { margin-bottom: 18px; }
+  .crumb { margin: 0 0 12px; font-size: 14px; display: flex; align-items: center; flex-wrap: wrap; gap: 4px; }
+  .crumb a { color: var(--link); text-decoration: none; padding: 2px 6px; border-radius: 4px; }
+  .crumb a:hover { background: var(--head); text-decoration: underline; }
+  .crumb .sep { color: var(--muted); margin: 0 2px; }
+  .crumb .current { font-weight: 600; color: var(--ink); padding: 2px 6px; }
+
+  /* Controls Bar (Tabs) */
+  .controls-bar {
+    display: flex; flex-wrap: wrap; gap: 12px 24px; align-items: center;
+    background: var(--card); border: 1px solid var(--line); border-radius: 10px;
+    padding: 10px 16px; margin-bottom: 18px;
+  }
+  .controls-bar .tabs { margin: 0; }
+
+  /* Split Screen Layout (50/50) */
+  .departments-split {
+    display: grid;
+    grid-template-columns: minmax(440px, 48%) minmax(480px, 52%);
+    gap: 20px;
+    align-items: start;
+  }
+  @media (max-width: 1080px) {
+    .departments-split {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  /* Left Pane */
+  .dept-left-pane {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  /* Right Sticky Pane */
+  .dept-right-pane {
+    position: sticky;
+    top: 14px;
+    max-height: calc(100vh - 28px);
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    padding-right: 6px;
+  }
+  .dept-right-pane::-webkit-scrollbar { width: 6px; }
+  .dept-right-pane::-webkit-scrollbar-thumb { background: var(--line); border-radius: 3px; }
+  .dept-right-pane::-webkit-scrollbar-thumb:hover { background: var(--muted); }
+
+  /* Headline Summary Card */
+  .headline-card {
+    background: var(--card); border: 1px solid var(--line); border-radius: 10px;
+    padding: 16px 18px; box-shadow: 0 1px 3px rgba(0,0,0,0.03);
+  }
+  .headline-card .big { font-size: 28px; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--ink); }
+  .headline-card .what { color: var(--muted); font-size: 13.5px; margin-top: 4px; }
+  .bar { display: flex; height: 18px; border-radius: 4px; overflow: hidden; margin: 12px 0 8px; background: var(--line); }
+  .bar i { display: block; cursor: pointer; transition: opacity .15s; }
+  .bar i:hover { opacity: .85; }
+  .legend { font-size: 13px; color: var(--muted); display: flex; flex-wrap: wrap; gap: 8px 14px; }
+  .legend b { color: var(--ink); font-variant-numeric: tabular-nums; }
+  .legend span { display: inline-flex; align-items: center; white-space: nowrap; }
+
+  /* Search & Filter Boxes */
+  .search-wrap {
+    position: relative;
+    display: flex;
+    align-items: center;
+  }
+  .search-wrap input {
+    width: 100%;
+    padding: 9px 12px 9px 36px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--card);
+    color: var(--ink);
+    font: inherit;
+    font-size: 14px;
+    transition: border-color .15s, box-shadow .15s;
+  }
+  .search-wrap input:focus {
+    outline: none;
+    border-color: var(--nav-on);
+    box-shadow: 0 0 0 3px rgba(47, 93, 158, 0.15);
+  }
+  .search-wrap .search-icon {
+    position: absolute;
+    left: 11px;
+    font-size: 14px;
+    color: var(--muted);
+    pointer-events: none;
+  }
+  .search-wrap .count-badge {
+    position: absolute;
+    right: 10px;
+    font-size: 12px;
+    color: var(--muted);
+    background: var(--head);
+    padding: 2px 8px;
+    border-radius: 999px;
+  }
+
+  /* Section Title Bars */
+  .pane-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding-bottom: 6px;
+    border-bottom: 2px solid var(--line);
+    margin-bottom: 12px;
+  }
+  .pane-header h2 {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .pane-header .sub-count {
+    font-size: 13px;
+    color: var(--muted);
+    font-weight: 400;
+  }
+
+  /* Department Item Cards on Left */
+  .dept-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .dept-card {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 12px 14px;
+    transition: all .15s ease-in-out;
+    display: block;
+    text-decoration: none;
+    color: inherit;
+    position: relative;
+  }
+  .dept-card:hover {
+    border-color: var(--nav-on);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+    transform: translateY(-1px);
+  }
+  .dept-card.active {
+    border: 2px solid var(--nav-on);
+    background: rgba(47, 93, 158, 0.04);
+    box-shadow: 0 2px 10px rgba(47, 93, 158, 0.12);
+  }
+  .dept-card .top-row {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 8px;
+  }
+  .dept-card .name-wrap {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    flex-wrap: wrap;
+    flex: 1;
+  }
+  .dept-card .dept-name {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--ink);
+  }
+  .dept-card .dept-code {
+    font-size: 12px;
+    color: var(--muted);
+    background: var(--head);
+    padding: 1px 6px;
+    border-radius: 4px;
+  }
+  .dept-card .drill-btn {
+    font-size: 12.5px;
+    color: var(--link);
+    background: var(--head);
+    border: 1px solid var(--line);
+    padding: 3px 8px;
+    border-radius: 6px;
+    text-decoration: none;
+    white-space: nowrap;
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    transition: background .15s, border-color .15s;
+  }
+  .dept-card .drill-btn:hover {
+    background: var(--nav-on);
+    color: #fff;
+    border-color: var(--nav-on);
+  }
+
+  /* Rank Badges */
+  .rank-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    border-radius: 6px;
+    font-size: 12.5px;
+    font-weight: 700;
+    flex-shrink: 0;
+  }
+  .rank-1 { background: linear-gradient(135deg, #f59e0b, #d97706); color: #fff; box-shadow: 0 2px 4px rgba(217, 119, 6, 0.25); }
+  .rank-2 { background: linear-gradient(135deg, #94a3b8, #64748b); color: #fff; }
+  .rank-3 { background: linear-gradient(135deg, #b45309, #78350f); color: #fff; }
+  .rank-other { background: var(--head); color: var(--muted); border: 1px solid var(--line); }
+
+  /* Financial & Share Bar in Card */
+  .dept-card .metrics-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-bottom: 6px;
+  }
+  .dept-card .net-val {
+    font-size: 17px;
+    font-weight: 700;
+    color: var(--ink);
+    font-variant-numeric: tabular-nums;
+  }
+  .dept-card .share-pct {
+    font-size: 13.5px;
+    color: var(--muted);
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+  }
+  .progress-bg {
+    height: 5px;
+    background: var(--line);
+    border-radius: 3px;
+    overflow: hidden;
+    margin-bottom: 8px;
+  }
+  .progress-fill {
+    height: 100%;
+    background: var(--link);
+    border-radius: 3px;
+    transition: width .3s ease;
+  }
+
+  .dept-card .tags-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    font-size: 12.5px;
+    color: var(--muted);
+  }
+  .dept-card .tag-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    background: var(--head);
+    padding: 2px 7px;
+    border-radius: 4px;
+  }
+  .active-indicator {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    color: #fff;
+    background: var(--nav-on);
+    font-size: 11.5px;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 999px;
+  }
+
+  /* Right Pane Detail Styles */
+  .target-hero-card {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 18px 20px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+  }
+  .target-hero-card .hero-title-row {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 4px;
+  }
+  .target-hero-card .hero-title {
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--ink);
+    margin: 0;
+  }
+  .target-hero-card .hero-code {
+    font-size: 13px;
+    color: var(--muted);
+    background: var(--head);
+    padding: 2px 8px;
+    border-radius: 6px;
+    font-family: monospace;
+  }
+  .target-hero-card .hero-path {
+    font-size: 13px;
+    color: var(--muted);
+    margin-bottom: 14px;
+  }
+
+  /* 4 KPI Grid */
+  .hero-kpis {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 10px;
+    margin-bottom: 14px;
+  }
+  @media (max-width: 640px) {
+    .hero-kpis { grid-template-columns: repeat(2, 1fr); }
+  }
+  .hero-kpi-box {
+    background: var(--bg);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 10px 12px;
+    text-align: center;
+  }
+  .hero-kpi-box .kpi-label { font-size: 12px; color: var(--muted); margin-bottom: 2px; }
+  .hero-kpi-box .kpi-value { font-size: 17px; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--ink); }
+
+  /* Content Cards in Right Pane */
+  .content-card {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 16px 18px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.03);
+  }
+  .content-card h3 {
+    margin: 0 0 10px;
+    font-size: 15.5px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+  .content-card .card-subtitle {
+    font-size: 13px;
+    color: var(--muted);
+    margin: -6px 0 12px;
+  }
+
+  /* Compact Table for Right Pane */
+  .pane-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13.5px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    overflow: hidden;
+  }
+  .pane-table th, .pane-table td {
+    padding: 8px 10px;
+    text-align: left;
+    border-bottom: 1px solid var(--line);
+    vertical-align: middle;
+  }
+  .pane-table th {
+    background: var(--head);
+    font-size: 12.5px;
+    color: var(--muted);
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  .pane-table td.num, .pane-table th.num {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+  .pane-table tbody tr:hover {
+    background: var(--head);
+  }
+  .pane-table .item-name {
+    font-weight: 600;
+    color: var(--ink);
+    line-height: 1.35;
+  }
+  .pane-table .stock-code-link {
+    font-size: 11.5px;
+    color: var(--link);
+    text-decoration: none;
+    font-family: monospace;
+    background: rgba(47, 93, 158, 0.08);
+    padding: 1px 5px;
+    border-radius: 3px;
+    display: inline-block;
+    margin-top: 2px;
+  }
+  .pane-table .stock-code-link:hover {
+    text-decoration: underline;
+    background: rgba(47, 93, 158, 0.16);
+  }
+
+  /* Category Tag Badges */
+  .cat-badge {
+    display: inline-block;
+    padding: 2px 7px;
+    border-radius: 4px;
+    font-size: 11.5px;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  .cat-drug { background: rgba(42, 120, 214, 0.14); color: var(--g-drug); }
+  .cat-medical_supply { background: rgba(235, 104, 52, 0.14); color: var(--g-medical_supply); }
+  .cat-material { background: rgba(27, 175, 122, 0.14); color: var(--g-material); }
+  .cat-equipment { background: rgba(237, 161, 0, 0.16); color: var(--g-equipment); }
+  .cat-food { background: rgba(232, 123, 164, 0.14); color: var(--g-food); }
+  .cat-other { background: rgba(74, 58, 167, 0.14); color: var(--g-other); }
+
+  /* Empty state */
+  .empty-state {
+    text-align: center;
+    padding: 30px 16px;
+    color: var(--muted);
+    font-size: 14px;
+    background: var(--bg);
+    border-radius: 8px;
+    border: 1px dashed var(--line);
+  }
+
+  /* Note Box */
+  .method-note {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 14px 16px;
+    font-size: 13px;
+    color: var(--muted);
+    line-height: 1.75;
+    margin-top: 24px;
+  }
+  .method-note summary {
+    font-weight: 600;
+    color: var(--ink);
+    cursor: pointer;
+    margin-bottom: 8px;
+  }
 {% endblock %}
+
 {% block content %}
 
-  <h1>แต่ละแผนกเบิกอะไรไปเท่าไร</h1>
-  <p class="sub">ทุกหน่วยงานที่เบิกของจากคลัง ทั้งยา เวชภัณฑ์ พัสดุ ครุภัณฑ์ และอาหาร · กดชื่อหน่วยงานเพื่อดูลึกลงไป</p>
+  <div class="dept-header">
+    <h1>แต่ละแผนกเบิกอะไรไปเท่าไร</h1>
+    <p class="sub">
+      ระบบวิเคราะห์การเบิกใช้คลังสินค้า — ซ้าย: จัดอันดับหน่วยงานผู้เบิก · ขวา: รายละเอียดของที่เบิก และใครเบิกมากที่สุด
+    </p>
+
+    <!-- Breadcrumb Hierarchy Drill-down -->
+    <div class="crumb">
+      <a href="/departments?months={{ months }}{% if group %}&amp;group={{ group }}{% endif %}{% if store %}&amp;store={{ store }}{% endif %}">🏥 ทั้งโรงพยาบาล</a>
+      {% for step in trail %}
+        <span class="sep">›</span>
+        {% if loop.last %}
+          <span class="current">{{ step.name }}</span>
+        {% else %}
+          <a href="/departments?months={{ months }}{% for key, value in step.args.items() %}&amp;{{ key }}={{ value }}{% endfor %}{% if group %}&amp;group={{ group }}{% endif %}{% if store %}&amp;store={{ store }}{% endif %}">{{ step.name }}</a>
+        {% endif %}
+      {% endfor %}
+      {% if target_code and target_path != parent %}
+        <span class="sep">›</span>
+        <span class="current" style="color:var(--nav-on);">[ดู: {{ target_name }}]</span>
+      {% endif %}
+    </div>
+
+    <!-- Filter Bar: Months & Groups -->
+    {%- set here -%}
+      {% if parent[0] %}&amp;div={{ parent[0] }}{% endif %}{% if parent[1] %}&amp;dept={{ parent[1] }}{% endif %}{% if parent[2] %}&amp;section={{ parent[2] }}{% endif %}
+    {%- endset -%}
+    <div class="controls-bar">
+      <div class="tabs">
+        <span class="label">⏱️ ช่วงเวลา:</span>
+        {% for choice in month_choices %}
+          <a class="{{ 'on' if choice == months }}"
+             href="/departments?months={{ choice }}{{ here }}{% if group %}&amp;group={{ group }}{% endif %}{% if store %}&amp;store={{ store }}{% endif %}{% if selected_code %}&amp;selected={{ selected_code }}{% endif %}">{{ choice }} เดือน</a>
+        {% endfor %}
+      </div>
+
+      <div class="tabs">
+        <span class="label">📦 กลุ่มของ:</span>
+        <a class="{{ 'on' if not group }}"
+           href="/departments?months={{ months }}{{ here }}{% if store %}&amp;store={{ store }}{% endif %}{% if selected_code %}&amp;selected={{ selected_code }}{% endif %}">ทุกกลุ่ม</a>
+        {% for part in groups %}
+          {% if part.key %}
+            <a class="{{ 'on' if part.key == group }}"
+               href="/departments?months={{ months }}{{ here }}&amp;group={{ part.key }}{% if store %}&amp;store={{ store }}{% endif %}{% if selected_code %}&amp;selected={{ selected_code }}{% endif %}">{{ part.name }}</a>
+          {% endif %}
+        {% endfor %}
+      </div>
+    </div>
+  </div>
 
   {% if problem %}
     <div class="problem">{{ problem }}</div>
@@ -27,154 +516,401 @@
     <div class="problem">{{ report.reason }}</div>
   {% else %}
 
-  <div class="crumb">
-    <a href="/departments?months={{ months }}">ทั้งโรงพยาบาล</a>
-    {% for step in trail %}
-      <span class="sep">›</span>
-      {% if loop.last %}
-        <span>{{ step.name }}</span>
-      {% else %}
-        <a href="/departments?months={{ months }}{% for key, value in step.args.items() %}&amp;{{ key }}={{ value }}{% endfor %}">{{ step.name }}</a>
-      {% endif %}
-    {% endfor %}
-  </div>
+  <!-- Split-Screen Grid: Left (Departments) vs Right (Items & Who Requisitioned) -->
+  <div class="departments-split">
 
-  <div class="headline">
-    <div class="big">{{ '{:,.0f}'.format(report.total_net) }} บาท</div>
-    <div class="what">
-      ยอดเบิกสุทธิ {{ months }} เดือน ถึงงวด {{ report.latest[4:6] }}/{{ report.latest[:4] }}
-      {%- if depth %} ของ {{ trail[-1].name }}{% else %} ของทั้งโรงพยาบาล{% endif %}
-      {%- if group %} เฉพาะกลุ่ม{{ groups | selectattr('key', 'equalto', group) | map(attribute='name') | first }}{% endif %}
-      {%- if store %} เฉพาะที่จ่ายจาก{{ store_name(store) }}{% endif %}
+    <!-- ==================== LEFT COLUMN: ข้อมูลหน่วยเบิก ==================== -->
+    <div class="dept-left-pane">
+
+      <!-- Headline Total Card -->
+      <div class="headline-card">
+        {% set shown = groups | rejectattr('net', 'le', 0) | list %}
+        {% set bar_total = shown | sum(attribute='net') %}
+
+        {% if group %}
+          <div style="display:flex; justify-content:space-between; align-items:baseline; flex-wrap:wrap; gap:12px; margin-bottom:8px;">
+            <div>
+              <div class="big" style="color:var(--g-{{ group }});">{{ '{:,.0f}'.format(report.total_net) }} บาท</div>
+              <div class="what">
+                ยอดเบิกเฉพาะกลุ่ม<strong>{{ groups | selectattr('key', 'equalto', group) | map(attribute='name') | first }}</strong>
+                ({{ (report.total_net / bar_total * 100) | round(1) if bar_total > 0 else 0 }}% ของยอดรวมทั้งโรงพยาบาล)
+                · {{ months }} เดือน ถึงงวด {{ report.latest[4:6] }}/{{ report.latest[:4] }}
+              </div>
+            </div>
+            <div style="text-align:right; background:var(--head); padding:8px 14px; border-radius:8px; border:1px solid var(--line);">
+              <div style="font-size:12px; color:var(--muted);">ยอดเบิกรวมทุกหมวด (ทั้ง รพ.)</div>
+              <div style="font-size:20px; font-weight:700; color:var(--ink); font-variant-numeric:tabular-nums;">{{ '{:,.0f}'.format(bar_total) }} บาท</div>
+              <a href="/departments?months={{ months }}{{ here }}{% if store %}&amp;store={{ store }}{% endif %}"
+                 style="font-size:12px; color:var(--link); text-decoration:none; font-weight:600;">
+                ✕ ดูยอดรวมทุกหมวด (1.58 พันล้าน)
+              </a>
+            </div>
+          </div>
+        {% else %}
+          <div class="big">{{ '{:,.0f}'.format(bar_total if bar_total > 0 else report.total_net) }} บาท</div>
+          <div class="what">
+            ยอดเบิกสุทธิรวมทุกหมวด (ยา + พัสดุ + ครุภัณฑ์ + เวชภัณฑ์ + อาหาร) {{ months }} เดือน ถึงงวด {{ report.latest[4:6] }}/{{ report.latest[:4] }}
+            {%- if depth %} ของ {{ trail[-1].name }}{% else %} ของทั้งโรงพยาบาล{% endif %}
+            {%- if store %} (เฉพาะที่จ่ายจาก{{ store_name(store) }}){% endif %}
+          </div>
+        {% endif %}
+
+        {% if bar_total > 0 %}
+          <div class="bar" style="gap:2px;background:transparent">
+            {% for part in shown %}
+              <i data-tip="{{ part.name }}: {{ money(part.net) }} บาท ({{ (part.net / bar_total * 100) | round(1) }}%)"
+                 style="flex:0 0 calc({{ (part.net / bar_total * 100) | round(3) }}% - 2px);min-width:3px;
+                        background:var(--g-{{ part.key or 'other' }});
+                        {{ 'opacity:1; outline:2px solid var(--ink);' if group and part.key == group else ('opacity:0.4;' if group else '') }}"></i>
+            {% endfor %}
+          </div>
+          <div class="legend">
+            {% for part in shown %}
+              <span style="{{ 'font-weight:700; text-decoration:underline;' if group and part.key == group else '' }}">
+                <i class="dot" style="background:var(--g-{{ part.key or 'other' }})"></i>{{ part.name }}
+                <b>{{ '{:,.0f}'.format(part.net) }}</b> ({{ (part.net / bar_total * 100) | round(1) }}%)
+              </span>
+            {% endfor %}
+          </div>
+        {% endif %}
+      </div>
+
+      <!-- Left Header & Fast Client Filter -->
+      <div class="pane-header">
+        <h2>
+          🏢 หน่วยงานเบิก
+          <span class="sub-count">({{ 'กลุ่มงาน' if depth == 0 else ('งาน' if depth == 1 else 'ส่วนย่อย') }})</span>
+        </h2>
+        <span class="sub-count" id="dept-count-display">พบ {{ report.rows | length }} หน่วยงาน</span>
+      </div>
+
+      <div class="search-wrap">
+        <span class="search-icon">🔍</span>
+        <input type="search" id="dept-search-input"
+               placeholder="ค้นหาชื่อ หรือรหัสหน่วยงาน เช่น 210, ห้องผ่าตัด, จ่ายกลาง..."
+               oninput="filterDepartmentList(this.value)">
+        <span class="count-badge" id="dept-filter-count">{{ report.rows | length }} แผนก</span>
+      </div>
+
+      <!-- Department Cards List -->
+      <div class="dept-list" id="dept-card-list">
+        {% set biggest = report.rows[0].net if report.rows and report.rows[0].net > 0 else 1 %}
+        {% for row in report.rows %}
+          {% set row_code = row.path | select | join('-') %}
+          {% set is_active = (target_code == row_code) %}
+          {% set rank_class = 'rank-1' if loop.index == 1 else ('rank-2' if loop.index == 2 else ('rank-3' if loop.index == 3 else 'rank-other')) %}
+
+          <div class="dept-card {{ 'active' if is_active }}"
+               data-dept-name="{{ row.name | lower }}"
+               data-dept-code="{{ row_code | lower }}">
+            <div class="top-row">
+              <span class="rank-badge {{ rank_class }}">#{{ loop.index }}</span>
+              <div class="name-wrap">
+                <a href="/departments?months={{ months }}{{ here }}&amp;selected={{ row_code }}{% if group %}&amp;group={{ group }}{% endif %}{% if store %}&amp;store={{ store }}{% endif %}"
+                   class="dept-name" title="คลิกเพื่อดูของที่เบิกและหน่วยย่อยในฝั่งขวา">
+                  {{ row.name }}
+                </a>
+                <span class="dept-code">รหัส {{ row_code }}</span>
+                {% if is_active %}
+                  <span class="active-indicator">✓ กำลังแสดงรายละเอียด</span>
+                {% endif %}
+              </div>
+
+              {% if depth < deepest - 1 %}
+                <a href="/departments?months={{ months }}&amp;div={{ row.path[0] }}{% if row.path[1] %}&amp;dept={{ row.path[1] }}{% endif %}{% if row.path[2] %}&amp;section={{ row.path[2] }}{% endif %}{% if group %}&amp;group={{ group }}{% endif %}{% if store %}&amp;store={{ store }}{% endif %}"
+                   class="drill-btn" title="คลิกลงลึกไปดูโครงสร้างย่อยของ {{ row.name }}">
+                  เจาะลึก ›
+                </a>
+              {% endif %}
+            </div>
+
+            <!-- Value & Share -->
+            <div class="metrics-row">
+              <span class="net-val">{{ '{:,.0f}'.format(row.net) }} บาท</span>
+              <span class="share-pct">{{ (row.net / report.total_net * 100) | round(1) if report.total_net > 0 else 0 }}%</span>
+            </div>
+
+            <div class="progress-bg">
+              <div class="progress-fill" style="width: {{ (row.net / biggest * 100) | round(1) if row.net > 0 else 0 }}%;"></div>
+            </div>
+
+            <!-- Tags -->
+            <div class="tags-row">
+              <span class="tag-item">📄 {{ '{:,}'.format(row.slips) }} ใบเบิก</span>
+              <span class="tag-item">📦 {{ '{:,}'.format(row.items) }} รายการ</span>
+              <span class="tag-item">🏬 {{ row.stores }} คลังจ่าย</span>
+              {% if row.returned > 0 %}
+                <span class="tag-item" style="color:var(--late);">↩ หักคืน {{ money(row.returned) }}</span>
+              {% endif %}
+              <a href="/departments?months={{ months }}{{ here }}&amp;selected={{ row_code }}{% if group %}&amp;group={{ group }}{% endif %}{% if store %}&amp;store={{ store }}{% endif %}"
+                 style="margin-left:auto; font-size:12px; color:var(--link); text-decoration:none; font-weight:600;">
+                ดูของที่เบิก ➔
+              </a>
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+
     </div>
 
-    {% set shown = groups | rejectattr('net', 'le', 0) | list %}
-    {% set bar_total = shown | sum(attribute='net') %}
-    {% if bar_total > 0 %}
-      <div class="bar" style="gap:2px;background:transparent">
-        {% for part in shown %}
-          <i data-tip="{{ part.name }} {{ money(part.net) }} บาท"
-             style="flex:0 0 calc({{ (part.net / bar_total * 100) | round(3) }}% - 2px);min-width:2px;
-                    background:var(--g-{{ part.key or 'other' }})"></i>
-        {% endfor %}
-      </div>
-      <div class="legend">
-        {% for part in shown %}
-          <span><i class="dot" style="background:var(--g-{{ part.key or 'other' }})"></i>{{ part.name }}
-            <b>{{ '{:,.0f}'.format(part.net) }}</b> ({{ (part.net / bar_total * 100) | round(1) }}%)</span>
-        {% endfor %}
-      </div>
-    {% endif %}
-  </div>
 
-  {%- set here -%}
-    {% if parent[0] %}&amp;div={{ parent[0] }}{% endif %}{% if parent[1] %}&amp;dept={{ parent[1] }}{% endif %}{% if parent[2] %}&amp;section={{ parent[2] }}{% endif %}
-  {%- endset -%}
+    <!-- ==================== RIGHT COLUMN: ของที่เบิก และ ใครเบิกมากที่สุด ==================== -->
+    <div class="dept-right-pane">
 
-  <div class="tabs">
-    <span class="label">ช่วงเวลา</span>
-    {% for choice in month_choices %}
-      <a class="{{ 'on' if choice == months }}"
-         href="/departments?months={{ choice }}{{ here }}{% if group %}&amp;group={{ group }}{% endif %}">{{ choice }} เดือน</a>
-    {% endfor %}
-  </div>
-
-  <div class="tabs">
-    <span class="label">กลุ่มของ</span>
-    <a class="{{ 'on' if not group }}" href="/departments?months={{ months }}{{ here }}">ทุกกลุ่ม</a>
-    {% for part in groups %}
-      {% if part.key %}
-        <a class="{{ 'on' if part.key == group }}"
-           href="/departments?months={{ months }}{{ here }}&amp;group={{ part.key }}">{{ part.name }}</a>
-      {% endif %}
-    {% endfor %}
-  </div>
-
-  {% if report.rows %}
-  <table>
-    <thead>
-      <tr>
-        <th>{{ 'กลุ่มงาน' if depth == 0 else ('งาน' if depth == 1 else 'ส่วนย่อย') }}
-          ({{ report.rows | length }})</th>
-        <th class="num">ยอดเบิกสุทธิ (บาท)</th>
-        <th class="num">สัดส่วน</th>
-        <th class="num">ใบเบิก</th>
-        <th class="num">รายการ</th>
-        <th class="num">คลังที่จ่าย</th>
-      </tr>
-    </thead>
-    <tbody>
-    {% set biggest = report.rows[0].net if report.rows and report.rows[0].net > 0 else 1 %}
-    {% for row in report.rows %}
-      <tr>
-        <td>
-          {% if depth < deepest - 1 %}
-            <a href="/departments?months={{ months }}&amp;div={{ row.path[0] }}{% if row.path[1] %}&amp;dept={{ row.path[1] }}{% endif %}{% if row.path[2] %}&amp;section={{ row.path[2] }}{% endif %}{% if group %}&amp;group={{ group }}{% endif %}">{{ row.name }}</a>
-          {% else %}
-            {{ row.name }}
+      <!-- Target Header Hero Card -->
+      <div class="target-hero-card">
+        <div class="hero-title-row">
+          <h2 class="hero-title">
+            {{ target_name }}
+          </h2>
+          {% if target_code %}
+            <span class="hero-code">รหัส {{ target_code }}</span>
           {% endif %}
-          <br><span class="code">รหัส {{ row.path | select | join('-') }}</span>
-          {% if row.returned > 0 %}
-            <span class="code">· หักคืนแล้ว {{ '{:,.0f}'.format(row.returned) }}</span>
+        </div>
+        <div class="hero-path">
+          📍 {{ target_full_name }}
+          {% if target_code and target_path != () %}
+            · <a href="/departments?months={{ months }}&amp;selected=all{% if group %}&amp;group={{ group }}{% endif %}{% if store %}&amp;store={{ store }}{% endif %}" style="color:var(--link); font-size:12.5px;">(ดูสรุปทั้งโรงพยาบาล)</a>
           {% endif %}
-        </td>
-        <td class="num">{{ '{:,.0f}'.format(row.net) }}</td>
-        <td class="num">
-          {{ (row.net / report.total_net * 100) | round(1) if report.total_net > 0 else 0 }}%
-          <span class="share" style="width:{{ (row.net / biggest * 100) | round(1) if row.net > 0 else 0 }}%"></span>
-        </td>
-        <td class="num">{{ '{:,}'.format(row.slips) }}</td>
-        <td class="num">{{ '{:,}'.format(row.items) }}</td>
-        <td class="num">{{ row.stores }}</td>
-      </tr>
-    {% endfor %}
-    </tbody>
-  </table>
-  {% endif %}
+        </div>
 
-  {% if items %}
-    <h2>รายการที่{{ trail[-1].name }}เบิกมากที่สุด</h2>
-    <table>
-      <thead>
-        <tr>
-          <th>รายการ</th>
-          <th>กลุ่ม</th>
-          <th class="num">จำนวน</th>
-          <th class="num">มูลค่าสุทธิ (บาท)</th>
-          <th class="num">ใบเบิก</th>
-        </tr>
-      </thead>
-      <tbody>
-      {% for item in items %}
-        <tr>
-          <td>{{ item.name or '(ไม่มีชื่อในทะเบียน)' }}<br>
-            <span class="code">รหัส {{ item.stock_code }}</span></td>
-          <td>{{ item.group or '—' }}</td>
-          <td class="num">{{ '{:,.0f}'.format(item.qty) }} {{ item.unit }}</td>
-          <td class="num">{{ '{:,.0f}'.format(item.net) }}</td>
-          <td class="num">{{ '{:,}'.format(item.slips) }}</td>
-        </tr>
-      {% endfor %}
-      </tbody>
-    </table>
-  {% endif %}
+        <!-- 4 KPI Blocks -->
+        <div class="hero-kpis">
+          <div class="hero-kpi-box">
+            <div class="kpi-label">ยอดเบิกสุทธิ</div>
+            <div class="kpi-value" style="color:var(--link);">{{ money(target_summary.net) }}</div>
+          </div>
+          <div class="hero-kpi-box">
+            <div class="kpi-label">สัดส่วน</div>
+            <div class="kpi-value">
+              {{ (target_summary.net / report.total_net * 100) | round(1) if report.total_net > 0 else 0 }}%
+            </div>
+          </div>
+          <div class="hero-kpi-box">
+            <div class="kpi-label">จำนวนใบเบิก</div>
+            <div class="kpi-value">{{ '{:,}'.format(target_summary.slips) }} ใบ</div>
+          </div>
+          <div class="hero-kpi-box">
+            <div class="kpi-label">รายการที่เบิก</div>
+            <div class="kpi-value">{{ '{:,}'.format(target_summary.items) }} ชนิด</div>
+          </div>
+        </div>
 
-  <div class="note">
-    <b>ตัวเลขนี้มาจากไหน</b> — นับเฉพาะเอกสาร “จ่ายให้หน่วยเบิก” (ชนิด 32) ที่ออกจากคลังจริง
-    หักใบคืนแล้ว · การโอนระหว่างคลังไม่นับ เพราะของยังอยู่ในโรงพยาบาลและจะถูกเบิกอีกทอดที่ปลายทาง
-    · รหัสหน่วยงานอยู่บนใบเบิกทุกใบ ชื่อหน่วยงานมาจาก
-    <code>{{ name_source or 'ยังไม่ได้สร้างตารางชื่อ' }}</code><br>
-    <b>ข้อควรระวังก่อนตีความ</b> — หน่วยงานที่ <i>เบิก</i> ไม่ใช่หน่วยงานที่ <i>ใช้</i> เสมอไป
-    ห้องยาเบิกแทนหอผู้ป่วย กลุ่มงานเภสัชกรรมจึงมียอดสูงที่สุดโดยธรรมชาติ ·
-    ของที่ถึงหอผู้ป่วยแล้ว ระบบถือว่าใช้หมดทันที ซึ่งไม่จริง ·
-    มูลค่าคือต้นทุนที่ระบบบันทึกตอนตัดจ่าย ไม่ใช่ราคาที่เรียกเก็บผู้ป่วย<br>
-    <b>ยังไม่รู้</b> — บางคลังบันทึกเดือนละใบ (ห้องผ่าตัดใบหนึ่งมีได้ถึง 1,468 บรรทัด)
-    จำนวน “ใบเบิก” จึงเทียบข้ามคลังตรง ๆ ไม่ได้ ·
-    ชื่อหน่วยงานใน <code>SSBHOSPITAL</code> กับ <code>SSBSTOCK</code> ไม่ตรงกันบางรหัส
-    ที่นี่ยึดฐานเดียวกับใบเบิก ยังไม่ได้ให้เจ้าหน้าที่ยืนยัน ·
-    <b>กลุ่ม “ครุภัณฑ์” แยกจากหมวด 7 ตามหลักฐานราคาต่อหน่วยและหน่วยนับ
-    ยังไม่ได้ให้เจ้าหน้าที่พัสดุยืนยันว่าตรงกับที่โรงพยาบาลใช้จริง</b>
+        <!-- Department's Own Category Breakdown Bar -->
+        {% set tg_shown = target_groups | rejectattr('net', 'le', 0) | list %}
+        {% set tg_total = tg_shown | sum(attribute='net') %}
+        {% if tg_total > 0 %}
+          <div style="font-size:12.5px; color:var(--muted); margin-bottom:4px; display:flex; justify-content:space-between;">
+            <span>การกระจายตามหมวดของ {{ target_name }}</span>
+            <span>รวม {{ money(tg_total) }} บาท</span>
+          </div>
+          <div class="bar" style="gap:2px;background:transparent;margin:4px 0 8px;">
+            {% for part in tg_shown %}
+              <i data-tip="{{ part.name }}: {{ money(part.net) }} บาท ({{ (part.net / tg_total * 100) | round(1) }}%)"
+                 style="flex:0 0 calc({{ (part.net / tg_total * 100) | round(3) }}% - 2px);min-width:3px;
+                        background:var(--g-{{ part.key or 'other' }})"></i>
+            {% endfor %}
+          </div>
+          <div class="legend" style="font-size:12px;">
+            {% for part in tg_shown %}
+              <span><i class="dot" style="background:var(--g-{{ part.key or 'other' }})"></i>{{ part.name }}
+                <b>{{ money(part.net) }}</b> ({{ (part.net / tg_total * 100) | round(1) }}%)</span>
+            {% endfor %}
+          </div>
+        {% endif %}
+      </div>
+
+
+      <!-- CARD 1: ใครเบิกมากที่สุด (Top Requisitioners) -->
+      <div class="content-card">
+        <h3>
+          <span>👤 ใครเบิกมากที่สุดใน {{ target_name }}</span>
+          <span class="sub-count" style="font-size:12px; font-weight:normal;">(10 อันดับหน่วยเบิกย่อยสูงสุด)</span>
+        </h3>
+        <div class="card-subtitle">
+          แสดงหน่วยงานย่อย/หอผู้ป่วย ภายใต้ {{ target_name }} ที่มียอดเบิกพัสดุและยาสูงสุด
+        </div>
+
+        {% if top_reqs %}
+          {% set max_req = top_reqs[0].net if top_reqs and top_reqs[0].net > 0 else 1 %}
+          <table class="pane-table">
+            <thead>
+              <tr>
+                <th style="width:40px;">อันดับ</th>
+                <th>หน่วยงานย่อย / หอผู้ป่วย</th>
+                <th class="num">ยอดสุทธิ (บาท)</th>
+                <th style="width:70px;" class="num">สัดส่วน</th>
+                <th class="num">ใบเบิก</th>
+                <th class="num">รายการ</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for req in top_reqs %}
+                {% set req_rank = 'rank-1' if loop.index == 1 else ('rank-2' if loop.index == 2 else ('rank-3' if loop.index == 3 else 'rank-other')) %}
+                <tr>
+                  <td style="text-align:center;">
+                    <span class="rank-badge {{ req_rank }}" style="width:22px;height:22px;font-size:11px;">{{ loop.index }}</span>
+                  </td>
+                  <td>
+                    <a href="/departments?months={{ months }}{{ here }}&amp;selected={{ req.code }}{% if group %}&amp;group={{ group }}{% endif %}{% if store %}&amp;store={{ store }}{% endif %}"
+                       style="font-weight:600; color:var(--ink); text-decoration:none;"
+                       title="คลิกเพื่อดูรายการของที่หน่วยนี้เบิก">
+                      {{ req.name }}
+                    </a>
+                    <br>
+                    <span class="code">รหัส {{ req.code }}</span>
+                  </td>
+                  <td class="num" style="font-weight:600;">{{ '{:,.0f}'.format(req.net) }}</td>
+                  <td class="num">
+                    <div style="font-size:11.5px; color:var(--muted); margin-bottom:2px;">
+                      {{ (req.net / target_summary.net * 100) | round(1) if target_summary.net > 0 else 0 }}%
+                    </div>
+                    <div class="progress-bg" style="height:3px; margin:0;">
+                      <div class="progress-fill" style="width:{{ (req.net / max_req * 100) | round(1) if req.net > 0 else 0 }}%;"></div>
+                    </div>
+                  </td>
+                  <td class="num">{{ '{:,}'.format(req.slips) }}</td>
+                  <td class="num">{{ '{:,}'.format(req.items) }}</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        {% else %}
+          <div class="empty-state">
+            หน่วยงานนี้เป็นระดับย่อยสุดแล้ว หรือไม่มีการกระจายยอดไปยังหน่วยงานย่อยอื่น
+          </div>
+        {% endif %}
+      </div>
+
+
+      <!-- CARD 2: ข้อมูลของที่เบิก (Top Requisitioned Items) -->
+      <div class="content-card">
+        <h3>
+          <span>📦 ข้อมูลของที่เบิก ({{ items | length }} รายการสูงสุด)</span>
+          <span class="sub-count" style="font-size:12px; font-weight:normal;" id="item-count-display">แสดง {{ items | length }} รายการ</span>
+        </h3>
+        <div class="card-subtitle">
+          รายการยา เวชภัณฑ์ พัสดุ ครุภัณฑ์ ที่ {{ target_name }} เบิกมูลค่าสูงสุด
+        </div>
+
+        <div class="search-wrap" style="margin-bottom:12px;">
+          <span class="search-icon">🔍</span>
+          <input type="search" id="item-search-input"
+                 placeholder="ค้นหาชื่อหรือรหัสยา / พัสดุ เช่น 70101, ข้อเข่า, ถุงมือ..."
+                 oninput="filterItemList(this.value)">
+          <span class="count-badge" id="item-filter-count">{{ items | length }} รายการ</span>
+        </div>
+
+        {% if items %}
+          <table class="pane-table" id="items-table">
+            <thead>
+              <tr>
+                <th style="width:36px;">#</th>
+                <th>รายการยา / พัสดุ</th>
+                <th>หมวด</th>
+                <th class="num">จำนวนที่เบิก</th>
+                <th class="num">มูลค่าสุทธิ (บาท)</th>
+                <th class="num">ใบเบิก</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for item in items %}
+                {% set cat_key = 'drug' if 'ยา' in item.group else ('medical_supply' if 'เวช' in item.group else ('equipment' if 'ครุภัณฑ์' in item.group else ('material' if 'พัสดุ' in item.group else ('food' if 'อาหาร' in item.group else 'other')))) %}
+                <tr class="item-row"
+                    data-item-name="{{ item.name | lower }}"
+                    data-item-code="{{ item.stock_code | lower }}"
+                    data-item-group="{{ item.group | lower }}">
+                  <td style="color:var(--muted); font-size:12px; text-align:center;">{{ loop.index }}</td>
+                  <td>
+                    <div class="item-name">{{ item.name or '(ไม่มีชื่อในทะเบียน)' }}</div>
+                    <a href="/items/{{ item.stock_code }}" class="stock-code-link" target="_blank" title="คลิกดูประวัติการเบิกและยอดคงคลังของสินค้านี้">
+                      {{ item.stock_code }} ↗
+                    </a>
+                  </td>
+                  <td>
+                    <span class="cat-badge cat-{{ cat_key }}">{{ item.group or '—' }}</span>
+                  </td>
+                  <td class="num">{{ '{:,.0f}'.format(item.qty) }} <span style="font-size:11.5px;color:var(--muted);">{{ item.unit }}</span></td>
+                  <td class="num" style="font-weight:600; color:var(--ink);">{{ '{:,.0f}'.format(item.net) }}</td>
+                  <td class="num">{{ '{:,}'.format(item.slips) }}</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        {% else %}
+          <div class="empty-state">
+            ไม่พบรายการเบิกของในหน่วยงานนี้ตามเงื่อนไขที่เลือก
+          </div>
+        {% endif %}
+      </div>
+
+    </div>
+
   </div>
 
+  <!-- Methodology & Caveats Note -->
+  <details class="method-note">
+    <summary>📌 คำอธิบายที่มาของข้อมูล และข้อจำกัดทางสถิติ (คลิกเพื่อดูรายละเอียด)</summary>
+    <div>
+      <b>ตัวเลขนี้มาจากไหน</b> — นับเฉพาะเอกสาร “จ่ายให้หน่วยเบิก” (ชนิด 32) ที่ออกจากคลังจริง หักใบคืนแล้ว
+      · การโอนระหว่างคลังไม่นับ เพราะของยังอยู่ในโรงพยาบาลและจะถูกเบิกอีกทอดที่ปลายทาง
+      · รหัสหน่วยงานอยู่บนใบเบิกทุกใบ ชื่อหน่วยงานมาจาก <code>{{ name_source or 'ยังไม่ได้สร้างตารางชื่อ' }}</code><br>
+      <b>ข้อควรระวังก่อนตีความ</b> — หน่วยงานที่ <i>เบิก</i> ไม่ใช่หน่วยงานที่ <i>ใช้</i> เสมอไป
+      เช่น ห้องยาเบิกแทนหอผู้ป่วย กลุ่มงานเภสัชกรรมจึงมียอดสูงที่สุดโดยธรรมชาติ
+      · ของที่ถึงหอผู้ป่วยแล้ว ระบบถือว่าใช้หมดทันที ซึ่งในทางปฏิบัติอาจยังเหลือเป็นสต็อกย่อย
+      · มูลค่าคือต้นทุนที่ระบบบันทึกตอนตัดจ่าย ไม่ใช่ราคาที่เรียกเก็บผู้ป่วย<br>
+      <b>จำนวนใบเบิก</b> — บางคลังบันทึกเดือนละใบ (เช่น ห้องผ่าตัดใบหนึ่งมีได้ถึงพันรายการ) จำนวนใบเบิกจึงใช้เปรียบเทียบในเชิงปริมาณธุรกรรม ไม่ใช่ชี้วัดปริมาณของโดยตรง
+    </div>
+  </details>
+
   {% endif %}
+
+  <!-- Instant Search Filter Scripts -->
+  <script>
+    function filterDepartmentList(query) {
+      query = (query || '').trim().toLowerCase();
+      const list = document.getElementById('dept-card-list');
+      if (!list) return;
+      const cards = list.getElementsByClassName('dept-card');
+      let visible = 0;
+      for (let card of cards) {
+        const name = card.getAttribute('data-dept-name') || '';
+        const code = card.getAttribute('data-dept-code') || '';
+        if (!query || name.includes(query) || code.includes(query)) {
+          card.style.display = '';
+          visible++;
+        } else {
+          card.style.display = 'none';
+        }
+      }
+      const countDisplay = document.getElementById('dept-count-display');
+      const badgeCount = document.getElementById('dept-filter-count');
+      if (countDisplay) countDisplay.textContent = 'พบ ' + visible + ' หน่วยงาน';
+      if (badgeCount) badgeCount.textContent = visible + ' แผนก';
+    }
+
+    function filterItemList(query) {
+      query = (query || '').trim().toLowerCase();
+      const table = document.getElementById('items-table');
+      if (!table) return;
+      const rows = table.getElementsByClassName('item-row');
+      let visible = 0;
+      for (let row of rows) {
+        const name = row.getAttribute('data-item-name') || '';
+        const code = row.getAttribute('data-item-code') || '';
+        const group = row.getAttribute('data-item-group') || '';
+        if (!query || name.includes(query) || code.includes(query) || group.includes(query)) {
+          row.style.display = '';
+          visible++;
+        } else {
+          row.style.display = 'none';
+        }
+      }
+      const countDisplay = document.getElementById('item-count-display');
+      const badgeCount = document.getElementById('item-filter-count');
+      if (countDisplay) countDisplay.textContent = 'แสดง ' + visible + ' รายการ';
+      if (badgeCount) badgeCount.textContent = visible + ' รายการ';
+    }
+  </script>
+
 {% endblock %}

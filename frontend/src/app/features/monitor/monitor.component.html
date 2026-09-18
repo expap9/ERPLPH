@@ -509,6 +509,347 @@
         </details>
       </section>
 
+      <!-- ================= REQUISITION LEADERS DASHBOARD ================= -->
+      <section class="leaders-dash-section">
+        <!-- Hero Banner -->
+        <div class="leaders-hero-banner">
+          <div class="banner-title-line">
+            <h2>🏆 Dashboard ใครเบิกอะไรเยอะบ้าง (Requisition Leaders)</h2>
+            <div class="period-pills">
+              <span class="period-pill">รอบข้อมูล {{ leadersMonths }} เดือน</span>
+            </div>
+          </div>
+          <p class="banner-desc">
+            สรุปจัดอันดับ TOP 5 ยาและหน่วยงานที่เบิกจาก 3 ห้องยาหลัก (IPD, OPD, CHEMO) และ TOP 5 พัสดุสิ้นเปลืองยอดนิยม (กระดาษ, หมึกพิมพ์, พัสดุทั่วไป) พร้อมยอดซื้อ อัตราเฉลี่ย ยอดสะสมปีงบ และหน่วยงานที่เบิกสูงสุด
+          </p>
+        </div>
+
+        @if (loadingLeaders) {
+          <div class="leaders-loading-box">กำลังประมวลผลข้อมูลใครเบิกอะไรเยอะบ้าง...</div>
+        } @else if (leadersData) {
+          <!-- SECTION 1: 💊 ยา TOP 5 แต่ละห้องยาหลัก (IPD, OPD, CHEMO) -->
+          <div class="leaders-group-wrapper">
+            <div class="leaders-group-header">
+              <div>
+                <h3>💊 ยา TOP 5 และหน่วยงานที่เบิกสูงสุด (3 ห้องยาหลัก)</h3>
+                <p>ห้องยาผู้ป่วยใน (IPD) · ห้องยาผู้ป่วยนอก (OPD) · ห้องเตรียมยาเคมีบำบัด (CHEMO)</p>
+              </div>
+            </div>
+
+            <!-- 3 Horizontal Cards for Drugs: IPD, OPD, CHEMO -->
+            @for (dKey of ['ipd', 'opd', 'chemo']; track dKey) {
+              @if (leadersData.drugs?.[dKey]; as drugSection) {
+                <article class="leaders-horizontal-card border-blue">
+                  <div class="card-top-bar">
+                    <div class="card-title-block">
+                      <span class="card-icon">{{ drugSection.icon }}</span>
+                      <div>
+                        <h4>{{ drugSection.title }}</h4>
+                        <span class="card-subtitle">{{ drugSection.desc }}</span>
+                      </div>
+                    </div>
+                    <span class="card-store-badge blue-badge">คลัง {{ drugSection.store_code }}</span>
+                  </div>
+
+                  <!-- Financial & Consumption KPI Strip -->
+                  @if (drugSection.metrics; as m) {
+                    <div class="leaders-kpi-strip">
+                      <div class="kpi-mini-box">
+                        <span class="mini-label">📥 รับโอนเข้าคลัง</span>
+                        <strong class="mini-val">{{ money(m.trans_in_val) }}</strong>
+                        <small class="mini-sub">{{ number(m.trans_in_slips) }} ใบรับโอน</small>
+                      </div>
+                      <div class="kpi-mini-box">
+                        <span class="mini-label">📤 ยอดเบิกจ่ายรวม</span>
+                        <strong class="mini-val text-cyan">{{ money(m.issue_val) }}</strong>
+                        <small class="mini-sub">{{ number(m.issue_slips) }} ใบเบิก ({{ number(m.issue_items) }} รายการ)</small>
+                      </div>
+                      <div class="kpi-mini-box highlight-rate">
+                        <span class="mini-label">📊 Rate เฉลี่ย/เดือน</span>
+                        <strong class="mini-val text-amber">{{ money(m.monthly_rate) }}</strong>
+                        <small class="mini-sub">อัตราจ่ายเฉลี่ยต่อเดือน</small>
+                      </div>
+                      <div class="kpi-mini-box">
+                        <span class="mini-label">📅 สะสมปีงบ (ตั้งแต่ 1 ต.ค.)</span>
+                        <strong class="mini-val text-indigo">{{ money(m.fy_issue_val) }}</strong>
+                        <small class="mini-sub">{{ number(m.fy_issue_slips) }} ใบเบิกในปีงบ</small>
+                      </div>
+                      <div class="kpi-mini-box">
+                        <span class="mini-label">📦 คงคลังปัจจุบัน</span>
+                        <strong class="mini-val">{{ money(m.stock_val) }}</strong>
+                        <small class="mini-sub">MOS: <strong class="mos-tag">{{ m.mos }} เดือน</strong> ({{ number(m.stock_items) }} รายการ)</small>
+                      </div>
+                    </div>
+                  }
+
+                  <!-- 2 Wide Side-by-Side Tables -->
+                  <div class="leaders-tables-2col">
+                    <!-- Left: TOP 5 รายการยาที่เบิกสูงสุด -->
+                    <div class="sub-table-panel">
+                      <div class="sub-table-header">
+                        <span class="sub-table-title">💉 TOP 5 ยาที่มูลค่าเบิกสูงสุด</span>
+                        <small class="sub-table-note">เรียงตามมูลค่าเบิกจ่าย</small>
+                      </div>
+                      <div class="table-wrap">
+                        <table class="leaders-table">
+                          <thead>
+                            <tr>
+                              <th style="width: 32px; text-align: center;">#</th>
+                              <th>ชื่อยาและรหัส</th>
+                              <th class="number" style="width: 110px;">จำนวนเบิก</th>
+                              <th class="number" style="width: 120px;">มูลค่า (บาท)</th>
+                              <th class="number" style="width: 65px;">สัดส่วน</th>
+                              <th style="width: 45px; text-align: center;">ดู</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            @for (item of drugSection.top_items; track item.stock_code; let idx = $index) {
+                              <tr>
+                                <td style="text-align: center; font-weight: 800; font-size: 13px;">{{ getMedal(idx) }}</td>
+                                <td>
+                                  <strong class="item-name" [title]="item.name">{{ item.name }}</strong><br>
+                                  <a [routerLink]="['/drugs', item.stock_code]" class="stock-code-link" title="เปิดดูประวัติ Lot และการสั่งซื้อ">
+                                    {{ item.stock_code }} ↗
+                                  </a>
+                                </td>
+                                <td class="number">
+                                  <strong>{{ number(item.qty) }}</strong> <small class="text-muted">{{ item.unit }}</small>
+                                </td>
+                                <td class="number text-cyan font-bold">{{ money(item.value) }}</td>
+                                <td class="number"><span class="pct-pill">{{ item.percent }}%</span></td>
+                                <td style="text-align: center;">
+                                  <a [routerLink]="['/drugs', item.stock_code]" class="btn-icon-view" title="ดูรายละเอียด">🔍</a>
+                                </td>
+                              </tr>
+                            } @empty {
+                              <tr><td colspan="6" class="empty">ไม่พบข้อมูล</td></tr>
+                            }
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+
+                    <!-- Right: TOP 5 แผนก/วอร์ดที่เบิกสูงสุด (ใครเบิกเยอะ) -->
+                    <div class="sub-table-panel">
+                      <div class="sub-table-header">
+                        <span class="sub-table-title">🏢 TOP 5 ใครเบิกเยอะ (แผนก/วอร์ดที่เบิกสูงสุด)</span>
+                        <small class="sub-table-note">เรียงตามมูลค่าเบิกจ่าย</small>
+                      </div>
+                      <div class="table-wrap">
+                        <table class="leaders-table">
+                          <thead>
+                            <tr>
+                              <th style="width: 32px; text-align: center;">#</th>
+                              <th>ชื่อแผนก / วอร์ด</th>
+                              <th class="number" style="width: 80px;">ใบเบิก</th>
+                              <th class="number" style="width: 120px;">มูลค่ารวม (บาท)</th>
+                              <th class="number" style="width: 65px;">สัดส่วน</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            @for (dept of drugSection.top_depts; track dept.dept_code; let idx = $index) {
+                              <tr>
+                                <td style="text-align: center; font-weight: 800; font-size: 13px;">{{ getMedal(idx) }}</td>
+                                <td>
+                                  <div class="dept-cell-header">
+                                    <strong class="dept-name" [title]="dept.name">{{ dept.name }}</strong>
+                                    <span class="dept-code-tag">{{ dept.dept_code }}</span>
+                                    <button type="button" class="btn-breakdown-link" (click)="openDeptBreakdown(dept, dKey, drugSection.title)" title="คลิกดูรายการทั้งหมดที่แผนกนี้เบิก">
+                                      🔍 ดูทั้งหมด {{ dept.items_count || dept.top_items?.length }} รายการ
+                                    </button>
+                                  </div>
+                                  @if (dept.top_items && dept.top_items.length > 0) {
+                                    <div class="dept-items-ribbon">
+                                      <span class="ribbon-label">📦 ยาเบิกหลัก:</span>
+                                      @for (item of dept.top_items; track item.stock_code) {
+                                        <span class="dept-item-chip" [title]="item.stock_code + ' - เบิก ' + number(item.qty) + ' ' + item.unit + ' (' + money(item.value) + ')'">
+                                          <span class="chip-name">{{ item.name }}</span>
+                                          <span class="chip-val">{{ money(item.value) }}</span>
+                                        </span>
+                                      }
+                                    </div>
+                                  }
+                                </td>
+                                <td class="number">{{ number(dept.slips) }} ใบ</td>
+                                <td class="number text-emerald font-bold">{{ money(dept.value) }}</td>
+                                <td class="number"><span class="pct-pill green-pct">{{ dept.percent }}%</span></td>
+                              </tr>
+                            } @empty {
+                              <tr><td colspan="5" class="empty">ไม่พบข้อมูล</td></tr>
+                            }
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  </div>
+                </article>
+              }
+            }
+          </div>
+
+          <!-- SECTION 2: 📦 พัสดุสิ้นเปลือง TOP 5 (กระดาษ, หมึกพิมพ์, พัสดุทั่วไป) -->
+          <div class="leaders-group-wrapper" style="margin-top: 32px;">
+            <div class="leaders-group-header emerald-accent">
+              <div>
+                <h3>📦 พัสดุสิ้นเปลือง TOP 5 และหน่วยงานที่เบิกสูงสุด</h3>
+                <p>กระดาษและแบบพิมพ์ · หมึกพิมพ์และริบบอน · พัสดุสิ้นเปลืองทั่วไป พร้อมข้อมูลจัดซื้อและใครเบิกเยอะ</p>
+              </div>
+              <span class="pill ok" style="font-size: 12px; background: rgba(16,185,129,0.12); color: #059669; border-color: rgba(16,185,129,0.25);">คลังพัสดุ (คลัง 1)</span>
+            </div>
+
+            <!-- 3 Horizontal Cards for Supplies: Paper, Toner, Consumables -->
+            @for (sKey of ['paper', 'toner', 'consumables']; track sKey) {
+              @if (leadersData.supplies?.[sKey]; as supplySection) {
+                <article class="leaders-horizontal-card border-emerald">
+                  <div class="card-top-bar">
+                    <div class="card-title-block">
+                      <span class="card-icon">{{ supplySection.icon }}</span>
+                      <div>
+                        <h4>{{ supplySection.title }}</h4>
+                        <span class="card-subtitle">{{ supplySection.desc }}</span>
+                      </div>
+                    </div>
+                    <span class="card-store-badge emerald-badge">คลังพัสดุ 1</span>
+                  </div>
+
+                  <!-- Financial & Consumption KPI Strip -->
+                  @if (supplySection.metrics; as m) {
+                    <div class="leaders-kpi-strip">
+                      <div class="kpi-mini-box">
+                        <span class="mini-label">🛒 ซื้อมาเท่าไหร่ (รับเข้า)</span>
+                        <strong class="mini-val">{{ money(m.rcv_val) }}</strong>
+                        <small class="mini-sub">{{ number(m.rcv_docs) }} ใบรับสินค้า</small>
+                      </div>
+                      <div class="kpi-mini-box">
+                        <span class="mini-label">📤 ยอดเบิกจ่ายรวม</span>
+                        <strong class="mini-val text-cyan">{{ money(m.issue_val) }}</strong>
+                        <small class="mini-sub">{{ number(m.issue_slips) }} ใบเบิก ({{ number(m.issue_items) }} รายการ)</small>
+                      </div>
+                      <div class="kpi-mini-box highlight-rate">
+                        <span class="mini-label">📊 Rate เฉลี่ย/เดือน</span>
+                        <strong class="mini-val text-amber">{{ money(m.monthly_rate) }}</strong>
+                        <small class="mini-sub">อัตราใช้เฉลี่ยต่อเดือน</small>
+                      </div>
+                      <div class="kpi-mini-box">
+                        <span class="mini-label">📅 สะสมปีงบ (ตั้งแต่ 1 ต.ค.)</span>
+                        <strong class="mini-val text-indigo">{{ money(m.fy_issue_val) }}</strong>
+                        <small class="mini-sub">{{ number(m.fy_issue_slips) }} ใบเบิกในปีงบ</small>
+                      </div>
+                      <div class="kpi-mini-box">
+                        <span class="mini-label">📦 คงคลังปัจจุบัน</span>
+                        <strong class="mini-val">{{ money(m.stock_val) }}</strong>
+                        <small class="mini-sub">MOS: <strong class="mos-tag">{{ m.mos }} เดือน</strong> ({{ number(m.stock_items) }} รายการ)</small>
+                      </div>
+                    </div>
+                  }
+
+                  <!-- 2 Wide Side-by-Side Tables -->
+                  <div class="leaders-tables-2col">
+                    <!-- Left: TOP 5 รายการพัสดุที่เบิกสูงสุด -->
+                    <div class="sub-table-panel">
+                      <div class="sub-table-header">
+                        <span class="sub-table-title">📋 TOP 5 รายการที่มีการเบิกสูงสุด</span>
+                        <small class="sub-table-note">เรียงตามมูลค่าเบิกจ่าย</small>
+                      </div>
+                      <div class="table-wrap">
+                        <table class="leaders-table">
+                          <thead>
+                            <tr>
+                              <th style="width: 32px; text-align: center;">#</th>
+                              <th>รายการพัสดุและรหัส</th>
+                              <th class="number" style="width: 110px;">จำนวนเบิก</th>
+                              <th class="number" style="width: 120px;">มูลค่า (บาท)</th>
+                              <th class="number" style="width: 65px;">สัดส่วน</th>
+                              <th style="width: 45px; text-align: center;">ดู</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            @for (item of supplySection.top_items; track item.stock_code; let idx = $index) {
+                              <tr>
+                                <td style="text-align: center; font-weight: 800; font-size: 13px;">{{ getMedal(idx) }}</td>
+                                <td>
+                                  <strong class="item-name" [title]="item.name">{{ item.name }}</strong><br>
+                                  <a [routerLink]="['/drugs', item.stock_code]" class="stock-code-link" title="เปิดดูรายละเอียด">
+                                    {{ item.stock_code }} ↗
+                                  </a>
+                                </td>
+                                <td class="number">
+                                  <strong>{{ number(item.qty) }}</strong> <small class="text-muted">{{ item.unit }}</small>
+                                </td>
+                                <td class="number text-cyan font-bold">{{ money(item.value) }}</td>
+                                <td class="number"><span class="pct-pill">{{ item.percent }}%</span></td>
+                                <td style="text-align: center;">
+                                  <a [routerLink]="['/drugs', item.stock_code]" class="btn-icon-view" title="ดูรายละเอียด">🔍</a>
+                                </td>
+                              </tr>
+                            } @empty {
+                              <tr><td colspan="6" class="empty">ไม่พบข้อมูล</td></tr>
+                            }
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+
+                    <!-- Right: TOP 5 ใครเบิกเยอะ (หน่วยงานที่เบิกสูงสุด) -->
+                    <div class="sub-table-panel">
+                      <div class="sub-table-header">
+                        <span class="sub-table-title">🏢 TOP 5 ใครเบิกเยอะ (หน่วยงานที่เบิกสูงสุด)</span>
+                        <small class="sub-table-note">เรียงตามมูลค่าเบิกจ่าย</small>
+                      </div>
+                      <div class="table-wrap">
+                        <table class="leaders-table">
+                          <thead>
+                            <tr>
+                              <th style="width: 32px; text-align: center;">#</th>
+                              <th>ชื่อหน่วยงาน</th>
+                              <th class="number" style="width: 80px;">ใบเบิก</th>
+                              <th class="number" style="width: 120px;">มูลค่ารวม (บาท)</th>
+                              <th class="number" style="width: 65px;">สัดส่วน</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            @for (dept of supplySection.top_depts; track dept.dept_code; let idx = $index) {
+                              <tr>
+                                <td style="text-align: center; font-weight: 800; font-size: 13px;">{{ getMedal(idx) }}</td>
+                                <td>
+                                  <div class="dept-cell-header">
+                                    <strong class="dept-name" [title]="dept.name">{{ dept.name }}</strong>
+                                    <span class="dept-code-tag">{{ dept.dept_code }}</span>
+                                    <button type="button" class="btn-breakdown-link" (click)="openDeptBreakdown(dept, sKey, supplySection.title)" title="คลิกดูรายการทั้งหมดที่หน่วยงานนี้เบิก">
+                                      🔍 ดูทั้งหมด {{ dept.items_count || dept.top_items?.length }} รายการ
+                                    </button>
+                                  </div>
+                                  @if (dept.top_items && dept.top_items.length > 0) {
+                                    <div class="dept-items-ribbon">
+                                      <span class="ribbon-label">📦 พัสดุเบิกหลัก:</span>
+                                      @for (item of dept.top_items; track item.stock_code) {
+                                        <span class="dept-item-chip" [title]="item.stock_code + ' - เบิก ' + number(item.qty) + ' ' + item.unit + ' (' + money(item.value) + ')'">
+                                          <span class="chip-name">{{ item.name }}</span>
+                                          <span class="chip-val">{{ money(item.value) }}</span>
+                                        </span>
+                                      }
+                                    </div>
+                                  }
+                                </td>
+                                <td class="number">{{ number(dept.slips) }} ใบ</td>
+                                <td class="number text-emerald font-bold">{{ money(dept.value) }}</td>
+                                <td class="number"><span class="pct-pill green-pct">{{ dept.percent }}%</span></td>
+                              </tr>
+                            } @empty {
+                              <tr><td colspan="5" class="empty">ไม่พบข้อมูล</td></tr>
+                            }
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  </div>
+                </article>
+              }
+            }
+          </div>
+        }
+      </section>
+
       <!-- Department usage & recommendations -->
       <section class="grid-2">
         <div class="panel"><div class="panel-head"><div><h2>ประเด็นที่ควรตรวจสอบและดำเนินการ</h2><p>เรียงตามผลกระทบด้านมูลค่าคงคลังและความต่อเนื่องของการให้บริการ</p></div></div><div class="panel-body recommendations">@for (item of data.recommendations; track item.title) { <article [class]="'recommendation ' + item.severity"><h3>{{ item.title }}</h3><p><strong>ผลที่พบ:</strong> {{ item.finding }}</p><div><strong>แนวทางดำเนินการ:</strong> {{ item.action }}</div></article> } @empty { <div class="empty">ไม่พบประเด็นเร่งด่วนตามเกณฑ์ที่กำหนด</div> }</div></div>
@@ -693,6 +1034,111 @@
 
             <div class="modal-foot">
               <button type="button" class="btn secondary" (click)="closeDepartmentModal()">ปิด</button>
+            </div>
+          </div>
+        </div>
+      }
+
+      <!-- MODAL: เจาะลึกรายการเบิกของหน่วยงาน (Requisition Leader Dept Breakdown Modal) -->
+      @if (leaderDeptModal) {
+        <div class="dept-modal-backdrop" (click)="closeDeptBreakdown()">
+          <div class="dept-modal-card" (click)="$event.stopPropagation()" style="max-width: 960px;">
+            <div class="dept-modal-head">
+              <div>
+                <span class="dept-modal-badge">📋 รายละเอียดรายการเบิกจ่าย</span>
+                <h3>{{ leaderDeptModal.dept.name }} ({{ leaderDeptModal.dept.dept_code }})</h3>
+                <p class="text-muted text-sm" style="margin-top: 4px;">
+                  หมวด: <strong>{{ leaderDeptModal.scopeTitle }}</strong> · รอบข้อมูล {{ leadersMonths }} เดือน
+                </p>
+              </div>
+              <button type="button" class="btn-close-icon" (click)="closeDeptBreakdown()" title="ปิด (Esc)">✕</button>
+            </div>
+
+            <div class="dept-modal-body">
+              @if (leaderDeptModal.loading) {
+                <div class="leaders-loading-box" style="margin: 40px 0;">กำลังดึงรายการเบิกจ่ายทั้งหมด...</div>
+              } @else if (leaderDeptModal.data) {
+                <!-- KPI Summary Badges -->
+                <div class="dept-modal-summary-grid">
+                  <div class="summary-chip">
+                    <span class="lbl">มูลค่าเบิกจ่ายรวม</span>
+                    <strong class="val text-emerald">{{ money(leaderDeptModal.data.total_val) }}</strong>
+                  </div>
+                  <div class="summary-chip">
+                    <span class="lbl">จำนวนรายการที่เบิก</span>
+                    <strong class="val">{{ number(leaderDeptModal.data.total_items) }} รายการ</strong>
+                  </div>
+                  <div class="summary-chip">
+                    <span class="lbl">จำนวนใบเบิกทั้งหมด</span>
+                    <strong class="val">{{ number(leaderDeptModal.dept.slips) }} ใบ</strong>
+                  </div>
+                  <div class="summary-chip">
+                    <span class="lbl">สัดส่วนในหมวดนี้</span>
+                    <strong class="val text-cyan">{{ leaderDeptModal.dept.percent }}%</strong>
+                  </div>
+                </div>
+
+                <div class="dept-search-bar" style="margin-top: 16px;">
+                  <span class="search-icon">🔍</span>
+                  <input
+                    type="text"
+                    [(ngModel)]="leaderDeptModal.search"
+                    placeholder="ค้นหารหัสพัสดุ/ยา หรือชื่อรายการ..."
+                    class="dept-modal-search"
+                  >
+                </div>
+
+                <div class="table-wrap dept-table-container" style="max-height: 480px; overflow-y: auto;">
+                  <table class="dept-drugs-data-table">
+                    <thead>
+                      <tr>
+                        <th style="width: 35px; text-align: center;">#</th>
+                        <th style="width: 120px;">รหัส</th>
+                        <th>ชื่อรายการ</th>
+                        <th class="number" style="width: 130px;">จำนวนเบิก</th>
+                        <th class="number" style="width: 140px;">มูลค่าเบิก (บาท)</th>
+                        <th class="number" style="width: 80px;">สัดส่วน</th>
+                        <th class="number" style="width: 90px;">จำนวนใบเบิก</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      @for (it of filteredDeptBreakdownItems; track it.stock_code; let idx = $index) {
+                        <tr>
+                          <td style="text-align: center; color: var(--muted); font-weight: 600;">{{ idx + 1 }}</td>
+                          <td>
+                            <a class="drug-code-chip" [routerLink]="['/drugs', it.stock_code]" (click)="closeDeptBreakdown()" title="คลิกดูรายละเอียดรหัสนี้">
+                              {{ it.stock_code }} ↗
+                            </a>
+                          </td>
+                          <td>
+                            <strong class="drug-name-text">{{ it.name }}</strong>
+                          </td>
+                          <td class="number">
+                            <strong>{{ number(it.qty) }}</strong> <small class="text-muted">{{ it.unit }}</small>
+                          </td>
+                          <td class="number text-emerald font-bold">
+                            {{ money(it.value) }}
+                          </td>
+                          <td class="number">
+                            <span class="pct-badge green-pct">{{ it.percent }}%</span>
+                          </td>
+                          <td class="number text-muted">
+                            {{ number(it.slips) }} ใบ
+                          </td>
+                        </tr>
+                      } @empty {
+                        <tr>
+                          <td colspan="7" class="empty">ไม่พบรายการที่ตรงกับคำค้น</td>
+                        </tr>
+                      }
+                    </tbody>
+                  </table>
+                </div>
+              }
+            </div>
+
+            <div class="modal-foot">
+              <button type="button" class="btn secondary" (click)="closeDeptBreakdown()">ปิดหน้าต่าง</button>
             </div>
           </div>
         </div>
