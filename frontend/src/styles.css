@@ -98,6 +98,38 @@ html { background: var(--bg); }
 body { margin: 0; min-width: 320px; min-height: 100vh; color: var(--text); background: var(--bg); font-size: 16px; }
 button, input, select, textarea { font: inherit; }
 button, a { -webkit-tap-highlight-color: transparent; }
+
+/* High-contrast Select & Option Controls across all themes */
+select {
+  font: inherit;
+  color: #f8fafc;
+  background-color: #0b1526;
+  border: 1.5px solid rgba(148, 163, 184, 0.4);
+  border-radius: 9px;
+  padding: 8px 12px;
+  outline: none;
+  cursor: pointer;
+  color-scheme: dark;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+select:focus {
+  border-color: #38bdf8;
+  box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.25);
+}
+
+select option {
+  background-color: #0b1526;
+  color: #ffffff;
+  padding: 10px 14px;
+  font-size: 14px;
+}
+
+select option:checked {
+  background-color: #0284c7;
+  color: #ffffff;
+  font-weight: 700;
+}
 h1, h2, h3, h4, p { margin-top: 0; }
 .page { display: grid; gap: 20px; }
 .page-heading { display: flex; justify-content: space-between; gap: 18px; align-items: flex-start; }
@@ -191,9 +223,18 @@ body:not(.theme-navy) tbody tr:hover {
 body:not(.theme-navy) input,
 body:not(.theme-navy) select,
 body:not(.theme-navy) textarea {
-  background: var(--input-bg);
-  color: var(--text);
+  background: var(--input-bg, #ffffff);
+  color: var(--text, #0f172a);
   border-color: var(--line-strong);
+  color-scheme: light;
+}
+body:not(.theme-navy) select option {
+  background-color: #ffffff;
+  color: #0f172a;
+}
+body:not(.theme-navy) select option:checked {
+  background-color: #0284c7;
+  color: #ffffff;
 }
 body:not(.theme-navy) .tab {
   background: var(--surface-soft);

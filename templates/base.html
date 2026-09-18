@@ -43,6 +43,24 @@
   body { margin:0; background:var(--bg); color:var(--ink); font-size:15px;
          font-family:"Sarabun","Leelawadee UI","Tahoma",sans-serif; }
   a { color:var(--link); }
+  select {
+    font: inherit;
+    color: var(--ink);
+    background-color: var(--card);
+    border: 1.5px solid var(--line);
+    border-radius: 8px;
+    padding: 7px 12px;
+    outline: none;
+  }
+  select option {
+    background-color: var(--card);
+    color: var(--ink);
+    padding: 8px 12px;
+  }
+  select option:checked {
+    background-color: #0284c7;
+    color: #ffffff;
+  }
   /* Modern Two-Tier Enterprise Navigation */
   nav.top {
     background: #0f172a;

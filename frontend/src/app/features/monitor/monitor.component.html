@@ -51,23 +51,34 @@
 
   <!-- ERPLPH: เลือกประเภทของและคลัง (Stock5 ดูได้แค่ยาของคลังยา) -->
   <section class="panel scope-bar">
-    <label>ประเภทของ
-      <select [ngModel]="scopeGroup" (ngModelChange)="setScope($event, scopeStore)">
+    <label class="scope-field">
+      <span class="scope-label-text">
+        <span class="scope-icon">📦</span> ประเภทของ:
+      </span>
+      <select [ngModel]="scopeGroup" (ngModelChange)="setScope($event, scopeStore)" class="scope-select" title="เลือกประเภทของ">
         <option value="">ทุกประเภท — ยา เวชภัณฑ์ พัสดุ ครุภัณฑ์ อาหาร งานจ้าง</option>
         @for (option of scopeOptions.groups; track option.key) {
           <option [value]="option.key">{{ option.name }}</option>
         }
       </select>
     </label>
-    <label>คลัง
-      <select [ngModel]="scopeStore" (ngModelChange)="setScope(scopeGroup, $event)">
+    <label class="scope-field">
+      <span class="scope-label-text">
+        <span class="scope-icon">🏥</span> คลัง:
+      </span>
+      <select [ngModel]="scopeStore" (ngModelChange)="setScope(scopeGroup, $event)" class="scope-select" title="เลือกคลัง">
         <option value="">ทุกคลังรวมกัน (ยอดจ่ายไม่นับการโอนระหว่างคลัง)</option>
         @for (option of scopeOptions.stores; track option.code) {
           <option [value]="option.code">{{ option.name }} ({{ option.code }})</option>
         }
       </select>
     </label>
-    @if (data?.meta?.scope?.label) { <span class="scope-label">กำลังดู: <strong>{{ data.meta.scope.label }}</strong></span> }
+    @if (data?.meta?.scope?.label) {
+      <div class="scope-status">
+        <span class="scope-status-dot"></span>
+        <span>กำลังดู: <strong>{{ data.meta.scope.label }}</strong></span>
+      </div>
+    }
   </section>
 
   @if (data && data.meta && data.meta.receipts_complete === false) {
