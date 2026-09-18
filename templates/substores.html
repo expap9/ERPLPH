@@ -1862,6 +1862,12 @@
           </div>
         </div>
 
+        <!-- Modal Footer / Back Button -->
+        <div style="margin-top:20px; padding-top:14px; border-top:1px solid var(--line); display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
+          <span style="font-size:12px; color:var(--muted);">💡 กดปุ่มด้านขวา หรือกด Esc / คลิกพื้นที่ว่าง เพื่อปิดหน้าต่าง</span>
+          <button type="button" class="btn secondary" onclick="closeItemModal()" style="font-size:13px; font-weight:600; padding:8px 20px; cursor:pointer;">✕ ปิดหน้าต่าง / กลับหน้ารายการ</button>
+        </div>
+
       </div>
     </div>
   </div>
@@ -2064,6 +2070,14 @@
     function closeItemModal() {
       const modal = document.getElementById('item-detail-modal');
       if (modal) modal.classList.remove('open');
+      try {
+        const url = new URL(window.location.href);
+        if (url.searchParams.has('code') || url.searchParams.has('item')) {
+          url.searchParams.delete('code');
+          url.searchParams.delete('item');
+          window.history.replaceState({}, '', url.toString());
+        }
+      } catch (e) {}
     }
 
     function fmtNum(n, dec = 0) {
@@ -2099,7 +2113,7 @@
           document.getElementById('modal-item-name').textContent = d.item.name || d.item.stock_code;
           document.getElementById('modal-item-code').textContent = d.item.stock_code;
           document.getElementById('modal-item-group').textContent = d.item.group_name || 'ทั่วไป';
-          document.getElementById('modal-item-store').textContent = `ข้อมูลของ: ${store === 'ALL' ? 'รวมทั้งโรงพยาบาล' : store}`;
+          document.getElementById('modal-item-store').textContent = `ข้อมูลของ: ${d.store_name || (store === 'ALL' ? 'รวมทั้งโรงพยาบาล' : store)}`;
 
           if (d.item.trade_name) {
             document.getElementById('modal-trade-name-box').style.display = 'inline';

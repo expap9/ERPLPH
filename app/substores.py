@@ -2166,9 +2166,19 @@ def get_item_substore_detail(conn: sqlite3.Connection, store_code: str, stock_co
         for r in trend_rows
     ]
 
+    if is_all:
+        s_name = "รวมทั้งโรงพยาบาล"
+    elif is_w:
+        s_name = get_ward_info(store_code)["name"]
+    else:
+        raw_name = stores.store_name(store_code)
+        s_name = f"{raw_name} ({store_code})" if raw_name != store_code else store_code
+
     return {
         "found": True,
         "item": item_info,
+        "store_code": store_code,
+        "store_name": s_name,
         "on_hand": {
             "qty": total_on_hand_qty,
             "value": total_on_hand_val,
