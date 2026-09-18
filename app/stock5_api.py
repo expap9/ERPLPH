@@ -794,19 +794,25 @@ def _columns(conn, table: str) -> set[str]:
 
 def _item_rows(conn, code: str) -> dict[str, list[dict[str, Any]]]:
     # หน้าเว็บเปิดคลังข้อมูลแบบอ่านอย่างเดียว จึงอัปเกรดตารางเองไม่ได้ คลังข้อมูลที่ยังไม่ได้ดึงรอบใหม่
-    # ยังไม่มีช่องหน่วยงานบนใบรับ (เพิ่ม 17 ก.ย. 2569) ต้องอ่านได้ทั้งสองรุ่น
-    receipt_department = ("division, dept" if {"division", "dept"} <= _columns(conn, "receipts")
+    # ยังไม่มีช่องหน่วยงานบนใบรับ (เพิ่ม 17 ก.ย. 2569) หรือช่อง pack (เพิ่ม 18 ก.ย. 2569) ต้องอ่านได้ทั้งสองรุ่น
+    cols = _columns(conn, "receipts")
+    receipt_department = ("division, dept" if {"division", "dept"} <= cols
                           else "'' AS division, '' AS dept")
+    receipt_pack = ("pack_size, pack_unit, base_unit" if {"pack_size", "pack_unit", "base_unit"} <= cols
+                    else "1.0 AS pack_size, '' AS pack_unit, '' AS base_unit")
     receipt = [{
         "RCV_NO": rcv_no, "suffix": suffix, "DATE_RCV": rcv_date, "SOURCE_STORE": store_code,
         "PO_NO": po_no, "VENDOR_NAME": overview.clean_name(supplier), "LOT_NO": lot, "QTY_RCV": qty,
         "STDIRUNITCODE": unit, "PACK_COST": price, "TOTAL_VALUE": value,
         "RCV_DEPT": departments.full_name(division, dept) if division else "",
         "_period": period,
+        "PACK_SIZE": float(pack_size or 1.0),
+        "PACK_UNIT": str(pack_unit or ""),
+        "BASE_UNIT": str(base_unit or ""),
     } for period, store_code, rcv_no, suffix, lot, qty, value, unit, price, po_no, supplier, rcv_date,
-        division, dept in conn.execute(
+        division, dept, pack_size, pack_unit, base_unit in conn.execute(
         "SELECT period, store, rcv_no, suffix, lot_no, qty, value, unit, unit_price, po_no, supplier, "
-        f"       rcv_date, {receipt_department} FROM receipts WHERE stock_code = ? "
+        f"       rcv_date, {receipt_department}, {receipt_pack} FROM receipts WHERE stock_code = ? "
         "ORDER BY rcv_date DESC, rcv_no DESC, suffix DESC", [code])]
 
     distribution = [{
@@ -846,6 +852,98 @@ def _counts_as_use(row: dict[str, Any]) -> bool:
 def _signed(row: dict[str, Any], column: str) -> float:
     value = float(row.get(column) or 0)
     return -value if row["_direction"] == "in" else value
+
+
+def _format_box_qty(qty: float, unit: str) -> str:
+    if not qty:
+        return ""
+    rounded = round(qty, 2)
+    text = f"{rounded:,.2f}".rstrip("0").rstrip(".") if not rounded.is_integer() else f"{int(rounded):,}"
+    return f"{text} {unit}".strip()
+
+
+def _detect_pack_info(
+    code: str,
+    receipts: list[dict[str, Any]],
+    distributions: list[dict[str, Any]],
+    inventory: list[dict[str, Any]],
+    base_unit: str = "",
+) -> dict[str, Any]:
+    bunit = base_unit.strip()
+    if not bunit:
+        for r in inventory:
+            if r.get("BASE_UNIT"):
+                bunit = str(r["BASE_UNIT"]).strip()
+                break
+        if not bunit:
+            for r in distributions:
+                if r.get("ISSUEUNITCODE"):
+                    bunit = str(r["ISSUEUNITCODE"]).strip()
+                    break
+
+    # 1. Check if receipts already have explicit pack_size > 1
+    for r in receipts:
+        psize = float(r.get("PACK_SIZE") or 1.0)
+        punit = str(r.get("PACK_UNIT") or "").strip()
+        r_bunit = str(r.get("BASE_UNIT") or "").strip() or bunit
+        if psize > 1:
+            if not punit:
+                punit = "กล่อง"
+            return {
+                "has_big": True,
+                "pack_size": psize,
+                "pack_unit": punit,
+                "base_unit": r_bunit or "หน่วย",
+                "description": f"1 {punit} = {psize:g} {r_bunit or 'หน่วย'}",
+            }
+
+    # 2. Ratio detection: compare receipt unit price to base unit price
+    r_val = sum(float(r.get("TOTAL_VALUE") or 0) for r in receipts)
+    r_qty = sum(float(r.get("QTY_RCV") or 0) for r in receipts)
+    rcv_price = (r_val / r_qty) if r_qty > 0 else 0.0
+
+    inv_val = sum(float(r.get("VALUE_ONHAND") or 0) for r in inventory)
+    inv_qty = sum(float(r.get("QTY_ONHAND") or 0) for r in inventory)
+    inv_price = (inv_val / inv_qty) if inv_qty > 0 else 0.0
+
+    used = [r for r in distributions if _counts_as_use(r)]
+    u_val = sum(_signed(r, "VALUE") for r in used)
+    u_qty = sum(_signed(r, "QTY_DIS") for r in used)
+    u_price = (u_val / u_qty) if u_qty > 0 else 0.0
+
+    base_price = inv_price or u_price
+    if base_price > 0 and rcv_price > base_price * 1.25:
+        ratio = rcv_price / base_price
+        rounded = round(ratio)
+        if rounded > 1 and abs(ratio - rounded) / rounded < 0.15:
+            punit = ""
+            for r in receipts:
+                unit_code = str(r.get("STDIRUNITCODE") or "").strip()
+                if unit_code and unit_code != bunit:
+                    punit = unit_code
+                    break
+            if not punit:
+                if bunit.upper() in ("CAP", "TAB", "แคปซูล", "เม็ด"):
+                    punit = "กล่อง"
+                elif bunit.upper() in ("BOT", "ขวด", "AMP", "VIAL", "หลอด"):
+                    punit = "กล่อง"
+                else:
+                    punit = "กล่อง"
+            return {
+                "has_big": True,
+                "pack_size": float(rounded),
+                "pack_unit": punit,
+                "base_unit": bunit or "หน่วย",
+                "description": f"1 {punit} = {rounded} {bunit or 'หน่วย'}",
+            }
+
+    return {
+        "has_big": False,
+        "pack_size": 1.0,
+        "pack_unit": "",
+        "base_unit": bunit or "หน่วย",
+        "description": "",
+    }
 
 
 def build_item_detail(conn, code: str, today: date | None = None) -> dict[str, Any] | None:
@@ -928,7 +1026,61 @@ def build_item_detail(conn, code: str, today: date | None = None) -> dict[str, A
                       "evidence": "เป็นของลงทุนหรืองานบริการ ไม่ได้ถูกใช้หมดแบบของสิ้นเปลือง",
                       "source": "categories.CONSUMABLE_GROUPS"})
 
-    monthly = _item_monthly_movement(receipts, used)
+    pack_info = _detect_pack_info(code, receipts, distributions, inventory, base_unit)
+    has_big = pack_info["has_big"]
+    psize = pack_info["pack_size"]
+    punit = pack_info["pack_unit"]
+    bunit = pack_info["base_unit"]
+
+    if has_big:
+        stock_quantities = [{
+            "unit": bunit,
+            "quantity": _round(stock_qty, 2),
+            "pack_unit": punit,
+            "pack_quantity": _round(stock_qty / psize, 2),
+        }]
+    else:
+        stock_quantities = _quantities((r["BASE_UNIT"], r["QTY_ONHAND"]) for r in inventory)
+
+    raw_rcv_boxes = sum(float(r["QTY_RCV"] or 0) for r in receipts)
+    if has_big:
+        total_rcv_base = raw_rcv_boxes * psize
+        receipt_qty = _round(total_rcv_base, 2)
+        receipt_calc_qty = _round(total_rcv_base, 2)
+        receipt_quantities = [{
+            "unit": bunit,
+            "quantity": _round(total_rcv_base, 2),
+            "pack_unit": punit,
+            "pack_quantity": _round(raw_rcv_boxes, 2),
+        }] if raw_rcv_boxes > 0 else []
+    else:
+        receipt_qty = _round(raw_rcv_boxes, 4)
+        receipt_calc_qty = _round(raw_rcv_boxes, 4)
+        receipt_quantities = _quantities((r["STDIRUNITCODE"], r["QTY_RCV"]) for r in receipts)
+
+    total_issue_base = sum(_signed(r, "QTY_DIS") for r in used)
+    if has_big:
+        issue_quantities = [{
+            "unit": bunit,
+            "quantity": _round(total_issue_base, 2),
+            "pack_unit": punit,
+            "pack_quantity": _round(total_issue_base / psize, 2),
+        }] if total_issue_base > 0 else []
+    else:
+        issue_quantities = _quantities((r["ISSUEUNITCODE"], _signed(r, "QTY_DIS")) for r in used)
+
+    avg_3_base = sum(_signed(r, "QTY_DIS") for r in use_3) / months_3
+    if has_big:
+        avg_monthly_issue_quantities_3m = [{
+            "unit": bunit,
+            "quantity": _round(avg_3_base, 2),
+            "pack_unit": punit,
+            "pack_quantity": _round(avg_3_base / psize, 2),
+        }] if avg_3_base > 0 else [{"unit": bunit or "หน่วย", "quantity": 0}]
+    else:
+        avg_monthly_issue_quantities_3m = _quantities(((r["ISSUEUNITCODE"], _signed(r, "QTY_DIS")) for r in use_3), months_3) or [{"unit": base_unit or "หน่วย", "quantity": 0}]
+
+    monthly = _item_monthly_movement(receipts, used, pack_info)
     trend = _item_monthly_trend(monthly, stock_qty, stock_value, consumable)
     dept_list, signals = _item_departments(used)
 
@@ -939,6 +1091,7 @@ def build_item_detail(conn, code: str, today: date | None = None) -> dict[str, A
         "vendors": [vendor["vendor_name"] for vendor in vendors],
         "group_key": group_key, "group": categories.group_name(group_key), "main_category": category,
         "read_only": True,
+        "pack_info": pack_info,
         "procurement_info": {
             "primary_vendor": {
                 "working_code": code, "vendor_name": primary["vendor_name"] if primary else "",
@@ -949,23 +1102,22 @@ def build_item_detail(conn, code: str, today: date | None = None) -> dict[str, A
         },
         "as_of": _iso_day(overview.snapshot_day(conn)) or today.isoformat(),
         "summary": {
-            "stock_qty": _round(stock_qty, 4), "stock_quantities": _quantities((r["BASE_UNIT"], r["QTY_ONHAND"]) for r in inventory),
+            "stock_qty": _round(stock_qty, 4), "stock_quantities": stock_quantities,
             "stock_calc_qty": _round(stock_qty, 4), "stock_value": _round(stock_value), "stock_lots": len(inventory),
             "receipt_rows_raw": len(receipts), "receipt_rows_used": len(receipts),
-            "receipt_qty": _round(sum(float(r["QTY_RCV"] or 0) for r in receipts), 4),
-            "receipt_quantities": _quantities((r["STDIRUNITCODE"], r["QTY_RCV"]) for r in receipts),
-            "receipt_calc_qty": _round(sum(float(r["QTY_RCV"] or 0) for r in receipts), 4),
+            "receipt_qty": receipt_qty,
+            "receipt_quantities": receipt_quantities,
+            "receipt_calc_qty": receipt_calc_qty,
             "receipt_value": _round(sum(float(r["TOTAL_VALUE"] or 0) for r in receipts)),
             "last_receipt": _iso_day(receipts[0]["DATE_RCV"]) if receipts else None,
             "issue_rows_raw": len([r for r in distributions if r["_kind"] == "dispense"]), "issue_rows_used": len(used),
-            "issue_qty": _round(sum(_signed(r, "QTY_DIS") for r in used), 4),
-            "issue_quantities": _quantities((r["ISSUEUNITCODE"], _signed(r, "QTY_DIS")) for r in used),
-            "issue_calc_qty": _round(sum(_signed(r, "QTY_DIS") for r in used), 4),
+            "issue_qty": _round(total_issue_base, 4),
+            "issue_quantities": issue_quantities,
+            "issue_calc_qty": _round(total_issue_base, 4),
             "issue_value": _round(sum(_signed(r, "VALUE") for r in used)),
             "last_issue_period": max((r["PERIOD_RPT"] for r in used), default=None),
-            "avg_monthly_issue_qty_3m": _round(sum(_signed(r, "QTY_DIS") for r in use_3) / months_3, 4),
-            "avg_monthly_issue_quantities_3m": _quantities(((r["ISSUEUNITCODE"], _signed(r, "QTY_DIS")) for r in use_3), months_3)
-            or [{"unit": base_unit or "หน่วย", "quantity": 0}],
+            "avg_monthly_issue_qty_3m": _round(avg_3_base, 2),
+            "avg_monthly_issue_quantities_3m": avg_monthly_issue_quantities_3m,
             "avg_monthly_issue_value_3m": _round(sum(_signed(r, "VALUE") for r in use_3) / months_3),
             "avg_monthly_issue_periods_3m": periods_3, "avg_monthly_issue_months_3m": months_3,
             "days_on_hand": _round(days_on_hand, 1) if days_on_hand is not None else None,
@@ -1024,7 +1176,12 @@ def _vendors(receipts: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return result
 
 
-def _item_monthly_movement(receipts, used) -> list[dict[str, Any]]:
+def _item_monthly_movement(receipts, used, pack_info: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+    has_big = bool(pack_info and pack_info.get("has_big"))
+    psize = float(pack_info.get("pack_size") or 1.0) if has_big else 1.0
+    punit = str(pack_info.get("pack_unit") or "") if has_big else ""
+    bunit = str(pack_info.get("base_unit") or "") if has_big else ""
+
     by_month_r: dict[str, list] = defaultdict(list)
     for row in receipts:
         month = str(row["DATE_RCV"] or "")[:6] or row["_period"]
@@ -1039,25 +1196,54 @@ def _item_monthly_movement(receipts, used) -> list[dict[str, Any]]:
         recs = sorted(by_month_r.get(month, []), key=lambda r: (r["DATE_RCV"] or "", r["RCV_NO"], r["suffix"]))
         issues = by_month_i.get(month, [])
         r_value = sum(float(r["TOTAL_VALUE"] or 0) for r in recs)
-        r_qty = sum(float(r["QTY_RCV"] or 0) for r in recs)
+        r_raw_qty = sum(float(r["QTY_RCV"] or 0) for r in recs)
         i_value = sum(_signed(r, "VALUE") for r in issues)
-        i_qty = sum(_signed(r, "QTY_DIS") for r in issues)
+        i_base_qty = sum(_signed(r, "QTY_DIS") for r in issues)
+
+        if has_big:
+            r_base_qty = r_raw_qty * psize
+            r_calc_qty = _round(r_base_qty, 2)
+            r_box_str = _format_box_qty(r_raw_qty, punit)
+            r_quantities = [{"unit": bunit, "quantity": r_calc_qty, "pack_unit": punit, "pack_quantity": _round(r_raw_qty, 2)}] if r_raw_qty > 0 else []
+            r_unit_price = _round(r_value / r_raw_qty, 2) if r_raw_qty > 0 else 0
+
+            i_calc_qty = _round(i_base_qty, 2)
+            i_box_qty = i_base_qty / psize if psize > 0 else 0.0
+            i_box_str = _format_box_qty(i_box_qty, punit)
+            i_quantities = [{"unit": bunit, "quantity": i_calc_qty, "pack_unit": punit, "pack_quantity": _round(i_box_qty, 2)}] if i_base_qty > 0 else []
+            i_unit_price = _round(i_value / i_base_qty, 2) if i_base_qty > 0 else 0
+        else:
+            r_calc_qty = _round(r_raw_qty, 2)
+            r_box_str = ""
+            r_quantities = _quantities((r["STDIRUNITCODE"], r["QTY_RCV"]) for r in recs)
+            r_unit_price = _round(r_value / r_raw_qty, 2) if r_raw_qty > 0 else 0
+
+            i_calc_qty = _round(i_base_qty, 2)
+            i_box_str = ""
+            i_quantities = _quantities((r["ISSUEUNITCODE"], _signed(r, "QTY_DIS")) for r in issues)
+            i_unit_price = _round(i_value / i_base_qty, 2) if i_base_qty > 0 else 0
+
         rows.append({
             "period": month,
             "receipt_items": [{
                 "po_no": r["PO_NO"] or "-", "lot_no": r["LOT_NO"] or "-", "rcv_no": r["RCV_NO"] or "-",
-                "date_rcv": r["DATE_RCV"] or "", "qty": _round(r["QTY_RCV"], 4), "unit": r["STDIRUNITCODE"] or "",
+                "date_rcv": r["DATE_RCV"] or "", "qty": _round(r["QTY_RCV"], 4),
+                "unit": punit if has_big else (r["STDIRUNITCODE"] or ""),
+                "calc_qty": _round(float(r["QTY_RCV"] or 0) * psize, 2) if has_big else _round(r["QTY_RCV"], 4),
+                "base_unit": bunit if has_big else "",
                 "unit_cost": _round(r["PACK_COST"]), "value": _round(r["TOTAL_VALUE"]),
                 "vendor_name": r["VENDOR_NAME"], "trade_name": "", "supplier_code": "", "tpuid": "",
                 "store": stores.store_name(r["SOURCE_STORE"]),
             } for r in recs],
-            "receipt_quantities": _quantities((r["STDIRUNITCODE"], r["QTY_RCV"]) for r in recs),
-            "receipt_box_qty": "", "receipt_calc_qty": _round(r_qty),
-            "receipt_unit_price": _round(r_value / r_qty) if r_qty > 0 else 0,
+            "receipt_quantities": r_quantities,
+            "receipt_box_qty": r_box_str,
+            "receipt_calc_qty": r_calc_qty,
+            "receipt_unit_price": r_unit_price,
             "receipt_value": _round(r_value),
-            "issue_quantities": _quantities((r["ISSUEUNITCODE"], _signed(r, "QTY_DIS")) for r in issues),
-            "issue_box_qty": "", "issue_calc_qty": _round(i_qty),
-            "issue_unit_price": _round(i_value / i_qty) if i_qty > 0 else 0,
+            "issue_quantities": i_quantities,
+            "issue_box_qty": i_box_str,
+            "issue_calc_qty": i_calc_qty,
+            "issue_unit_price": i_unit_price,
             "issue_value": _round(i_value),
         })
     return rows

@@ -66,6 +66,9 @@ def _number(row: dict, *names: str) -> float:
 
 
 def _receipt_row(row: dict) -> dict[str, Any]:
+    pack_unit = _text(row, "STDIRUNITCODE")
+    base_unit = _text(row, "BASE_UNIT*", "BASE_UNIT")
+    pack_size = _number(row, "PACK_SIZE") or 1.0
     return {
         "rcv_no": _text(row, "RCV_NO"),
         "suffix": _text(row, "suffix", "SUFFIX"),
@@ -73,7 +76,7 @@ def _receipt_row(row: dict) -> dict[str, Any]:
         "lot_no": _text(row, "LOT_NO", "SOURCE_LOTNO"),
         "qty": _number(row, "QTY_RCV"),
         "value": _number(row, "TOTAL_VALUE"),
-        "unit": _text(row, "BASE_UNIT*", "BASE_UNIT", "STDIRUNITCODE"),
+        "unit": pack_unit or base_unit,
         "unit_price": _number(row, "PACK_COST"),
         "po_no": _text(row, "PO_NO"),
         "supplier": _text(row, "VENDOR_NAME"),
@@ -81,6 +84,9 @@ def _receipt_row(row: dict) -> dict[str, Any]:
         "division": _text(row, "RCV_DIVISION"),
         "dept": _text(row, "RCV_DEPT"),
         "section": _text(row, "RCV_SECTION"),
+        "pack_size": pack_size,
+        "pack_unit": pack_unit,
+        "base_unit": base_unit,
     }
 
 

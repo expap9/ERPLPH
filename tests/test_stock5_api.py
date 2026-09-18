@@ -139,6 +139,44 @@ class Stock5ApiTests(unittest.TestCase):
             "DROP TABLE receipts; ALTER TABLE receipts_old RENAME TO receipts;")
         self.assertIsNotNone(stock5_api.build_item_detail(self.conn, "1000"))
 
+    def test_item_detail_pack_info_and_dual_units(self):
+        self.conn.execute(
+            "INSERT INTO items (stock_code, name, trade_name, main_category, base_unit) "
+            "VALUES ('9999', 'TEST DRUG 100', '', '11', 'TAB')"
+        )
+        self.conn.execute(
+            "INSERT INTO receipts (period, store, rcv_no, suffix, stock_code, qty, value, unit, unit_price, pack_size, pack_unit, base_unit) "
+            "VALUES ('202601', '2', 'R01', '1', '9999', 10, 5000, 'BOX', 500, 100, 'กล่อง', 'TAB')"
+        )
+        self.conn.execute(
+            "INSERT INTO issues (period, store, irno, suffix, stock_code, qty, value, unit, movement_kind, direction, check_status) "
+            "VALUES ('202601', '2', 'I01', '1', '9999', 250, 1250, 'TAB', 'dispense', 'out', 'VERIFIED')"
+        )
+        self.conn.execute(
+            "INSERT INTO balances (period, store, stock_code, lot_no, qty, value, unit) "
+            "VALUES ('20260917', '2', '9999', 'L1', 750, 3750, 'TAB')"
+        )
+        self.conn.commit()
+
+        detail = stock5_api.build_item_detail(self.conn, '9999')
+        self.assertIsNotNone(detail)
+        self.assertTrue(detail["pack_info"]["has_big"])
+        self.assertEqual(detail["pack_info"]["pack_size"], 100.0)
+        self.assertEqual(detail["pack_info"]["pack_unit"], "กล่อง")
+        self.assertEqual(detail["pack_info"]["base_unit"], "TAB")
+
+        self.assertEqual(detail["summary"]["receipt_qty"], 1000.0)
+        self.assertEqual(detail["summary"]["receipt_quantities"][0]["pack_quantity"], 10.0)
+        self.assertEqual(detail["summary"]["receipt_quantities"][0]["quantity"], 1000.0)
+        self.assertEqual(detail["summary"]["stock_quantities"][0]["pack_quantity"], 7.5)
+
+        month_rows = [r for r in detail["monthly_movement"] if r["period"] == "202601"]
+        self.assertEqual(len(month_rows), 1)
+        self.assertEqual(month_rows[0]["receipt_box_qty"], "10 กล่อง")
+        self.assertEqual(month_rows[0]["receipt_calc_qty"], 1000.0)
+        self.assertEqual(month_rows[0]["issue_box_qty"], "2.5 กล่อง")
+        self.assertEqual(month_rows[0]["issue_calc_qty"], 250.0)
+
 
 class Stock5RouteTests(unittest.TestCase):
     def setUp(self):

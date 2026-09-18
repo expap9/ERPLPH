@@ -1,11 +1,19 @@
 .search-panel {
   padding: 14px;
   display: grid;
-  grid-template-columns: 1fr 230px auto;
+  grid-template-columns: 1fr minmax(180px, 220px) minmax(180px, 220px) auto;
   gap: 10px;
+  align-items: center;
   overflow: visible !important;
   position: relative;
   z-index: 10;
+}
+.search-panel .btn {
+  height: 44px;
+  padding: 0 24px;
+  font-size: 14px;
+  font-weight: 700;
+  white-space: nowrap;
 }
 .search-input-wrapper {
   position: relative;
@@ -104,7 +112,26 @@
 .calculation-explanation .panel-body{padding-top:12px}.calculation-explanation .panel-body p{margin:6px 0;color:#cbd5e1;font-size:12px;line-height:1.7}.calculation-explanation .panel-body .text-amber{color:#fde68a}
 .collapsible-head { cursor: pointer; user-select: none; transition: background-color 0.15s ease; }
 .collapsible-head:hover { background: rgba(255, 255, 255, 0.04); }
-@media(max-width:900px){.result-grid{grid-template-columns:1fr}.fact-grid,.investigation-meta,.question-answer{grid-template-columns:1fr}.raw-fields{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:650px){.search-panel{grid-template-columns:1fr}.result-metrics{grid-template-columns:1fr}.detail-head,.raw-toolbar{display:grid}.timeline article{grid-template-columns:1fr}.timeline time{text-align:left}.raw-fields{grid-template-columns:1fr}}
+.pack-info-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  margin: 12px 20px 16px;
+  border-radius: 10px;
+  background: rgba(56, 189, 248, 0.12);
+  border: 1.5px solid rgba(56, 189, 248, 0.35);
+  color: #e0f2fe;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.pack-info-banner strong {
+  color: #38bdf8;
+  font-weight: 700;
+}
+@media(max-width:1050px){.search-panel{grid-template-columns:1fr 1fr;}.search-input-wrapper{grid-column:1/-1;}}
+@media(max-width:900px){.result-grid{grid-template-columns:1fr}.fact-grid,.investigation-meta,.question-answer{grid-template-columns:1fr}.raw-fields{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:650px){.search-panel{grid-template-columns:1fr}.result-metrics{grid-template-columns:1fr}.detail-head,.raw-toolbar{display:grid}.timeline article{grid-template-columns:1fr}.timeline time{text-align:left}.raw-fields{grid-template-columns:1fr}}
 
 /* Prominent Vendor & Procurement Card */
 .vendor-procurement-card {

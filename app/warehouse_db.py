@@ -91,6 +91,9 @@ CREATE TABLE IF NOT EXISTS receipts (
     division     TEXT DEFAULT '',
     dept         TEXT DEFAULT '',
     section      TEXT DEFAULT '',
+    pack_size    REAL DEFAULT 1,
+    pack_unit    TEXT DEFAULT '',
+    base_unit    TEXT DEFAULT '',
     PRIMARY KEY (period, store, rcv_no, suffix, stock_code)
 );
 
@@ -157,7 +160,8 @@ _ADDED_COLUMNS = {
                ("dept", "TEXT DEFAULT ''"), ("section", "TEXT DEFAULT ''")),
     "periods": (("units_sha256", "TEXT DEFAULT ''"),),
     "receipts": (("division", "TEXT DEFAULT ''"), ("dept", "TEXT DEFAULT ''"),
-                 ("section", "TEXT DEFAULT ''")),
+                 ("section", "TEXT DEFAULT ''"), ("pack_size", "REAL DEFAULT 1"),
+                 ("pack_unit", "TEXT DEFAULT ''"), ("base_unit", "TEXT DEFAULT ''")),
 }
 
 
@@ -409,7 +413,7 @@ def _columns_of(table: str) -> list[str]:
         return [row["name"] for row in conn.execute(f"PRAGMA table_info({table})")]
 
 
-_NUMERIC_COLUMNS = {"qty", "value", "unit_price"}
+_NUMERIC_COLUMNS = {"qty", "value", "unit_price", "pack_size"}
 
 
 def _unique_by_key(table: str, rows: list[dict[str, Any]]) -> list[dict[str, Any]]:

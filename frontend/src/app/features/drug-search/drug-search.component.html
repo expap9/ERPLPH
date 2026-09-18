@@ -402,9 +402,15 @@
       <div class="panel-head">
         <div>
           <h2>เปรียบเทียบการรับและการจ่ายรายเดือน</h2>
-          <p>จำนวนและหน่วยนับในตารางแสดงตามข้อมูลต้นทางโดยไม่มีการแปลงหน่วย พร้อมราคาต่อหน่วย รายละเอียดใบ PO และ Lot ที่รับในแต่ละงวด</p>
+          <p>แสดงข้อมูลการรับและการจ่ายทั้งหน่วยย่อยและหน่วยใหญ่ พร้อมราคาต่อหน่วย รายละเอียดใบ PO และ Lot ที่รับในแต่ละงวด</p>
         </div>
       </div>
+      @if (detail.pack_info?.has_big) {
+        <div class="pack-info-banner">
+          <span>📦</span>
+          <span><strong>ขนาดบรรจุ:</strong> 1 {{ detail.pack_info.pack_unit }} = {{ actual(detail.pack_info.pack_size) }} {{ detail.pack_info.base_unit }} (แสดงข้อมูลทั้งหน่วยย่อยและหน่วยใหญ่เพื่อความโปร่งใสและถูกต้อง)</span>
+        </div>
+      }
       <div class="table-wrap">
         <table class="movement-table">
           <thead>
@@ -412,12 +418,12 @@
               <th>งวด</th>
               <th>ใบ PO ที่สั่งซื้อ</th>
               <th>LOT ที่ได้รับมา</th>
-              <th class="number">จำนวนรับตามข้อมูลต้นทาง</th>
-              <th class="number" title="หน่วยกล่องใหญ่ (BX....)"></th>
+              <th class="number">จำนวนรับ (หน่วยย่อย)</th>
+              <th class="number">จำนวนรับ (หน่วยใหญ่)</th>
               <th class="number">ราคาต่อหน่วย (รับ)</th>
               <th class="number">มูลค่ารับ</th>
-              <th class="number">จำนวนจ่ายตามข้อมูลต้นทาง</th>
-              <th class="number" title="หน่วยกล่องใหญ่ (BX....)"></th>
+              <th class="number">จำนวนจ่าย (หน่วยย่อย)</th>
+              <th class="number">จำนวนจ่าย (หน่วยใหญ่)</th>
               <th class="number">ราคาต่อหน่วย (จ่าย)</th>
               <th class="number">มูลค่าจ่าย</th>
             </tr>
@@ -457,12 +463,12 @@
                 </td>
                 <td class="number text-cyan font-bold">{{ baseQuantities(row.receipt_quantities) }}</td>
                 <td class="number text-cyan font-semibold">{{ row.receipt_box_qty || '-' }}</td>
-                <td class="number font-bold text-sky">{{ row.receipt_unit_price > 0 ? money(row.receipt_unit_price) : '-' }}</td>
-                <td class="number font-bold">{{ money(row.receipt_value) }}</td>
+                <td class="number font-bold text-sky">{{ row.receipt_unit_price > 0 ? (money(row.receipt_unit_price) + (detail.pack_info?.has_big ? ' / ' + detail.pack_info.pack_unit : '')) : '-' }}</td>
+                <td class="number font-bold">{{ row.receipt_value > 0 ? money(row.receipt_value) : '-' }}</td>
                 <td class="number text-emerald">{{ baseQuantities(row.issue_quantities) }}</td>
                 <td class="number text-emerald font-semibold">{{ row.issue_box_qty || '-' }}</td>
-                <td class="number text-teal">{{ row.issue_unit_price > 0 ? money(row.issue_unit_price) : '-' }}</td>
-                <td class="number">{{ money(row.issue_value) }}</td>
+                <td class="number text-teal">{{ row.issue_unit_price > 0 ? (money(row.issue_unit_price) + (detail.pack_info?.has_big ? ' / ' + detail.pack_info.base_unit : '')) : '-' }}</td>
+                <td class="number">{{ row.issue_value > 0 ? money(row.issue_value) : '-' }}</td>
               </tr>
             }
           </tbody>

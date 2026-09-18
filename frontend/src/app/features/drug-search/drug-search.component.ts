@@ -578,8 +578,22 @@ export class DrugSearchComponent implements OnInit {
 
   money(value: any): string { return `฿${new Intl.NumberFormat('th-TH',{minimumFractionDigits:2,maximumFractionDigits:2}).format(Number(value||0))}`; }
   number(value: any, digits = 0): string { return new Intl.NumberFormat('th-TH',{minimumFractionDigits:digits,maximumFractionDigits:digits}).format(Number(value||0)); }
-  actual(value: any): string { return new Intl.NumberFormat('th-TH',{maximumFractionDigits:4}).format(Number(value||0)); }
-  quantities(items: any): string { return Array.isArray(items) && items.length ? items.map(item => `${this.actual(item.quantity)} ${item.unit||'ไม่ระบุหน่วย'}`).join(' + ') : '0'; }
+  actual(value: any): string {
+    const num = Number(value || 0);
+    const maxDigits = Number.isInteger(num) ? 0 : 2;
+    return new Intl.NumberFormat('th-TH', { minimumFractionDigits: 0, maximumFractionDigits: maxDigits }).format(num);
+  }
+  quantities(items: any): string {
+    if (!Array.isArray(items) || !items.length) return '0';
+    return items.map(item => {
+      const qty = this.actual(item.quantity);
+      const u = item.unit || 'ไม่ระบุหน่วย';
+      if (item.pack_unit && item.pack_quantity) {
+        return `${qty} ${u} (${this.actual(item.pack_quantity)} ${item.pack_unit})`;
+      }
+      return `${qty} ${u}`;
+    }).join(' + ');
+  }
   baseQuantities(items: any): string {
     if (!Array.isArray(items) || !items.length) return '0';
     return items.map(item => {
