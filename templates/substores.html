@@ -129,6 +129,58 @@
     color: var(--muted); cursor: pointer; border: none; background: none; line-height: 1;
   }
   .modal-close-btn:hover { color: var(--ink); }
+
+  /* Sortable Headers */
+  .data-table th.sortable {
+    cursor: pointer;
+    user-select: none;
+    transition: background 0.15s ease, color 0.15s ease;
+  }
+  .data-table th.sortable:hover {
+    background: #e2e8f0;
+    color: var(--link);
+  }
+  .sort-indicator {
+    display: inline-block;
+    margin-left: 4px;
+    font-size: 11px;
+    color: var(--muted);
+    opacity: 0.5;
+  }
+  .data-table th.sortable.sorted-asc .sort-indicator,
+  .data-table th.sortable.sorted-desc .sort-indicator {
+    opacity: 1;
+    color: var(--link);
+    font-weight: 800;
+  }
+
+  /* Reorder Recommendation Box & Filter Pills */
+  .reorder-card {
+    border-top: 3px solid #f59e0b;
+  }
+  .reorder-filter-pills {
+    display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px;
+  }
+  .reorder-filter-btn {
+    border: 1px solid var(--line);
+    background: var(--head);
+    color: var(--ink);
+    padding: 5px 12px;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+  .reorder-filter-btn:hover {
+    border-color: var(--link);
+    color: var(--link);
+  }
+  .reorder-filter-btn.active {
+    background: var(--nav-on);
+    border-color: var(--nav-on);
+    color: #fff;
+  }
 {% endblock %}
 
 {% block content %}
@@ -354,9 +406,11 @@
               <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); gap: 18px;">
                 <!-- Sub-table 1: Top 5 Drugs -->
                 <div style="border: 1px solid var(--line); border-radius: 8px; overflow: hidden;">
-                  <div style="background: var(--head); padding: 8px 12px; border-bottom: 1px solid var(--line); display: flex; justify-content: space-between; align-items: center;">
+                  <div style="background: var(--head); padding: 8px 12px; border-bottom: 1px solid var(--line); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 6px;">
                     <span style="font-size: 12.5px; font-weight: 700; color: var(--ink);">💉 TOP 5 ยาที่มูลค่าเบิกสูงสุด</span>
-                    <small style="font-size: 11px; color: var(--muted);">เรียงตามมูลค่าเบิกจ่าย</small>
+                    <button type="button" class="pill" onclick="openAllCategoryItems('{{ p_key }}', '{{ p_data.title }}')" style="font-size: 11px; cursor: pointer; padding: 2px 8px; background: #fff; border: 1px solid var(--line); color: var(--link); font-weight: 600;">
+                      📋 ดูทั้งหมด ({{ '{:,}'.format(p_data.metrics.issue_items) if p_data.metrics else '' }} รายการ) ↗
+                    </button>
                   </div>
                   <table class="data-table" style="font-size: 12.5px; margin: 0;">
                     <thead>
@@ -394,9 +448,11 @@
 
                 <!-- Sub-table 2: Top 5 Requisitioning Departments -->
                 <div style="border: 1px solid var(--line); border-radius: 8px; overflow: hidden;">
-                  <div style="background: var(--head); padding: 8px 12px; border-bottom: 1px solid var(--line); display: flex; justify-content: space-between; align-items: center;">
+                  <div style="background: var(--head); padding: 8px 12px; border-bottom: 1px solid var(--line); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 6px;">
                     <span style="font-size: 12.5px; font-weight: 700; color: var(--ink);">🏢 TOP 5 ใครเบิกเยอะ (แผนก/วอร์ดที่เบิกสูงสุด)</span>
-                    <small style="font-size: 11px; color: var(--muted);">เรียงตามมูลค่าเบิกจ่าย</small>
+                    <button type="button" class="pill" onclick="openAllCategoryDepts('{{ p_key }}', '{{ p_data.title }}')" style="font-size: 11px; cursor: pointer; padding: 2px 8px; background: #fff; border: 1px solid var(--line); color: var(--link); font-weight: 600;">
+                      🏢 ดูทุกหน่วยงาน ↗
+                    </button>
                   </div>
                   <table class="data-table" style="font-size: 12.5px; margin: 0;">
                     <thead>
@@ -425,6 +481,9 @@
                                     {{ it.name }} <strong style="color: #0284c7;">({{ money(it.value) }})</strong>
                                   </span>
                                 {% endfor %}
+                                <button type="button" class="pill" onclick="openDeptItemsModal('{{ p_key }}', '{{ dept.dept_code }}', '{{ dept.name }}', '{{ p_data.title }}')" style="font-size: 10px; cursor: pointer; background: rgba(37,99,235,0.08); border: 1px solid rgba(37,99,235,0.25); color: #2563eb; font-weight: 600; padding: 1px 6px;">
+                                  📋 ดูครบทุกรายการ ({{ dept.items_count }} รายการ) ↗
+                                </button>
                               </div>
                             {% endif %}
                           </td>
@@ -506,9 +565,11 @@
               <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); gap: 18px;">
                 <!-- Sub-table 1: Top 5 Supply Items -->
                 <div style="border: 1px solid var(--line); border-radius: 8px; overflow: hidden;">
-                  <div style="background: var(--head); padding: 8px 12px; border-bottom: 1px solid var(--line); display: flex; justify-content: space-between; align-items: center;">
+                  <div style="background: var(--head); padding: 8px 12px; border-bottom: 1px solid var(--line); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 6px;">
                     <span style="font-size: 12.5px; font-weight: 700; color: var(--ink);">📋 TOP 5 รายการที่มีการเบิกสูงสุด</span>
-                    <small style="font-size: 11px; color: var(--muted);">เรียงตามมูลค่าเบิกจ่าย</small>
+                    <button type="button" class="pill" onclick="openAllCategoryItems('{{ s_key }}', '{{ s_data.title }}')" style="font-size: 11px; cursor: pointer; padding: 2px 8px; background: #fff; border: 1px solid var(--line); color: var(--link); font-weight: 600;">
+                      📋 ดูทั้งหมด ({{ '{:,}'.format(s_data.metrics.issue_items) if s_data.metrics else '' }} รายการ) ↗
+                    </button>
                   </div>
                   <table class="data-table" style="font-size: 12.5px; margin: 0;">
                     <thead>
@@ -546,9 +607,11 @@
 
                 <!-- Sub-table 2: Top 5 Requisitioning Departments for Supplies -->
                 <div style="border: 1px solid var(--line); border-radius: 8px; overflow: hidden;">
-                  <div style="background: var(--head); padding: 8px 12px; border-bottom: 1px solid var(--line); display: flex; justify-content: space-between; align-items: center;">
+                  <div style="background: var(--head); padding: 8px 12px; border-bottom: 1px solid var(--line); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 6px;">
                     <span style="font-size: 12.5px; font-weight: 700; color: var(--ink);">🏢 TOP 5 ใครเบิกเยอะ (หน่วยงานที่เบิกสูงสุด)</span>
-                    <small style="font-size: 11px; color: var(--muted);">เรียงตามมูลค่าเบิกจ่าย</small>
+                    <button type="button" class="pill" onclick="openAllCategoryDepts('{{ s_key }}', '{{ s_data.title }}')" style="font-size: 11px; cursor: pointer; padding: 2px 8px; background: #fff; border: 1px solid var(--line); color: var(--link); font-weight: 600;">
+                      🏢 ดูทุกหน่วยงาน ↗
+                    </button>
                   </div>
                   <table class="data-table" style="font-size: 12.5px; margin: 0;">
                     <thead>
@@ -577,6 +640,9 @@
                                     {{ it.name }} <strong style="color: #059669;">({{ money(it.value) }})</strong>
                                   </span>
                                 {% endfor %}
+                                <button type="button" class="pill" onclick="openDeptItemsModal('{{ s_key }}', '{{ dept.dept_code }}', '{{ dept.name }}', '{{ s_data.title }}')" style="font-size: 10px; cursor: pointer; background: rgba(37,99,235,0.08); border: 1px solid rgba(37,99,235,0.25); color: #2563eb; font-weight: 600; padding: 1px 6px;">
+                                  📋 ดูครบทุกรายการ ({{ dept.items_count }} รายการ) ↗
+                                </button>
                               </div>
                             {% endif %}
                           </td>
@@ -1131,94 +1197,243 @@
 
     <!-- SECTION: ข้อมูลรายเดือนย้อนหลัง {{ months }} เดือน (Monthly Historical In-Out Flow) -->
     <div class="section-card">
-      <h2>
-        <span style="display:flex; align-items:center; gap:8px;">
-          <span>📅</span>
-          <span>ข้อมูลรายเดือนย้อนหลัง {{ months }} เดือน (Monthly In-Out Flow &amp; Trend)</span>
-        </span>
-        <span class="pill ok" style="font-size:12px; font-weight:600;">{{ substore_monthly_trend.months_count }} เดือนย้อนหลัง</span>
-      </h2>
-      <div class="card-hint">
+      <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px;">
+        <h2>
+          <span style="display:flex; align-items:center; gap:8px;">
+            <span>📅</span>
+            <span>ข้อมูลรายเดือนย้อนหลัง {{ months }} เดือน (Monthly In-Out Flow &amp; Trend)</span>
+          </span>
+          <span class="pill ok" style="font-size:12px; font-weight:600;">{{ substore_monthly_trend.months_count }} เดือนย้อนหลัง</span>
+        </h2>
+        <button type="button" class="pill" onclick="toggleMonthlyTrend()" id="monthly-trend-toggle-btn"
+                style="background:var(--head); border:1.5px solid var(--line); padding:6px 14px; font-size:12.5px; cursor:pointer; font-weight:700; color:var(--link); display:inline-flex; align-items:center; gap:6px; border-radius:6px; transition:all 0.15s ease;">
+          <span>คลี่ดูรายละเอียด</span> <span id="monthly-trend-icon">▼</span>
+        </button>
+      </div>
+      <div class="card-hint" style="margin-bottom:8px;">
         เปรียบเทียบยอดรับโอนเข้าจากคลังใหญ่ (ชนิด 35 เข้า) กับยอดตัดจ่ายให้ผู้ป่วย/วอร์ด (ชนิด 32 ออก) รายเดือนย้อนหลัง {{ months }} เดือน
       </div>
 
-      <!-- Quick Summary Stat Cards -->
-      <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:12px; margin-bottom:16px;">
-        <div style="background:var(--head); border:1px solid var(--line); border-radius:8px; padding:10px 14px;">
-          <div style="font-size:12px; color:var(--muted); margin-bottom:2px;">📥 รับโอนเข้าคลังใหญ่รวม ({{ months }} ด.)</div>
-          <div style="font-size:18px; font-weight:700; color:var(--link);">{{ money(substore_monthly_trend.total_trans_in) }} บาท</div>
-          <div style="font-size:11.5px; color:var(--muted); margin-top:2px;">
-            เฉลี่ย {{ money(substore_monthly_trend.avg_trans_in) }} บ./ด. · {{ '{:,}'.format(substore_monthly_trend.total_trans_slips) }} ใบรับโอน
+      <!-- Collapsed Summary Banner (Always visible by default) -->
+      <div id="monthly-trend-summary-banner" style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px; padding:10px 14px; background:var(--head); border:1px solid var(--line); border-radius:8px; font-size:13px;">
+        <div>
+          📥 รับโอนเข้า: <strong style="color:var(--link);">{{ money(substore_monthly_trend.total_trans_in) }} บาท</strong>
+          <span style="color:var(--muted); font-size:12px;">({{ '{:,}'.format(substore_monthly_trend.total_trans_slips) }} ใบ)</span>
+          &nbsp;·&nbsp;
+          📤 ตัดจ่าย: <strong style="color:var(--ink);">{{ money(substore_monthly_trend.total_disp) }} บาท</strong>
+          <span style="color:var(--muted); font-size:12px;">({{ '{:,}'.format(substore_monthly_trend.total_disp_slips) }} ใบ)</span>
+          &nbsp;·&nbsp;
+          ⚖️ สุทธิ: <strong style="color:{{ '#059669' if substore_monthly_trend.net_overall >= 0 else '#dc2626' }};">{{ '+' if substore_monthly_trend.net_overall > 0 else '' }}{{ money(substore_monthly_trend.net_overall) }} บาท</strong>
+        </div>
+        <span style="font-size:12px; color:var(--muted);">กดปุ่ม "คลี่ดูรายละเอียด" เพื่อดูตัวเลขย้อนหลัง 18 งวด</span>
+      </div>
+
+      <!-- Collapsible Full Body (Default: hidden) -->
+      <div id="monthly-trend-full-body" style="display:none; margin-top:14px;">
+        <!-- Quick Summary Stat Cards -->
+        <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:12px; margin-bottom:16px;">
+          <div style="background:var(--head); border:1px solid var(--line); border-radius:8px; padding:10px 14px;">
+            <div style="font-size:12px; color:var(--muted); margin-bottom:2px;">📥 รับโอนเข้าคลังใหญ่รวม ({{ months }} ด.)</div>
+            <div style="font-size:18px; font-weight:700; color:var(--link);">{{ money(substore_monthly_trend.total_trans_in) }} บาท</div>
+            <div style="font-size:11.5px; color:var(--muted); margin-top:2px;">
+              เฉลี่ย {{ money(substore_monthly_trend.avg_trans_in) }} บ./ด. · {{ '{:,}'.format(substore_monthly_trend.total_trans_slips) }} ใบรับโอน
+            </div>
+          </div>
+          <div style="background:var(--head); border:1px solid var(--line); border-radius:8px; padding:10px 14px;">
+            <div style="font-size:12px; color:var(--muted); margin-bottom:2px;">📤 ตัดจ่ายผู้ป่วย/วอร์ดรวม ({{ months }} ด.)</div>
+            <div style="font-size:18px; font-weight:700; color:var(--ink);">{{ money(substore_monthly_trend.total_disp) }} บาท</div>
+            <div style="font-size:11.5px; color:var(--muted); margin-top:2px;">
+              เฉลี่ย {{ money(substore_monthly_trend.avg_disp) }} บ./ด. · {{ '{:,}'.format(substore_monthly_trend.total_disp_slips) }} ใบจ่าย
+            </div>
+          </div>
+          <div style="background:var(--head); border:1px solid var(--line); border-radius:8px; padding:10px 14px;">
+            <div style="font-size:12px; color:var(--muted); margin-bottom:2px;">⚖️ ดุลรับ-จ่ายสุทธิ (Net In-Out Flow)</div>
+            <div style="font-size:18px; font-weight:700; color:{{ '#059669' if substore_monthly_trend.net_overall >= 0 else '#dc2626' }};">
+              {{ '+' if substore_monthly_trend.net_overall > 0 else '' }}{{ money(substore_monthly_trend.net_overall) }} บาท
+            </div>
+            <div style="font-size:11.5px; color:var(--muted); margin-top:2px;">
+              {{ 'รับเข้ามากกว่าจ่ายออก' if substore_monthly_trend.net_overall >= 0 else 'จ่ายออกมากกว่ารับเข้า' }}
+            </div>
           </div>
         </div>
-        <div style="background:var(--head); border:1px solid var(--line); border-radius:8px; padding:10px 14px;">
-          <div style="font-size:12px; color:var(--muted); margin-bottom:2px;">📤 ตัดจ่ายผู้ป่วย/วอร์ดรวม ({{ months }} ด.)</div>
-          <div style="font-size:18px; font-weight:700; color:var(--ink);">{{ money(substore_monthly_trend.total_disp) }} บาท</div>
-          <div style="font-size:11.5px; color:var(--muted); margin-top:2px;">
-            เฉลี่ย {{ money(substore_monthly_trend.avg_disp) }} บ./ด. · {{ '{:,}'.format(substore_monthly_trend.total_disp_slips) }} ใบจ่าย
-          </div>
+
+        <!-- Monthly Breakdown Table -->
+        <div class="table-scroll-container" style="max-height:440px;">
+          <table class="data-table" id="monthly-trend-table">
+            <thead>
+              <tr>
+                <th style="width:40px; text-align:center;">#</th>
+                <th class="sortable" onclick="sortTable('monthly-trend-table', 1, false)">งวดบัญชี / เดือน <span class="sort-indicator">⇅</span></th>
+                <th class="num sortable" onclick="sortTable('monthly-trend-table', 2, true)" style="min-width:170px;">ยอดรับโอนเข้า (บาท) <span class="sort-indicator">⇅</span></th>
+                <th class="num sortable" onclick="sortTable('monthly-trend-table', 3, true)">ใบรับโอน / ชนิดยา <span class="sort-indicator">⇅</span></th>
+                <th class="num sortable" onclick="sortTable('monthly-trend-table', 4, true)" style="min-width:170px;">ยอดตัดจ่ายออก (บาท) <span class="sort-indicator">⇅</span></th>
+                <th class="num sortable" onclick="sortTable('monthly-trend-table', 5, true)">ใบจ่าย / ชนิดยา <span class="sort-indicator">⇅</span></th>
+                <th class="num sortable" onclick="sortTable('monthly-trend-table', 6, true)">ผลต่างสุทธิ (Net Flow) <span class="sort-indicator">⇅</span></th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for m in substore_monthly_trend.months_data %}
+                <tr>
+                  <td style="text-align:center; color:var(--muted); font-size:12px;">{{ loop.index }}</td>
+                  <td>
+                    <strong>{{ m.period_thai }}</strong>
+                    <span class="code" style="margin-left:4px;">{{ m.period }}</span>
+                  </td>
+                  <td class="num">
+                    <div style="font-weight:700; color:var(--link);">{{ money(m.trans_in_val) }}</div>
+                    <div style="height:5px; background:var(--head); border-radius:3px; overflow:hidden; margin-top:3px;">
+                      <div style="width:{{ m.bar_in_pct }}%; height:100%; background:var(--link); border-radius:3px;"></div>
+                    </div>
+                  </td>
+                  <td class="num">
+                    <span style="font-weight:600;">{{ '{:,}'.format(m.trans_in_slips) }}</span> ใบ
+                    <small style="color:var(--muted);">({{ '{:,}'.format(m.trans_in_items) }} ชนิด)</small>
+                  </td>
+                  <td class="num">
+                    <div style="font-weight:700; color:var(--ink);">{{ money(m.disp_val) }}</div>
+                    <div style="height:5px; background:var(--head); border-radius:3px; overflow:hidden; margin-top:3px;">
+                      <div style="width:{{ m.bar_out_pct }}%; height:100%; background:#8b5cf6; border-radius:3px;"></div>
+                    </div>
+                  </td>
+                  <td class="num">
+                    <span style="font-weight:600;">{{ '{:,}'.format(m.disp_slips) }}</span> ใบ
+                    <small style="color:var(--muted);">({{ '{:,}'.format(m.disp_items) }} ชนิด)</small>
+                  </td>
+                  <td class="num">
+                    {% if m.net_val > 0 %}
+                      <span class="pill ok" style="font-size:12px; font-weight:600;">+{{ money(m.net_val) }}</span>
+                    {% elif m.net_val < 0 %}
+                      <span class="pill slow" style="font-size:12px; font-weight:600;">{{ money(m.net_val) }}</span>
+                    {% else %}
+                      <span class="pill" style="font-size:12px; font-weight:600; background:var(--head);">0.00</span>
+                    {% endif %}
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
         </div>
-        <div style="background:var(--head); border:1px solid var(--line); border-radius:8px; padding:10px 14px;">
-          <div style="font-size:12px; color:var(--muted); margin-bottom:2px;">⚖️ ดุลรับ-จ่ายสุทธิ (Net In-Out Flow)</div>
-          <div style="font-size:18px; font-weight:700; color:{{ '#059669' if substore_monthly_trend.net_overall >= 0 else '#dc2626' }};">
-            {{ '+' if substore_monthly_trend.net_overall > 0 else '' }}{{ money(substore_monthly_trend.net_overall) }} บาท
-          </div>
-          <div style="font-size:11.5px; color:var(--muted); margin-top:2px;">
-            {{ 'รับเข้ามากกว่าจ่ายออก' if substore_monthly_trend.net_overall >= 0 else 'จ่ายออกมากกว่ารับเข้า' }}
-          </div>
+      </div>
+    </div>
+
+
+    {% if reorder_recommendations and reorder_recommendations.items_list %}
+    <!-- SECTION: แนะนำให้เบิกเพิ่ม (Requisition Recommendations) -->
+    <div class="section-card reorder-card">
+      <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px; margin-bottom:4px;">
+        <h2 style="margin:0;">
+          <span style="display:flex; align-items:center; gap:8px;">
+            <span>📦</span>
+            <span>รายการยาหรือพัสดุที่แนะนำให้เบิกเพิ่ม (Requisition Recommendations)</span>
+          </span>
+          <span class="pill late" style="font-size:12.5px; font-weight:700;">แนะนำเบิก {{ reorder_recommendations.total_items }} รายการ</span>
+        </h2>
+        <div style="display:flex; align-items:center; gap:8px;">
+          <button type="button" class="pill" onclick="copyReorderList()" title="คัดลอกรายการแนะนำเบิกไปวางในโปรแกรมอื่น"
+                  style="background:var(--head); border:1px solid var(--line); font-size:12px; font-weight:600; cursor:pointer; padding:5px 12px; color:var(--ink); display:inline-flex; align-items:center; gap:5px;">
+            <span>📋 คัดลอกรายการเบิก</span>
+          </button>
+        </div>
+      </div>
+      <div class="card-hint">
+        คำนวณจากอัตราใช้จริงเฉลี่ย 3 เดือน (AMC) และอัตราสำรองคงคลัง (MOS) โดยตั้งเป้าหมายสำรองปลอดภัยที่ <strong>{{ reorder_recommendations.target_mos }} เดือน (30 วัน)</strong> พร้อมตรวจสอบยอดที่คลังใหญ่กำลังส่งมา (In-Transit) ป้องกันการเบิกซ้ำ
+      </div>
+
+      <!-- 5 KPI Summary Badges -->
+      <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:10px; background:var(--head); border:1px solid var(--line); border-radius:8px; padding:10px 14px; margin-bottom:14px;">
+        <div>
+          <div style="font-size:11.5px; color:var(--muted);">🚨 ยาหมดคลัง (Stockout)</div>
+          <div style="font-size:18px; font-weight:800; color:#dc2626;">{{ '{:,}'.format(reorder_recommendations.stockout_count) }} <small style="font-size:12px; font-weight:normal; color:var(--muted);">รายการ</small></div>
+          <div style="font-size:10.5px; color:var(--muted);">ยอดคงคลังเหลือ 0 แต่มีการใช้</div>
+        </div>
+        <div>
+          <div style="font-size:11.5px; color:var(--muted);">⚠️ วิกฤตใกล้หมด (&lt; 7 วัน)</div>
+          <div style="font-size:18px; font-weight:800; color:#d97706;">{{ '{:,}'.format(reorder_recommendations.critical_count) }} <small style="font-size:12px; font-weight:normal; color:var(--muted);">รายการ</small></div>
+          <div style="font-size:10.5px; color:var(--muted);">MOS ต่ำกว่า 0.25 เดือน</div>
+        </div>
+        <div>
+          <div style="font-size:11.5px; color:var(--muted);">⚡ ควรเบิกเติม (8-15 วัน)</div>
+          <div style="font-size:18px; font-weight:800; color:#2563eb;">{{ '{:,}'.format(reorder_recommendations.warning_count) }} <small style="font-size:12px; font-weight:normal; color:var(--muted);">รายการ</small></div>
+          <div style="font-size:10.5px; color:var(--muted);">MOS 0.25 - 0.50 เดือน</div>
+        </div>
+        <div>
+          <div style="font-size:11.5px; color:var(--muted);">💰 ประมาณการมูลค่าเบิก</div>
+          <div style="font-size:18px; font-weight:800; color:var(--ink);">{{ money(reorder_recommendations.total_suggested_val) }} <small style="font-size:12px; font-weight:normal; color:var(--muted);">บาท</small></div>
+          <div style="font-size:10.5px; color:var(--muted);">คำนวณเติมสต็อกให้พอ 1 เดือน</div>
+        </div>
+        <div>
+          <div style="font-size:11.5px; color:var(--muted);">🚚 มีของกำลังส่งมอบ (In-Transit)</div>
+          <div style="font-size:18px; font-weight:800; color:#059669;">{{ '{:,}'.format(reorder_recommendations.pending_covered_count) }} <small style="font-size:12px; font-weight:normal; color:var(--muted);">รายการ</small></div>
+          <div style="font-size:10.5px; color:var(--muted);">คลังใหญ่โอนแล้ว ไม่ต้องเบิกซ้ำ</div>
         </div>
       </div>
 
-      <!-- Monthly Breakdown Table -->
-      <div class="table-scroll-container" style="max-height:440px;">
-        <table class="data-table">
+      <!-- Filter Tabs & Search Box -->
+      <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; margin-bottom:12px;">
+        <div class="reorder-filter-pills" style="margin-bottom:0;">
+          <button type="button" class="reorder-filter-btn active" onclick="filterReorderUrgency('all', this)">ทั้งหมด ({{ reorder_recommendations.total_items }})</button>
+          <button type="button" class="reorder-filter-btn" onclick="filterReorderUrgency('STOCKOUT', this)">🚨 หมดคลัง ({{ reorder_recommendations.stockout_count }})</button>
+          <button type="button" class="reorder-filter-btn" onclick="filterReorderUrgency('CRITICAL', this)">⚠️ วิกฤต &lt; 7 วัน ({{ reorder_recommendations.critical_count }})</button>
+          <button type="button" class="reorder-filter-btn" onclick="filterReorderUrgency('WARNING', this)">⚡ ควรเบิก ({{ reorder_recommendations.warning_count }})</button>
+          <button type="button" class="reorder-filter-btn" onclick="filterReorderUrgency('COVERED', this)">🚚 มีค้างส่ง ({{ reorder_recommendations.pending_covered_count }})</button>
+        </div>
+        <div style="flex:1; max-width:360px;">
+          <input type="search" id="reorder-search-input" placeholder="🔍 ค้นหารหัส หรือชื่อยาที่แนะนำ..." oninput="filterReorderSearch(this.value)"
+                 style="width:100%; padding:6px 12px; font-size:13px; border:1px solid var(--line); border-radius:6px; background:var(--card); color:var(--ink);">
+        </div>
+      </div>
+
+      <!-- Reorder Table -->
+      <div class="table-scroll-container" style="max-height:460px;">
+        <table class="data-table" id="reorder-table">
           <thead>
             <tr>
-              <th style="width:40px; text-align:center;">#</th>
-              <th>งวดบัญชี / เดือน</th>
-              <th class="num" style="min-width:170px;">ยอดรับโอนเข้า (บาท)</th>
-              <th class="num">ใบรับโอน / ชนิดยา</th>
-              <th class="num" style="min-width:170px;">ยอดตัดจ่ายออก (บาท)</th>
-              <th class="num">ใบจ่าย / ชนิดยา</th>
-              <th class="num">ผลต่างสุทธิ (Net Flow)</th>
+              <th style="width:36px; text-align:center;">#</th>
+              <th class="sortable" onclick="sortTable('reorder-table', 1, false)">รหัสและชื่อยา/พัสดุ <span class="sort-indicator">⇅</span></th>
+              <th class="sortable" onclick="sortTable('reorder-table', 2, false)">หมวด <span class="sort-indicator">⇅</span></th>
+              <th class="num sortable" onclick="sortTable('reorder-table', 3, true)">คงคลัง <span class="sort-indicator">⇅</span></th>
+              <th class="num sortable" onclick="sortTable('reorder-table', 4, true)">ใช้เฉลี่ย/ด. (AMC) <span class="sort-indicator">⇅</span></th>
+              <th class="num sortable" onclick="sortTable('reorder-table', 5, true)">MOS (เดือน) <span class="sort-indicator">⇅</span></th>
+              <th class="num sortable" onclick="sortTable('reorder-table', 6, true)" style="background:#fef3c7; color:#92400e; font-weight:800;">แนะนำเบิก (1 ด.) <span class="sort-indicator">⇅</span></th>
+              <th class="num sortable" onclick="sortTable('reorder-table', 7, true)">มูลค่าเบิก (บาท) <span class="sort-indicator">⇅</span></th>
+              <th class="sortable" onclick="sortTable('reorder-table', 8, false)">ความเร่งด่วน <span class="sort-indicator">⇅</span></th>
+              <th>สถานะส่งมอบคลังใหญ่</th>
+              <th style="width:60px; text-align:center;">เจาะลึก</th>
             </tr>
           </thead>
-          <tbody>
-            {% for m in substore_monthly_trend.months_data %}
-              <tr>
+          <tbody id="reorder-tbody">
+            {% for item in reorder_recommendations.items_list %}
+              <tr class="reorder-row" data-urgency="{{ item.urgency }}" data-covered="{{ '1' if item.is_covered else '0' }}" data-name="{{ item.name | lower }}" data-code="{{ item.stock_code | lower }}">
                 <td style="text-align:center; color:var(--muted); font-size:12px;">{{ loop.index }}</td>
                 <td>
-                  <strong>{{ m.period_thai }}</strong>
-                  <span class="code" style="margin-left:4px;">{{ m.period }}</span>
+                  <strong>{{ item.name }}</strong><br>
+                  <a href="javascript:void(0)" onclick="openItemModal('{{ current_store }}', '{{ item.stock_code }}')" class="stock-link" title="คลิกดูประวัติเจาะลึก">{{ item.stock_code }}</a>
                 </td>
-                <td class="num">
-                  <div style="font-weight:700; color:var(--link);">{{ money(m.trans_in_val) }}</div>
-                  <div style="height:5px; background:var(--head); border-radius:3px; overflow:hidden; margin-top:3px;">
-                    <div style="width:{{ m.bar_in_pct }}%; height:100%; background:var(--link); border-radius:3px;"></div>
-                  </div>
+                <td><span class="cat-badge cat-drug">{{ item.group }}</span></td>
+                <td class="num">{{ '{:,.0f}'.format(item.on_hand_qty) }} <small style="color:var(--muted);">{{ item.unit }}</small></td>
+                <td class="num">{{ '{:,.1f}'.format(item.amc_qty) }} <small style="color:var(--muted);">{{ item.unit }}</small></td>
+                <td class="num" style="font-weight:700; color:{{ '#dc2626' if item.on_hand_qty == 0 else ('#d97706' if item.mos < 0.25 else 'var(--ink)') }};">
+                  {{ item.mos if item.on_hand_qty > 0 else '0.0 (หมด)' }}
                 </td>
-                <td class="num">
-                  <span style="font-weight:600;">{{ '{:,}'.format(m.trans_in_slips) }}</span> ใบ
-                  <small style="color:var(--muted);">({{ '{:,}'.format(m.trans_in_items) }} ชนิด)</small>
+                <td class="num" style="font-size:15px; font-weight:800; color:#b45309; background:rgba(254,243,199,0.4);">
+                  {{ '{:,.0f}'.format(item.suggested_qty) }} <small style="font-size:11.5px; font-weight:normal; color:var(--muted);">{{ item.unit }}</small>
                 </td>
-                <td class="num">
-                  <div style="font-weight:700; color:var(--ink);">{{ money(m.disp_val) }}</div>
-                  <div style="height:5px; background:var(--head); border-radius:3px; overflow:hidden; margin-top:3px;">
-                    <div style="width:{{ m.bar_out_pct }}%; height:100%; background:#8b5cf6; border-radius:3px;"></div>
-                  </div>
+                <td class="num" style="font-weight:700; color:var(--ink);">{{ money(item.suggested_val) }}</td>
+                <td>
+                  <span class="pill {{ item.urgency_badge }}">{{ item.urgency_label }}</span>
                 </td>
-                <td class="num">
-                  <span style="font-weight:600;">{{ '{:,}'.format(m.disp_slips) }}</span> ใบ
-                  <small style="color:var(--muted);">({{ '{:,}'.format(m.disp_items) }} ชนิด)</small>
-                </td>
-                <td class="num">
-                  {% if m.net_val > 0 %}
-                    <span class="pill ok" style="font-size:12px; font-weight:600;">+{{ money(m.net_val) }}</span>
-                  {% elif m.net_val < 0 %}
-                    <span class="pill slow" style="font-size:12px; font-weight:600;">{{ money(m.net_val) }}</span>
+                <td style="font-size:12px;">
+                  {% if item.is_covered %}
+                    <span class="pill ok" style="font-size:11px;" title="{{ item.pending_slips[0].irno if item.pending_slips else '' }}">🚚 ส่งมาแล้ว {{ '{:,.0f}'.format(item.pending_qty) }} {{ item.unit }}</span>
+                  {% elif item.pending_qty > 0 %}
+                    <span class="pill slow" style="font-size:11px;" title="{{ item.pending_slips[0].irno if item.pending_slips else '' }}">🚚 ส่งบางส่วน {{ '{:,.0f}'.format(item.pending_qty) }} {{ item.unit }}</span>
                   {% else %}
-                    <span class="pill" style="font-size:12px; font-weight:600; background:var(--head);">0.00</span>
+                    <span style="color:var(--muted);">— ยังไม่มีค้างส่ง</span>
                   {% endif %}
+                </td>
+                <td style="text-align:center;">
+                  <button type="button" class="pill" style="font-size:11px; cursor:pointer; background:var(--head); border:1px solid var(--line);"
+                          onclick="openItemModal('{{ current_store }}', '{{ item.stock_code }}')">🔍 ดู</button>
                 </td>
               </tr>
             {% endfor %}
@@ -1226,6 +1441,7 @@
         </table>
       </div>
     </div>
+    {% endif %}
 
 
     <!-- SECTION 2: 3-Month AMC & MOS (Months of Supply) -->
@@ -1251,15 +1467,15 @@
         <table class="data-table" id="amc-table">
           <thead>
             <tr>
-              <th style="width:36px;">#</th>
-              <th>รหัสและชื่อยา</th>
-              <th>หมวด</th>
-              <th class="num">คงคลัง (On-hand)</th>
-              <th class="num">มูลค่าคงคลัง (บาท)</th>
-              <th class="num">ใช้เฉลี่ย/ด. (AMC)</th>
-              <th class="num">มูลค่าใช้/ด.</th>
-              <th class="num">MOS (เดือน)</th>
-              <th>สถานะความเสี่ยง</th>
+              <th style="width:36px; text-align:center;">#</th>
+              <th class="sortable" onclick="sortTable('amc-table', 1, false)">รหัสและชื่อยา <span class="sort-indicator">⇅</span></th>
+              <th class="sortable" onclick="sortTable('amc-table', 2, false)">หมวด <span class="sort-indicator">⇅</span></th>
+              <th class="num sortable" onclick="sortTable('amc-table', 3, true)">คงคลัง (On-hand) <span class="sort-indicator">⇅</span></th>
+              <th class="num sortable" onclick="sortTable('amc-table', 4, true)">มูลค่าคงคลัง (บาท) <span class="sort-indicator">⇅</span></th>
+              <th class="num sortable" onclick="sortTable('amc-table', 5, true)">ใช้เฉลี่ย/ด. (AMC) <span class="sort-indicator">⇅</span></th>
+              <th class="num sortable" onclick="sortTable('amc-table', 6, true)">มูลค่าใช้/ด. <span class="sort-indicator">⇅</span></th>
+              <th class="num sortable" onclick="sortTable('amc-table', 7, true)">MOS (เดือน) <span class="sort-indicator">⇅</span></th>
+              <th class="sortable" onclick="sortTable('amc-table', 8, false)">สถานะความเสี่ยง <span class="sort-indicator">⇅</span></th>
               <th style="width:70px; text-align:center;">เจาะลึก</th>
             </tr>
           </thead>
@@ -1650,6 +1866,123 @@
     </div>
   </div>
 
+  <!-- Modal 1: ดูรายการเบิกจ่ายทั้งหมดในหมวด (Category All Items) -->
+  <div id="category-items-modal" class="modal-backdrop" onclick="if(event.target===this)closeCategoryItemsModal()">
+    <div class="modal-box" style="max-width:980px;">
+      <button type="button" class="modal-close-btn" onclick="closeCategoryItemsModal()">✕</button>
+      <div style="margin-bottom:14px;">
+        <h2 id="cat-items-title" style="margin:0 0 4px; font-size:18px; font-weight:800; color:var(--ink);">📋 รายการเบิกจ่ายทั้งหมด</h2>
+        <div id="cat-items-subtitle" style="font-size:12.5px; color:var(--muted);">กำลังโหลดข้อมูล...</div>
+      </div>
+
+      <div class="filter-search-box" style="margin-bottom:12px;">
+        <input type="search" id="cat-items-search" placeholder="🔍 ค้นหารหัส หรือชื่อสินค้าในหมวดนี้..." oninput="filterCatItemsTable(this.value)">
+        <span id="cat-items-count-badge" class="pill ok" style="font-size:12px;">0 รายการ</span>
+      </div>
+
+      <div id="cat-items-loading" style="text-align:center; padding:30px; color:var(--muted);">
+        ⏳ กำลังดึงข้อมูลรายการเบิกจ่ายทั้งหมด...
+      </div>
+
+      <div id="cat-items-content" style="display:none;">
+        <div class="table-scroll-container" style="max-height:500px;">
+          <table class="data-table" id="cat-items-table">
+            <thead>
+              <tr>
+                <th style="width:36px; text-align:center;">#</th>
+                <th class="sortable" onclick="sortTable('cat-items-table', 1, false)">รหัสและชื่อพัสดุ/ยา <span class="sort-indicator">⇅</span></th>
+                <th class="num sortable" onclick="sortTable('cat-items-table', 2, true)">จำนวนเบิก <span class="sort-indicator">⇅</span></th>
+                <th class="num sortable" onclick="sortTable('cat-items-table', 3, true)">มูลค่ารวม (บาท) <span class="sort-indicator">⇅</span></th>
+                <th class="num sortable" onclick="sortTable('cat-items-table', 4, true)">ใบเบิก <span class="sort-indicator">⇅</span></th>
+                <th class="num sortable" onclick="sortTable('cat-items-table', 5, true)">สัดส่วน <span class="sort-indicator">⇅</span></th>
+                <th style="width:50px; text-align:center;">เจาะลึก</th>
+              </tr>
+            </thead>
+            <tbody id="cat-items-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal 2: ดูทุกหน่วยงานที่เบิกในหมวด (Category All Departments) -->
+  <div id="category-depts-modal" class="modal-backdrop" onclick="if(event.target===this)closeCategoryDeptsModal()">
+    <div class="modal-box" style="max-width:980px;">
+      <button type="button" class="modal-close-btn" onclick="closeCategoryDeptsModal()">✕</button>
+      <div style="margin-bottom:14px;">
+        <h2 id="cat-depts-title" style="margin:0 0 4px; font-size:18px; font-weight:800; color:var(--ink);">🏢 ทุกหน่วยงานที่เบิก</h2>
+        <div id="cat-depts-subtitle" style="font-size:12.5px; color:var(--muted);">กำลังโหลดข้อมูล...</div>
+      </div>
+
+      <div class="filter-search-box" style="margin-bottom:12px;">
+        <input type="search" id="cat-depts-search" placeholder="🔍 ค้นหาชื่อหน่วยงาน หรือรหัสแผนก..." oninput="filterCatDeptsTable(this.value)">
+        <span id="cat-depts-count-badge" class="pill ok" style="font-size:12px;">0 หน่วยงาน</span>
+      </div>
+
+      <div id="cat-depts-loading" style="text-align:center; padding:30px; color:var(--muted);">
+        ⏳ กำลังดึงข้อมูลหน่วยงานทั้งหมด...
+      </div>
+
+      <div id="cat-depts-content" style="display:none;">
+        <div class="table-scroll-container" style="max-height:500px;">
+          <table class="data-table" id="cat-depts-table">
+            <thead>
+              <tr>
+                <th style="width:36px; text-align:center;">#</th>
+                <th class="sortable" onclick="sortTable('cat-depts-table', 1, false)">รหัสและชื่อหน่วยงาน <span class="sort-indicator">⇅</span></th>
+                <th class="num sortable" onclick="sortTable('cat-depts-table', 2, true)">จำนวนใบเบิก <span class="sort-indicator">⇅</span></th>
+                <th class="num sortable" onclick="sortTable('cat-depts-table', 3, true)">มูลค่ารวม (บาท) <span class="sort-indicator">⇅</span></th>
+                <th class="num sortable" onclick="sortTable('cat-depts-table', 4, true)">สัดส่วน <span class="sort-indicator">⇅</span></th>
+                <th class="num sortable" onclick="sortTable('cat-depts-table', 5, true)">จำนวนรายการ <span class="sort-indicator">⇅</span></th>
+                <th style="width:120px; text-align:center;">ดูรายการที่เบิก</th>
+              </tr>
+            </thead>
+            <tbody id="cat-depts-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal 3: ดูรายการเบิกของหน่วยงานนั้นๆ (Department Requisition Breakdown) -->
+  <div id="dept-items-modal" class="modal-backdrop" onclick="if(event.target===this)closeDeptItemsModal()">
+    <div class="modal-box" style="max-width:980px;">
+      <button type="button" class="modal-close-btn" onclick="closeDeptItemsModal()">✕</button>
+      <div style="margin-bottom:14px;">
+        <h2 id="dept-modal-name" style="margin:0 0 4px; font-size:18px; font-weight:800; color:var(--ink);">🏢 ประวัติการเบิกของหน่วยงาน</h2>
+        <div id="dept-modal-meta" style="font-size:12.5px; color:var(--muted);">กำลังโหลดข้อมูล...</div>
+      </div>
+
+      <div class="filter-search-box" style="margin-bottom:12px;">
+        <input type="search" id="dept-modal-search" placeholder="🔍 ค้นหารหัส หรือชื่อยา/พัสดุที่หน่วยงานนี้เบิก..." oninput="filterDeptItemsTable(this.value)">
+        <span id="dept-modal-badge" class="pill ok" style="font-size:12px;">0 รายการ</span>
+      </div>
+
+      <div id="dept-modal-loading" style="text-align:center; padding:30px; color:var(--muted);">
+        ⏳ กำลังดึงรายการเบิกของหน่วยงานนี้...
+      </div>
+
+      <div id="dept-modal-content" style="display:none;">
+        <div class="table-scroll-container" style="max-height:500px;">
+          <table class="data-table" id="dept-modal-table">
+            <thead>
+              <tr>
+                <th style="width:36px; text-align:center;">#</th>
+                <th class="sortable" onclick="sortTable('dept-modal-table', 1, false)">รหัสและชื่อพัสดุ/ยา <span class="sort-indicator">⇅</span></th>
+                <th class="num sortable" onclick="sortTable('dept-modal-table', 2, true)">จำนวนเบิก <span class="sort-indicator">⇅</span></th>
+                <th class="num sortable" onclick="sortTable('dept-modal-table', 3, true)">มูลค่ารวม (บาท) <span class="sort-indicator">⇅</span></th>
+                <th class="num sortable" onclick="sortTable('dept-modal-table', 4, true)">ใบเบิก <span class="sort-indicator">⇅</span></th>
+                <th class="num sortable" onclick="sortTable('dept-modal-table', 5, true)">สัดส่วน <span class="sort-indicator">⇅</span></th>
+                <th style="width:50px; text-align:center;">เจาะลึก</th>
+              </tr>
+            </thead>
+            <tbody id="dept-modal-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- Interactive Client-Side JavaScript -->
   <script>
     function filterAmcTable(query) {
@@ -1909,9 +2242,378 @@
       });
     }
 
-    // Close on Escape key
+    // Toggle Monthly Trend Section (Collapsed by default)
+    function toggleMonthlyTrend() {
+      const body = document.getElementById('monthly-trend-full-body');
+      const btn = document.getElementById('monthly-trend-toggle-btn');
+      if (!body) return;
+      const isHidden = (body.style.display === 'none' || !body.style.display);
+      body.style.display = isHidden ? 'block' : 'none';
+      if (btn) {
+        btn.innerHTML = isHidden
+          ? '<span>ย่อเก็บ</span> <span id="monthly-trend-icon">▲</span>'
+          : '<span>คลี่ดูรายละเอียด</span> <span id="monthly-trend-icon">▼</span>';
+      }
+    }
+
+    // Live Filters for Reorder Recommendations
+    function filterReorderUrgency(urgency, btn) {
+      const buttons = document.querySelectorAll('.reorder-filter-btn');
+      buttons.forEach(b => b.classList.remove('active'));
+      if (btn) btn.classList.add('active');
+
+      const rows = document.querySelectorAll('.reorder-row');
+      rows.forEach(r => {
+        const rowUrgency = r.getAttribute('data-urgency') || '';
+        const isCovered = r.getAttribute('data-covered') === '1';
+        if (urgency === 'all') {
+          r.style.display = '';
+        } else if (urgency === 'COVERED') {
+          r.style.display = isCovered ? '' : 'none';
+        } else {
+          r.style.display = (rowUrgency === urgency) ? '' : 'none';
+        }
+      });
+    }
+
+    function filterReorderSearch(q) {
+      q = (q || '').trim().toLowerCase();
+      const rows = document.querySelectorAll('.reorder-row');
+      rows.forEach(r => {
+        const name = r.getAttribute('data-name') || '';
+        const code = r.getAttribute('data-code') || '';
+        r.style.display = (!q || name.includes(q) || code.includes(q)) ? '' : 'none';
+      });
+    }
+
+    // Copy Reorder List to Clipboard
+    function copyReorderList() {
+      const rows = document.querySelectorAll('#reorder-tbody tr.reorder-row');
+      if (!rows.length) return alert('ไม่มีรายการแนะนำเบิกในตาราง');
+      let text = 'รายการยา/พัสดุที่แนะนำให้เบิกเพิ่ม:\n';
+      text += 'ลำดับ\tรหัสสินค้า\tชื่อสินค้า\tคงคลัง\tAMC/ด.\tMOS\tแนะนำเบิก\tมูลค่าเบิก(บาท)\tสถานะ\n';
+      let idx = 1;
+      rows.forEach(r => {
+        if (r.style.display === 'none') return;
+        const cells = r.querySelectorAll('td');
+        if (cells.length >= 9) {
+          const code = r.getAttribute('data-code') || '';
+          const name = cells[1].querySelector('strong') ? cells[1].querySelector('strong').innerText : '';
+          const onhand = cells[3].innerText.trim();
+          const amc = cells[4].innerText.trim();
+          const mos = cells[5].innerText.trim();
+          const sugQty = cells[6].innerText.trim();
+          const sugVal = cells[7].innerText.trim();
+          const status = cells[8].innerText.trim();
+          text += `${idx}\t${code}\t${name}\t${onhand}\t${amc}\t${mos}\t${sugQty}\t${sugVal}\t${status}\n`;
+          idx++;
+        }
+      });
+      navigator.clipboard.writeText(text).then(() => {
+        alert(`คัดลอกรายการแนะนำเบิก ${idx - 1} รายการเรียบร้อยแล้ว (สามารถนำไปวางใน Excel ได้ทันที)`);
+      }).catch(() => {
+        alert('ไม่สามารถคัดลอกได้อัตโนมัติ กรุณาลองใหม่อีกครั้ง');
+      });
+    }
+
+    // Generic Click-to-Sort Table Columns
+    const _tableSortStates = {};
+    function sortTable(tableId, colIndex, isNumeric) {
+      const table = document.getElementById(tableId);
+      if (!table) return;
+      const tbody = table.querySelector('tbody');
+      if (!tbody) return;
+      const rows = Array.from(tbody.querySelectorAll('tr'));
+      if (rows.length <= 1) return;
+
+      const sortKey = `${tableId}_${colIndex}`;
+      const isAsc = _tableSortStates[sortKey] !== 'asc';
+      _tableSortStates[sortKey] = isAsc ? 'asc' : 'desc';
+
+      // Reset indicators
+      const headers = table.querySelectorAll('th.sortable');
+      headers.forEach(th => {
+        th.classList.remove('sorted-asc', 'sorted-desc');
+        const ind = th.querySelector('.sort-indicator');
+        if (ind) ind.textContent = '⇅';
+      });
+
+      const clickedTh = table.querySelector(`thead tr th:nth-child(${colIndex + 1})`);
+      if (clickedTh) {
+        clickedTh.classList.add(isAsc ? 'sorted-asc' : 'sorted-desc');
+        const ind = clickedTh.querySelector('.sort-indicator');
+        if (ind) ind.textContent = isAsc ? '▲' : '▼';
+      }
+
+      rows.sort((a, b) => {
+        const cellA = a.children[colIndex];
+        const cellB = b.children[colIndex];
+        if (!cellA || !cellB) return 0;
+
+        let valA = cellA.innerText.trim();
+        let valB = cellB.innerText.trim();
+
+        if (isNumeric) {
+          const numA = parseFloat(valA.replace(/[^0-9.-]/g, '')) || 0;
+          const numB = parseFloat(valB.replace(/[^0-9.-]/g, '')) || 0;
+          return isAsc ? (numA - numB) : (numB - numA);
+        } else {
+          return isAsc ? valA.localeCompare(valB, 'th') : valB.localeCompare(valA, 'th');
+        }
+      });
+
+      rows.forEach((r, idx) => {
+        tbody.appendChild(r);
+        const firstCell = r.children[0];
+        if (firstCell && (firstCell.style.textAlign === 'center' || firstCell.getAttribute('style')?.includes('center'))) {
+          firstCell.textContent = idx + 1;
+        }
+      });
+    }
+
+    // Modal 1: Category All Items
+    function openAllCategoryItems(scope, title) {
+      const modal = document.getElementById('category-items-modal');
+      const loading = document.getElementById('cat-items-loading');
+      const content = document.getElementById('cat-items-content');
+      const tbody = document.getElementById('cat-items-tbody');
+      const titleEl = document.getElementById('cat-items-title');
+      const subEl = document.getElementById('cat-items-subtitle');
+      const countBadge = document.getElementById('cat-items-count-badge');
+      const searchInput = document.getElementById('cat-items-search');
+
+      if (!modal) return;
+      modal.classList.add('open');
+      loading.style.display = 'block';
+      content.style.display = 'none';
+      tbody.innerHTML = '';
+      if (searchInput) searchInput.value = '';
+      if (titleEl) titleEl.textContent = `📋 รายการเบิกจ่ายทั้งหมด: ${title || ''}`;
+      if (subEl) subEl.textContent = 'กำลังดึงข้อมูล...';
+
+      fetch(`/api/substores/category-items?scope=${encodeURIComponent(scope)}&months={{ months }}`)
+        .then(res => res.json())
+        .then(res => {
+          loading.style.display = 'none';
+          if (!res || res.status !== 'success' || !res.data) {
+            tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; padding:20px; color:var(--late);">ไม่พบข้อมูลรายการเบิกจ่าย</td></tr>';
+            content.style.display = 'block';
+            return;
+          }
+          const d = res.data;
+          content.style.display = 'block';
+          if (subEl) subEl.textContent = `${d.title} · เบิกจ่ายรวมทั้งสิ้น ${fmtNum(d.total_val, 2)} บาท (${fmtNum(d.total_items)} รายการ)`;
+          if (countBadge) countBadge.textContent = `${fmtNum(d.total_items)} รายการ`;
+
+          if (d.items && d.items.length > 0) {
+            tbody.innerHTML = d.items.map((it, idx) => `
+              <tr class="cat-item-row" data-search="${(it.name || '').toLowerCase()} ${(it.stock_code || '').toLowerCase()}">
+                <td style="text-align:center; color:var(--muted); font-size:12px;">${idx + 1}</td>
+                <td>
+                  <strong>${it.name}</strong><br>
+                  <a href="javascript:void(0)" onclick="openItemModal('1', '${it.stock_code}')" class="stock-link" title="คลิกดูประวัติเจาะลึก">${it.stock_code}</a>
+                </td>
+                <td class="num">${fmtNum(it.qty)} <small style="color:var(--muted);">${it.unit}</small></td>
+                <td class="num" style="font-weight:700; color:var(--ink);">${fmtNum(it.value, 2)}</td>
+                <td class="num">${fmtNum(it.slips)}</td>
+                <td class="num"><span class="pill" style="font-size:10px; background:rgba(59,130,246,0.12); color:#2563eb;">${it.percent}%</span></td>
+                <td style="text-align:center;">
+                  <button type="button" class="pill" style="font-size:10px; cursor:pointer; padding:2px 6px; background:var(--head); border:1px solid var(--line);"
+                          onclick="openItemModal('1', '${it.stock_code}')" title="เจาะลึก">🔍</button>
+                </td>
+              </tr>
+            `).join('');
+          } else {
+            tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; padding:20px; color:var(--muted);">ไม่มีรายการเบิกจ่ายในหมวดนี้</td></tr>';
+          }
+        })
+        .catch(err => {
+          loading.style.display = 'none';
+          content.style.display = 'block';
+          tbody.innerHTML = `<tr><td colspan="7" style="text-align:center; padding:20px; color:var(--late);">เกิดข้อผิดพลาด: ${err}</td></tr>`;
+        });
+    }
+
+    function closeCategoryItemsModal() {
+      const modal = document.getElementById('category-items-modal');
+      if (modal) modal.classList.remove('open');
+    }
+
+    function filterCatItemsTable(q) {
+      q = (q || '').trim().toLowerCase();
+      const rows = document.querySelectorAll('.cat-item-row');
+      rows.forEach(r => {
+        const text = r.getAttribute('data-search') || '';
+        r.style.display = (!q || text.includes(q)) ? '' : 'none';
+      });
+    }
+
+    // Modal 2: Category All Departments
+    function openAllCategoryDepts(scope, title) {
+      const modal = document.getElementById('category-depts-modal');
+      const loading = document.getElementById('cat-depts-loading');
+      const content = document.getElementById('cat-depts-content');
+      const tbody = document.getElementById('cat-depts-tbody');
+      const titleEl = document.getElementById('cat-depts-title');
+      const subEl = document.getElementById('cat-depts-subtitle');
+      const countBadge = document.getElementById('cat-depts-count-badge');
+      const searchInput = document.getElementById('cat-depts-search');
+
+      if (!modal) return;
+      modal.classList.add('open');
+      loading.style.display = 'block';
+      content.style.display = 'none';
+      tbody.innerHTML = '';
+      if (searchInput) searchInput.value = '';
+      if (titleEl) titleEl.textContent = `🏢 ทุกหน่วยงานที่เบิก: ${title || ''}`;
+      if (subEl) subEl.textContent = 'กำลังดึงข้อมูล...';
+
+      fetch(`/api/substores/category-depts?scope=${encodeURIComponent(scope)}&months={{ months }}`)
+        .then(res => res.json())
+        .then(res => {
+          loading.style.display = 'none';
+          if (!res || res.status !== 'success' || !res.data) {
+            tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; padding:20px; color:var(--late);">ไม่พบข้อมูลหน่วยงานที่เบิก</td></tr>';
+            content.style.display = 'block';
+            return;
+          }
+          const d = res.data;
+          content.style.display = 'block';
+          if (subEl) subEl.textContent = `${d.title} · ยอดรวมทุกหน่วยงาน ${fmtNum(d.total_val, 2)} บาท (${fmtNum(d.total_depts)} หน่วยงาน)`;
+          if (countBadge) countBadge.textContent = `${fmtNum(d.total_depts)} หน่วยงาน`;
+
+          if (d.depts && d.depts.length > 0) {
+            tbody.innerHTML = d.depts.map((dp, idx) => `
+              <tr class="cat-dept-row" data-search="${(dp.name || '').toLowerCase()} ${(dp.dept_code || '').toLowerCase()}">
+                <td style="text-align:center; color:var(--muted); font-size:12px;">${idx + 1}</td>
+                <td>
+                  <strong>${dp.name}</strong>
+                  <span style="font-size:11px; color:var(--muted); font-family:monospace;">(${dp.dept_code})</span>
+                </td>
+                <td class="num">${fmtNum(dp.slips)} ใบ</td>
+                <td class="num" style="font-weight:700; color:#059669;">${fmtNum(dp.value, 2)}</td>
+                <td class="num"><span class="pill" style="font-size:10px; background:rgba(16,185,129,0.12); color:#059669;">${dp.percent}%</span></td>
+                <td class="num"><span class="pill" style="font-size:10px; background:var(--head);">${fmtNum(dp.items_count)} รายการ</span></td>
+                <td style="text-align:center;">
+                  <button type="button" class="pill" style="font-size:11px; cursor:pointer; padding:3px 8px; background:rgba(37,99,235,0.08); border:1px solid rgba(37,99,235,0.25); color:#2563eb; font-weight:600;"
+                          onclick="openDeptItemsModal('${scope}', '${dp.dept_code}', '${escapeHtml(dp.name)}', '${escapeHtml(title || '')}')">📋 ดูรายการ</button>
+                </td>
+              </tr>
+            `).join('');
+          } else {
+            tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; padding:20px; color:var(--muted);">ไม่มีข้อมูลหน่วยงานที่เบิก</td></tr>';
+          }
+        })
+        .catch(err => {
+          loading.style.display = 'none';
+          content.style.display = 'block';
+          tbody.innerHTML = `<tr><td colspan="7" style="text-align:center; padding:20px; color:var(--late);">เกิดข้อผิดพลาด: ${err}</td></tr>`;
+        });
+    }
+
+    function closeCategoryDeptsModal() {
+      const modal = document.getElementById('category-depts-modal');
+      if (modal) modal.classList.remove('open');
+    }
+
+    function filterCatDeptsTable(q) {
+      q = (q || '').trim().toLowerCase();
+      const rows = document.querySelectorAll('.cat-dept-row');
+      rows.forEach(r => {
+        const text = r.getAttribute('data-search') || '';
+        r.style.display = (!q || text.includes(q)) ? '' : 'none';
+      });
+    }
+
+    // Modal 3: Department Requisition Breakdown
+    function openDeptItemsModal(scope, deptCode, deptName, categoryTitle) {
+      const modal = document.getElementById('dept-items-modal');
+      const loading = document.getElementById('dept-modal-loading');
+      const content = document.getElementById('dept-modal-content');
+      const tbody = document.getElementById('dept-modal-tbody');
+      const nameEl = document.getElementById('dept-modal-name');
+      const metaEl = document.getElementById('dept-modal-meta');
+      const badgeEl = document.getElementById('dept-modal-badge');
+      const searchInput = document.getElementById('dept-modal-search');
+
+      if (!modal) return;
+      modal.classList.add('open');
+      loading.style.display = 'block';
+      content.style.display = 'none';
+      tbody.innerHTML = '';
+      if (searchInput) searchInput.value = '';
+      if (nameEl) nameEl.textContent = `🏢 ประวัติการเบิก: ${deptName || deptCode} (${deptCode})`;
+      if (metaEl) metaEl.textContent = `หมวด: ${categoryTitle || scope || 'ทั้งหมด'} · กำลังดึงข้อมูล...`;
+
+      fetch(`/api/substores/dept-items?dept=${encodeURIComponent(deptCode)}&scope=${encodeURIComponent(scope)}&months={{ months }}`)
+        .then(res => res.json())
+        .then(res => {
+          loading.style.display = 'none';
+          if (!res || res.status !== 'success' || !res.data) {
+            tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; padding:20px; color:var(--late);">ไม่พบข้อมูลรายการที่หน่วยงานนี้เบิก</td></tr>';
+            content.style.display = 'block';
+            return;
+          }
+          const d = res.data;
+          content.style.display = 'block';
+          if (metaEl) metaEl.textContent = `หมวด: ${categoryTitle || scope || 'ทั้งหมด'} · รวมมูลค่า ${fmtNum(d.total_val, 2)} บาท (${fmtNum(d.total_items)} รายการ)`;
+          if (badgeEl) badgeEl.textContent = `${fmtNum(d.total_items)} รายการ`;
+
+          if (d.items && d.items.length > 0) {
+            tbody.innerHTML = d.items.map((it, idx) => `
+              <tr class="dept-item-row" data-search="${(it.name || '').toLowerCase()} ${(it.stock_code || '').toLowerCase()}">
+                <td style="text-align:center; color:var(--muted); font-size:12px;">${idx + 1}</td>
+                <td>
+                  <strong>${it.name}</strong><br>
+                  <a href="javascript:void(0)" onclick="openItemModal('1', '${it.stock_code}')" class="stock-link" title="คลิกดูประวัติเจาะลึก">${it.stock_code}</a>
+                </td>
+                <td class="num">${fmtNum(it.qty)} <small style="color:var(--muted);">${it.unit}</small></td>
+                <td class="num" style="font-weight:700; color:var(--ink);">${fmtNum(it.value, 2)}</td>
+                <td class="num">${fmtNum(it.slips)}</td>
+                <td class="num"><span class="pill" style="font-size:10px; background:rgba(59,130,246,0.12); color:#2563eb;">${it.percent}%</span></td>
+                <td style="text-align:center;">
+                  <button type="button" class="pill" style="font-size:10px; cursor:pointer; padding:2px 6px; background:var(--head); border:1px solid var(--line);"
+                          onclick="openItemModal('1', '${it.stock_code}')" title="เจาะลึก">🔍</button>
+                </td>
+              </tr>
+            `).join('');
+          } else {
+            tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; padding:20px; color:var(--muted);">หน่วยงานนี้ไม่มีรายการเบิกในหมวดนี้</td></tr>';
+          }
+        })
+        .catch(err => {
+          loading.style.display = 'none';
+          content.style.display = 'block';
+          tbody.innerHTML = `<tr><td colspan="7" style="text-align:center; padding:20px; color:var(--late);">เกิดข้อผิดพลาด: ${err}</td></tr>`;
+        });
+    }
+
+    function closeDeptItemsModal() {
+      const modal = document.getElementById('dept-items-modal');
+      if (modal) modal.classList.remove('open');
+    }
+
+    function filterDeptItemsTable(q) {
+      q = (q || '').trim().toLowerCase();
+      const rows = document.querySelectorAll('.dept-item-row');
+      rows.forEach(r => {
+        const text = r.getAttribute('data-search') || '';
+        r.style.display = (!q || text.includes(q)) ? '' : 'none';
+      });
+    }
+
+    function escapeHtml(text) {
+      return (text || '').replace(/'/g, "\\'").replace(/"/g, '&quot;');
+    }
+
+    // Close all modals on Escape key
     document.addEventListener('keydown', function(e) {
-      if (e.key === 'Escape') closeItemModal();
+      if (e.key === 'Escape') {
+        closeItemModal();
+        closeCategoryItemsModal();
+        closeCategoryDeptsModal();
+        closeDeptItemsModal();
+      }
     });
   </script>
 

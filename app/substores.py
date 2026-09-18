@@ -1111,6 +1111,137 @@ def get_amc_and_mos_list(conn: sqlite3.Connection, store_code: str, limit: int =
     return results[:limit]
 
 
+def get_requisition_recommendations(
+    conn: sqlite3.Connection,
+    store_code: str,
+    target_mos: float = 1.0,
+    limit: int = 300,
+) -> dict[str, Any]:
+    """คำนวณรายการยาและพัสดุที่แนะนำให้เบิกเพิ่ม (Requisition Recommendations)
+
+    หลักเกณฑ์การแนะนำเบิก:
+    1. รายการที่มีอัตราการใช้จริงเฉลี่ย 3 เดือน (AMC > 0)
+    2. อยู่ในเกณฑ์ความเสี่ยงขาด:
+       - STOCKOUT: ยาหมดคลัง (On-hand = 0) -> ความเร่งด่วนสูงสุด
+       - CRITICAL: MOS < 0.25 เดือน (< 7 วัน) -> ความเร่งด่วนสูงมาก
+       - WARNING: 0.25 <= MOS < 0.50 เดือน (8-15 วัน) -> ควรเบิกเติม
+    3. คำนวณจำนวนที่แนะนำให้เบิก:
+       target_qty = round(amc_qty * target_mos, 1) (เป้าหมายสำรอง 1.0 เดือน หรือ 30 วัน)
+       suggested_qty = max(0.0, round(target_qty - on_hand_qty, 1))
+       unit_cost = (amc_val / amc_qty) if amc_qty > 0 else 0.0
+       suggested_val = round(suggested_qty * unit_cost, 2)
+    4. ตรวจสอบยอดค้างส่งระหว่างทาง (Pending In-Transit Transfers):
+       หากคลังหลักกำลังโอนมา ให้แสดงเลขที่ใบโอนและจำนวน เพื่อป้องกันเจ้าหน้าที่กดเบิกซ้ำซ้อน
+    """
+    amc_items = get_amc_and_mos_list(conn, store_code, limit=2000)
+    pending_list = get_pending_transfers(conn, store_code, months=12)
+
+    pending_map: dict[str, dict[str, Any]] = {}
+    for p in pending_list:
+        code = p.get("stock_code")
+        if not code:
+            continue
+        if code not in pending_map:
+            pending_map[code] = {
+                "total_qty": 0.0,
+                "slips": [],
+            }
+        qty = float(p.get("dispatched_qty") or p.get("requested_qty") or 0)
+        pending_map[code]["total_qty"] += qty
+        pending_map[code]["slips"].append({
+            "irno": p.get("irno"),
+            "qty": qty,
+            "date": p.get("date"),
+            "status": p.get("status_label") or p.get("status"),
+        })
+
+    recs = []
+    stockout_count = 0
+    critical_count = 0
+    warning_count = 0
+    total_suggested_val = 0.0
+    pending_covered_count = 0
+
+    for item in amc_items:
+        amc_qty = item.get("amc_qty", 0.0)
+        if amc_qty <= 0:
+            continue
+
+        on_hand_qty = item.get("on_hand_qty", 0.0)
+        mos = item.get("mos", 0.0)
+
+        # แนะนำเบิกเฉพาะรายการที่หมดคลัง หรือ MOS < 0.50 (เหลือน้อยกว่า 15 วัน)
+        if on_hand_qty > 0 and mos >= 0.5:
+            continue
+
+        if on_hand_qty == 0:
+            urgency = "STOCKOUT"
+            urgency_label = "🚨 ยาหมดคลัง"
+            urgency_badge = "late"
+            stockout_count += 1
+        elif mos < 0.25:
+            urgency = "CRITICAL"
+            urgency_label = "⚠️ วิกฤต (< 7 วัน)"
+            urgency_badge = "late"
+            critical_count += 1
+        else:
+            urgency = "WARNING"
+            urgency_label = "⚡ ควรเบิก (8-15 วัน)"
+            urgency_badge = "slow"
+            warning_count += 1
+
+        target_qty = round(amc_qty * target_mos, 1)
+        suggested_qty = max(0.0, round(target_qty - on_hand_qty, 1))
+        unit_cost = (item["amc_val"] / amc_qty) if amc_qty > 0 else 0.0
+        suggested_val = round(suggested_qty * unit_cost, 2)
+        total_suggested_val += suggested_val
+
+        p_info = pending_map.get(item["stock_code"])
+        pending_qty = p_info["total_qty"] if p_info else 0.0
+        is_covered = (pending_qty >= suggested_qty and pending_qty > 0)
+        if is_covered:
+            pending_covered_count += 1
+
+        recs.append({
+            "stock_code": item["stock_code"],
+            "name": item["name"],
+            "group": item["group"],
+            "unit": item["unit"],
+            "on_hand_qty": on_hand_qty,
+            "on_hand_val": item["on_hand_val"],
+            "amc_qty": amc_qty,
+            "amc_val": item["amc_val"],
+            "mos": mos,
+            "target_qty": target_qty,
+            "suggested_qty": suggested_qty,
+            "unit_cost": round(unit_cost, 2),
+            "suggested_val": suggested_val,
+            "urgency": urgency,
+            "urgency_label": urgency_label,
+            "urgency_badge": urgency_badge,
+            "pending_qty": pending_qty,
+            "is_covered": is_covered,
+            "pending_slips": p_info["slips"] if p_info else [],
+        })
+
+    # เรียงลำดับ: STOCKOUT (1) -> CRITICAL (2) -> WARNING (3), ตามด้วยมูลค่าแนะนำเบิก DESC
+    priority_order = {"STOCKOUT": 1, "CRITICAL": 2, "WARNING": 3}
+    recs.sort(key=lambda x: (priority_order.get(x["urgency"], 9), -x["suggested_val"]))
+
+    return {
+        "store_code": store_code,
+        "target_mos": target_mos,
+        "total_items": len(recs),
+        "stockout_count": stockout_count,
+        "critical_count": critical_count,
+        "warning_count": warning_count,
+        "pending_covered_count": pending_covered_count,
+        "total_suggested_val": round(total_suggested_val, 2),
+        "items": recs[:limit],
+        "items_list": recs[:limit],
+    }
+
+
 def get_expiring_medicines(conn: sqlite3.Connection, store_code: str, limit: int = 100) -> dict[str, Any]:
     """ยาและเวชภัณฑ์ที่หมดอายุแล้ว (ย้อนหลัง 6 เดือน) และใกล้หมดอายุ (ไปข้างหน้า 8 เดือน)
     
@@ -2569,4 +2700,176 @@ def get_dept_requisition_breakdown(conn, months: int = 18, div: str = "", dept: 
         "total_items": len(items),
         "items": items,
     }
+
+
+def get_category_all_items(conn: sqlite3.Connection, scope: str, months: int = 18, limit: int = 500) -> dict[str, Any]:
+    """ดึงรายการเบิกจ่ายทั้งหมดในหมวดหรือคลังนั้น ๆ เพื่อแสดงในหน้าต่างดูทั้งหมด/ค้นหา (กดดูรายละเอียดได้ทั้งหมด)"""
+    latest = latest_period(conn)
+    p_first, p_latest = _period_range(latest, months)
+    where_parts = [
+        "i.direction = 'out'",
+        "i.period >= ?",
+        "i.period <= ?",
+    ]
+    if _items_has_column(conn, "retired"):
+        where_parts.append("COALESCE(m.retired, 0) = 0")
+    params: list[Any] = [p_first, p_latest]
+
+    title = "รายการเบิกจ่ายทั้งหมด"
+    if scope == "ipd":
+        where_parts.append("i.store IN ('I2')")
+        title = "รายการเบิกจ่ายยา: ห้องยาผู้ป่วยใน (IPD)"
+    elif scope == "opd":
+        where_parts.append("i.store IN ('O5', 'O6')")
+        title = "รายการเบิกจ่ายยา: ห้องยาผู้ป่วยนอก (OPD)"
+    elif scope == "chemo":
+        where_parts.append("i.store IN ('99')")
+        title = "รายการเบิกจ่ายยา: ห้องยาเคมีบำบัด (Chemo)"
+    elif scope == "paper":
+        where_parts.append("m.name LIKE '%กระดาษ%'")
+        title = "รายการพัสดุ: กระดาษและแบบพิมพ์"
+    elif scope == "toner":
+        where_parts.append("m.name LIKE '%หมึก%' AND m.name NOT LIKE '%ปลาหมึก%' AND m.main_category IN ('6', '7', '8', '4')")
+        title = "รายการพัสดุ: หมึกพิมพ์และริบบอน"
+    elif scope == "consumables":
+        where_parts.append("m.main_category = '6' AND m.name NOT LIKE '%กระดาษ%' AND m.name NOT LIKE '%หมึก%'")
+        title = "รายการพัสดุ: พัสดุสิ้นเปลืองทั่วไป"
+
+    where_sql = " AND ".join(where_parts)
+
+    sql_tot = f"""
+        SELECT COALESCE(SUM(i.value), 0)
+        FROM issues i
+        JOIN items m ON i.stock_code = m.stock_code
+        WHERE {where_sql}
+    """
+    row_tot = conn.execute(sql_tot, params).fetchone()
+    total_val = float(row_tot[0] or 0) if row_tot else 0.0
+
+    sql = f"""
+        SELECT i.stock_code, COALESCE(m.name, i.stock_code) as name,
+               SUM(i.qty) as qty, COALESCE(MAX(i.unit), '') as unit,
+               SUM(i.value) as val, COUNT(DISTINCT i.irno) as slips,
+               COALESCE(m.main_category, '') as category
+        FROM issues i
+        JOIN items m ON i.stock_code = m.stock_code
+        WHERE {where_sql}
+        GROUP BY i.stock_code
+        ORDER BY val DESC
+        LIMIT ?
+    """
+    rows = conn.execute(sql, params + [limit]).fetchall()
+    items = []
+    for idx, r in enumerate(rows, 1):
+        name = (r[1] or "").strip()
+        if not name or categories.is_retired_item(name):
+            continue
+        v = float(r[4] or 0)
+        pct = round((v / total_val * 100), 1) if total_val > 0 else 0.0
+        items.append({
+            "rank": idx,
+            "stock_code": r[0],
+            "name": name,
+            "qty": float(r[2] or 0),
+            "unit": r[3] or "หน่วย",
+            "value": v,
+            "slips": int(r[5] or 0),
+            "percent": pct,
+            "category": r[6] or "",
+        })
+
+    return {
+        "scope": scope,
+        "title": title,
+        "months": months,
+        "total_val": total_val,
+        "total_items": len(items),
+        "items": items,
+    }
+
+
+def get_category_all_depts(conn: sqlite3.Connection, scope: str, months: int = 18, limit: int = 200) -> dict[str, Any]:
+    """ดึงหน่วยงานที่เบิกทั้งหมดในหมวดหรือคลังนั้น ๆ เพื่อแสดงในหน้าต่างดูทั้งหมด/ค้นหา (กดดูรายละเอียดได้ทั้งหมด)"""
+    latest = latest_period(conn)
+    p_first, p_latest = _period_range(latest, months)
+    where_parts = [
+        "i.direction = 'out'",
+        "i.period >= ?",
+        "i.period <= ?",
+    ]
+    if _items_has_column(conn, "retired"):
+        where_parts.append("COALESCE(m.retired, 0) = 0")
+    params: list[Any] = [p_first, p_latest]
+
+    title = "หน่วยงานที่เบิกทั้งหมด"
+    if scope == "ipd":
+        where_parts.append("i.store IN ('I2')")
+        title = "หน่วยงาน/วอร์ดที่เบิกยา: ห้องยาผู้ป่วยใน (IPD)"
+    elif scope == "opd":
+        where_parts.append("i.store IN ('O5', 'O6')")
+        title = "หน่วยงาน/คลินิกที่เบิกยา: ห้องยาผู้ป่วยนอก (OPD)"
+    elif scope == "chemo":
+        where_parts.append("i.store IN ('99')")
+        title = "หน่วยงานที่เบิกยา: ห้องยาเคมีบำบัด (Chemo)"
+    elif scope == "paper":
+        where_parts.append("m.name LIKE '%กระดาษ%'")
+        title = "หน่วยงานที่เบิก: กระดาษและแบบพิมพ์"
+    elif scope == "toner":
+        where_parts.append("m.name LIKE '%หมึก%' AND m.name NOT LIKE '%ปลาหมึก%' AND m.main_category IN ('6', '7', '8', '4')")
+        title = "หน่วยงานที่เบิก: หมึกพิมพ์และริบบอน"
+    elif scope == "consumables":
+        where_parts.append("m.main_category = '6' AND m.name NOT LIKE '%กระดาษ%' AND m.name NOT LIKE '%หมึก%'")
+        title = "หน่วยงานที่เบิก: พัสดุสิ้นเปลืองทั่วไป"
+
+    where_sql = " AND ".join(where_parts)
+
+    sql_tot = f"""
+        SELECT COALESCE(SUM(i.value), 0)
+        FROM issues i
+        JOIN items m ON i.stock_code = m.stock_code
+        WHERE {where_sql}
+    """
+    row_tot = conn.execute(sql_tot, params).fetchone()
+    total_val = float(row_tot[0] or 0) if row_tot else 0.0
+
+    sql = f"""
+        SELECT i.division, i.dept, i.section, SUM(i.value) as val,
+               COUNT(DISTINCT i.irno) as slips, COUNT(DISTINCT i.stock_code) as items_count
+        FROM issues i
+        JOIN items m ON i.stock_code = m.stock_code
+        WHERE {where_sql}
+        GROUP BY i.division, i.dept, i.section
+        ORDER BY val DESC
+        LIMIT ?
+    """
+    rows = conn.execute(sql, params + [limit]).fetchall()
+    depts = []
+    for idx, r in enumerate(rows, 1):
+        div, d_code, sec = r[0] or "", r[1] or "", r[2] or ""
+        code = f"{div}-{d_code}-{sec}".rstrip("-")
+        dept_name = departments.name_of(div, d_code, sec) or code
+        dept_val = float(r[3] or 0)
+        pct = round((dept_val / total_val * 100), 1) if total_val > 0 else 0.0
+        depts.append({
+            "rank": idx,
+            "dept_code": code,
+            "name": dept_name,
+            "div": div,
+            "dept": d_code,
+            "sec": sec,
+            "slips": int(r[4] or 0),
+            "value": dept_val,
+            "percent": pct,
+            "items_count": int(r[5] or 0),
+        })
+
+    return {
+        "scope": scope,
+        "title": title,
+        "months": months,
+        "total_val": total_val,
+        "total_depts": len(depts),
+        "depts": depts,
+    }
+
 

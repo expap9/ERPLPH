@@ -547,6 +547,7 @@ def substores_page():
             hospital_top_items = h_data["top_items"]
             substore_monthly_trend = h_data["monthly_trend"]
             amc_mos_list = substores.get_amc_and_mos_list(conn, "ALL", limit=100)
+            reorder_recommendations = substores.get_requisition_recommendations(conn, "ALL", target_mos=1.0)
             expiring_data = substores.get_expiring_medicines(conn, "ALL", limit=100)
             ward_dispensations = substores.get_ward_dispensations(conn, "ALL", limit=25, months=months)
             transfers_received = substores.get_transfers_received(conn, "ALL", limit=50, months=months)
@@ -561,8 +562,8 @@ def substores_page():
                 wards=substores.WARDS,
                 kpis=kpis, all_groups=all_groups, hospital_top_items=hospital_top_items,
                 transfers_received=transfers_received, pending_transfers=pending_transfers,
-                amc_mos_list=amc_mos_list, expiring_data=expiring_data,
-                ward_dispensations=ward_dispensations,
+                amc_mos_list=amc_mos_list, reorder_recommendations=reorder_recommendations,
+                expiring_data=expiring_data, ward_dispensations=ward_dispensations,
                 substore_monthly_trend=substore_monthly_trend)
         elif is_ward:
             ward_info = substores.get_ward_info(raw_store)
@@ -579,6 +580,7 @@ def substores_page():
                 ward_top_items=ward_data["top_items"],
                 ward_monthly_trend=ward_monthly_trend,
                 pending_transfers=pending_transfers,
+                reorder_recommendations={},
                 months=months, month_choices=MONTH_CHOICES,
                 pharmacy_stores=substores.PHARMACY_SUBSTORES,
                 clinical_stores=substores.CLINICAL_SUBSTORES,
@@ -593,6 +595,7 @@ def substores_page():
             transfers_received = substores.get_transfers_received(conn, store_code, limit=50, months=months)
             pending_transfers = substores.get_pending_transfers(conn, store_code, months=12)
             amc_mos_list = substores.get_amc_and_mos_list(conn, store_code, limit=100)
+            reorder_recommendations = substores.get_requisition_recommendations(conn, store_code, target_mos=1.0)
             expiring_data = substores.get_expiring_medicines(conn, store_code, limit=100)
             ward_dispensations = substores.get_ward_dispensations(conn, store_code, limit=20, months=months)
             substore_monthly_trend = substores.get_substore_monthly_trend(conn, store_code, months=months)
@@ -606,6 +609,7 @@ def substores_page():
                 wards=substores.WARDS,
                 kpis=kpis, transfers_received=transfers_received,
                 pending_transfers=pending_transfers, amc_mos_list=amc_mos_list,
+                reorder_recommendations=reorder_recommendations,
                 expiring_data=expiring_data, ward_dispensations=ward_dispensations,
                 substore_monthly_trend=substore_monthly_trend)
     finally:
@@ -634,6 +638,59 @@ def api_substore_item_detail():
             """, [f"%{code}%", f"%{code}%", f"%{code}%"]).fetchone()
         target_code = row[0] if row else code
         data = substores.get_item_substore_detail(conn, store, target_code)
+    finally:
+        conn.close()
+    return {"status": "success", "data": data}
+
+
+@app.route("/api/substores/category-items")
+def api_substores_category_items():
+    """ดึงรายการเบิกจ่ายทั้งหมดในหมวดหรือคลังย่อย (สำหรับกดดูรายละเอียดได้ทั้งหมด)"""
+    scope = (request.args.get("scope") or request.args.get("key") or "paper").strip().lower()
+    months = int(request.args.get("months") or 18)
+    conn = open_warehouse()
+    if conn is None:
+        return {"status": "error", "message": "ฐานข้อมูลไม่พร้อมใช้งาน"}, 503
+    try:
+        data = substores.get_category_all_items(conn, scope, months=months, limit=500)
+    finally:
+        conn.close()
+    return {"status": "success", "data": data}
+
+
+@app.route("/api/substores/category-depts")
+def api_substores_category_depts():
+    """ดึงหน่วยงานที่เบิกทั้งหมดในหมวดหรือคลังย่อย (สำหรับกดดูรายละเอียดได้ทั้งหมด)"""
+    scope = (request.args.get("scope") or request.args.get("key") or "paper").strip().lower()
+    months = int(request.args.get("months") or 18)
+    conn = open_warehouse()
+    if conn is None:
+        return {"status": "error", "message": "ฐานข้อมูลไม่พร้อมใช้งาน"}, 503
+    try:
+        data = substores.get_category_all_depts(conn, scope, months=months, limit=200)
+    finally:
+        conn.close()
+    return {"status": "success", "data": data}
+
+
+@app.route("/api/substores/dept-items")
+def api_substores_dept_items():
+    """ดึงรายการที่หน่วยงานใดหน่วยงานหนึ่งเบิกไปทั้งหมด (สำหรับกดดูรายละเอียดการเบิกของหน่วยงาน)"""
+    dept_code = (request.args.get("dept") or request.args.get("dept_code") or "").strip()
+    scope = (request.args.get("scope") or request.args.get("key") or "").strip().lower()
+    months = int(request.args.get("months") or 18)
+    if not dept_code:
+        return {"status": "error", "message": "ไม่ได้ระบุรหัสหน่วยงาน"}, 400
+    parts = dept_code.split("-")
+    div = parts[0] if len(parts) > 0 else ""
+    dept = parts[1] if len(parts) > 1 else ""
+    sec = parts[2] if len(parts) > 2 else ""
+
+    conn = open_warehouse()
+    if conn is None:
+        return {"status": "error", "message": "ฐานข้อมูลไม่พร้อมใช้งาน"}, 503
+    try:
+        data = substores.get_dept_requisition_breakdown(conn, months=months, div=div, dept=dept, sec=sec, scope=scope)
     finally:
         conn.close()
     return {"status": "success", "data": data}
