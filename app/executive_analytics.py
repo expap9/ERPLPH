@@ -19,6 +19,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import categories
 import departments
+import name_cleaner
 import stores
 import warehouse_db
 
@@ -164,7 +165,7 @@ def detect_split_po_risks(conn: Optional[sqlite3.Connection] = None,
         # จัดกลุ่มตาม Supplier + Group
         clusters: Dict[Tuple[str, str], List[Dict[str, Any]]] = {}
         for row in rows:
-            sup = (row["supplier"] or "").strip()
+            sup = name_cleaner.clean_vendor_name(row["supplier"])
             grp = row["item_group"] or "general"
             if not sup:
                 continue
@@ -580,7 +581,7 @@ def top10_overdue_pos(conn: Optional[sqlite3.Connection] = None,
             days_overdue = 12 + (i * 3)
             pos.append({
                 "po_no": row["po_no"],
-                "supplier": (row["supplier"] or "บริษัทคู่ค้า").replace("\\", " "),
+                "supplier": name_cleaner.clean_vendor_name(row["supplier"] or "บริษัทคู่ค้า"),
                 "store": row["store"],
                 "store_name": stores.store_name(row["store"]),
                 "value": float(row["total_val"] or 0),
@@ -639,7 +640,7 @@ def top10_fast_moving(conn: Optional[sqlite3.Connection] = None,
             amc = net_q / max(months, 1)
             result.append({
                 "stock_code": r["stock_code"],
-                "name": r["name"],
+                "name": name_cleaner.clean_drug_name(r["name"]),
                 "item_group": categories.group_name(r["item_group"]),
                 "unit": r["unit"],
                 "total_qty": net_q,
@@ -690,7 +691,7 @@ def top10_frequent_purchases(conn: Optional[sqlite3.Connection] = None,
             freq = int(r["order_frequency"] or 0)
             result.append({
                 "stock_code": r["stock_code"],
-                "name": r["name"],
+                "name": name_cleaner.clean_drug_name(r["name"]),
                 "item_group": categories.group_name(r["item_group"]),
                 "frequency": freq,
                 "total_spent": float(r["total_spent"] or 0),
@@ -736,7 +737,7 @@ def top10_highest_value(conn: Optional[sqlite3.Connection] = None,
 
         return [{
             "stock_code": r["stock_code"],
-            "name": r["name"],
+            "name": name_cleaner.clean_drug_name(r["name"]),
             "item_group": categories.group_name(r["item_group"]),
             "unit": r["unit"],
             "qty": float(r["total_qty"] or 0),
@@ -895,7 +896,7 @@ def procure_to_pay_pipeline(conn: Optional[sqlite3.Connection] = None,
 
             pipeline_items.append({
                 "po_no": row["po_no"],
-                "supplier": (row["supplier"] or "บริษัทคู่ค้า").replace("\\", " "),
+                "supplier": name_cleaner.clean_vendor_name(row["supplier"] or "บริษัทคู่ค้า"),
                 "store": row["store"],
                 "store_name": stores.store_name(row["store"]),
                 "rcv_no": row["rcv_no"],

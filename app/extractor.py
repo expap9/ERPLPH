@@ -16,6 +16,7 @@ from typing import Any, Callable, Iterable
 
 import categories
 import database
+import name_cleaner
 import queries
 import reporting_window
 import stock5_engine
@@ -79,7 +80,7 @@ def _receipt_row(row: dict) -> dict[str, Any]:
         "unit": pack_unit or base_unit,
         "unit_price": _number(row, "PACK_COST"),
         "po_no": _text(row, "PO_NO"),
-        "supplier": _text(row, "VENDOR_NAME"),
+        "supplier": name_cleaner.clean_vendor_name(_text(row, "VENDOR_NAME")),
         "rcv_date": _text(row, "DATE_RCV"),
         "division": _text(row, "RCV_DIVISION"),
         "dept": _text(row, "RCV_DEPT"),
@@ -176,11 +177,16 @@ _QUERY_FOR_KIND = {"receipt": "RECEIPT", "issue": "DISTRIBUTION", "balance": "IN
 
 
 def _display_name(raw: str) -> str:
-    """ชื่อยาในฐานข้อมูลมีอักขระตัวแรกซ้ำทุกแถว ใช้ตัวตัดของ Stock5 ตัวเดียวกัน"""
+    """ชื่อยาในฐานข้อมูลมีอักขระตัวแรกซ้ำทุกแถว ทำความสะอาดด้วย name_cleaner"""
+    if not raw:
+        return ""
     try:
-        return stock5_engine.load("drug_names").display_drug_name(raw)
+        return name_cleaner.clean_drug_name(raw)
     except Exception:
-        return raw
+        try:
+            return stock5_engine.load("drug_names").display_drug_name(raw)
+        except Exception:
+            return raw
 
 
 def _item_group(main_category: str, group_key: str) -> str:

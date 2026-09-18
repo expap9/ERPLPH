@@ -33,14 +33,12 @@ DEFAULT_MONTHS = 12
 SEARCH_LIMIT = 60
 
 
+import name_cleaner
+
+
 def clean_name(raw: object) -> str:
-    """ชื่อผู้ขายจาก SSB มีอักขระตัวแรกซ้ำเหมือนชื่อยา ("ออินโดไชน่า") และมีช่องว่างแบบไม่ตัดบรรทัด"""
-    # str.split() ไม่มีอาร์กิวเมนต์ตัดที่ช่องว่างทุกชนิด รวมช่องว่างแบบไม่ตัดบรรทัด (U+00A0)
-    text = " ".join(str(raw or "").split())
-    try:
-        return stock5_engine.load("drug_names").display_drug_name(text)
-    except Exception:
-        return text
+    """ชื่อผู้ขายจาก SSB มีอักขระตัวแรกซ้ำเหมือนชื่อยา และมีช่องว่างแบบไม่ตัดบรรทัด/backslash"""
+    return name_cleaner.clean_vendor_name(raw)
 
 
 # --------------------------------------------------------------------------- ขอบเขต
