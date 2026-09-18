@@ -24,6 +24,7 @@ from datetime import date
 import math
 import os
 from pathlib import Path
+import re
 import sqlite3
 import sys
 from urllib.parse import quote, urlencode
@@ -946,6 +947,108 @@ def warm_cache():
         })
     finally:
         connection.close()
+
+
+# --------------------------------------------------------------------------- ตรึงหลัง IIS reverse proxy
+# 19 ก.ย. 2569: เผยแพร่ที่ 172.16.13.102/ERPLPH (คู่กับ /stock ของ Stock5 บนเซิร์ฟเวอร์
+# เดียวกัน) กติกาการชี้ปลายทางของ IIS เก็บ prefix ติดไปกับ URL ที่ยิงมาที่แบ็กเอนด์เสมอ
+# (ดูตัวอย่าง Stock5App/DIMOPH ใน web.config ของเซิร์ฟเวอร์) แอปนี้จึงต้องแกะ prefix
+# ออกเองแบบเดียวกับที่ Stock5/server.py ทำกับ /stock — ต่างจาก Stock5 ตรงที่ ERPLPH มี
+# หน้า Jinja เอง ~14 หน้าที่ฝัง href/action="/..." (absolute path) ไว้ตรง ๆ ไม่ได้ใช้
+# url_for() จึงต้องเติม prefix ให้ตอนส่ง HTML ออกด้วย (ไม่ใช่แค่แก้ <base href> แบบ
+# หน้า Angular) มิฉะนั้นลิงก์ในเมนูจะเด้งไปหน้า root ของเว็บเซิร์ฟเวอร์แทน
+
+class PrefixMiddleware:
+    """WSGI middleware รองรับ subpath เช่น /ERPLPH หรือ /erplph หลัง IIS reverse proxy"""
+
+    def __init__(self, wsgi_app, prefixes=("/ERPLPH", "/erplph")):
+        self.wsgi_app = wsgi_app
+        self.prefixes = [p.rstrip("/") for p in prefixes]
+
+    def __call__(self, environ, start_response):
+        path_info = environ.get("PATH_INFO", "")
+        path_lower = path_info.lower()
+
+        for prefix in self.prefixes:
+            prefix_lower = prefix.lower()
+            if path_lower == prefix_lower:
+                target = path_info + "/"
+                qs = environ.get("QUERY_STRING", "")
+                if qs:
+                    target += "?" + qs
+                start_response("302 Found", [("Location", target), ("Cache-Control", "no-store")])
+                return [b""]
+            if path_lower.startswith(prefix_lower + "/"):
+                environ["SCRIPT_NAME"] = path_info[:len(prefix)]
+                environ["PATH_INFO"] = path_info[len(prefix):]
+                return self.wsgi_app(environ, start_response)
+
+        fwd_prefix = environ.get("HTTP_X_FORWARDED_PREFIX", "")
+        if fwd_prefix:
+            environ["SCRIPT_NAME"] = fwd_prefix.rstrip("/")
+        return self.wsgi_app(environ, start_response)
+
+
+app.wsgi_app = PrefixMiddleware(app.wsgi_app)
+
+
+#: จับ href="/..." src="/..." action="/..." (ไม่ใช่ "//" ที่เป็น protocol-relative)
+#: (?<!\.) กันไม่ให้ไปจับ "location.href=" / "window.location.href=" ซ้ำกับ _ABS_JS_REF
+_ABS_ATTR_REF = re.compile(r'(?<!\.)(href|src|action)=(["\'])/(?!/)')
+#: จับปลายทาง fetch()/เปลี่ยนหน้าด้วย location.href แบบ absolute path ใน <script>
+_ABS_JS_REF = re.compile(r'(fetch\(|location\.href\s*=\s*|window\.location\.href\s*=\s*)([`\'"])/(?!/)')
+
+
+def _prefix_absolute_refs(html: str, prefix: str) -> str:
+    """เติม prefix (เช่น /ERPLPH) หน้า path แบบ absolute ทุกจุดในหน้า HTML ก่อนส่งออก
+
+    ไม่ทำอะไรถ้าไม่มี prefix (รันตรง ๆ ไม่ผ่าน reverse proxy ไม่กระทบเลย) และไม่เติมซ้ำ
+    ถ้ามี prefix อยู่แล้ว (กันกรณี <base href> ของหน้า Angular ถูกแก้ไว้ก่อนแล้ว)
+    """
+    # match.end() ชี้ตำแหน่งหลัง "/" ตัวแรกที่ถูกจับไปแล้ว (ทั้งจาก attribute เดิมหรือ
+    # prefix ที่เติมไปรอบก่อน) จึงต้องตัด "/" นำหน้าของ prefix ออกก่อนเทียบตรงนี้
+    already = re.compile(re.escape(prefix.lstrip("/")) + r'(?:/|["\'])')
+
+    def _repl(match: re.Match) -> str:
+        if already.match(html, match.end()):
+            return match.group(0)
+        return f"{match.group(1)}={match.group(2)}{prefix}/"
+
+    def _repl_js(match: re.Match) -> str:
+        if already.match(html, match.end()):
+            return match.group(0)
+        return f"{match.group(1)}{match.group(2)}{prefix}/"
+
+    html = _ABS_ATTR_REF.sub(_repl, html)
+    html = _ABS_JS_REF.sub(_repl_js, html)
+    return html
+
+
+def _prefix_redirect_location(location: str, prefix: str) -> str:
+    """เติม prefix ให้ Location header ของ redirect(...) แบบ absolute path เดิม
+
+    ครอบคลุม redirect("/overview") ที่เขียนไว้ตรง ๆ ทุกจุด ไม่ต้องไล่แก้ทีละที่
+    (ที่ใช้ url_for() อยู่แล้วจะได้ prefix ถูกต้องเองจาก SCRIPT_NAME โดยไม่ต้องแตะ)
+    """
+    if not location.startswith("/") or location.startswith("//"):
+        return location  # relative, external หรือ protocol-relative ไม่ต้องแตะ
+    bare = prefix.lstrip("/")
+    if location[1:].startswith(bare) and (len(location) == len(prefix) or location[len(prefix):len(prefix) + 1] in ("/", "", "?")):
+        return location  # เติม prefix ไว้แล้ว (เช่นมาจาก url_for())
+    return prefix + location
+
+
+@app.after_request
+def _rewrite_absolute_refs_behind_proxy(response):
+    prefix = request.script_root.rstrip("/")
+    if not prefix:
+        return response
+    if (response.content_type or "").startswith("text/html"):
+        response.set_data(_prefix_absolute_refs(response.get_data(as_text=True), prefix))
+    location = response.headers.get("Location")
+    if location:
+        response.headers["Location"] = _prefix_redirect_location(location, prefix)
+    return response
 
 
 def main():
