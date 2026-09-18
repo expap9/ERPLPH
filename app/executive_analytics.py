@@ -1079,32 +1079,7 @@ def services_maintenance_projects_summary(conn: Optional[sqlite3.Connection] = N
 # ---------------------------------------------------------------------------
 
 def hospital_savings_opportunities(conn: Optional[sqlite3.Connection] = None) -> Dict[str, Any]:
-    """รวบรวมตัวเลขและรายการโอกาสประหยัดงบประมาณของโรงพยาบาล"""
-    near_expiry = detect_near_expiry_returns(conn)
-
-    fefo_matches = [
-        {
-            "stock_code": "1004521",
-            "item_name": "Meropenem 1g Injection",
-            "from_department": "หอผู้ป่วยอายุรกรรมหญิง 3 (ใช้น้อย)",
-            "to_department": "หอผู้ป่วยวิกฤต ICU รวม (ใช้อัตราสูง)",
-            "qty": 40,
-            "value": 14000.0,
-            "days_to_expire": 45,
-            "impact": "ป้องกันยาหมดอายุทิ้ง ประหยัดงบไม่ต้องซื้อใหม่ ฿14,000",
-        },
-        {
-            "stock_code": "1008912",
-            "item_name": "Human Albumin 20% 50ml",
-            "from_department": "หอผู้ป่วยศัลยกรรมพิเศษ (เหลือ 8 ขวด)",
-            "to_department": "ห้องผ่าตัดใหญ่ OR (ใช้ทุกวัน)",
-            "qty": 8,
-            "value": 17600.0,
-            "days_to_expire": 60,
-            "impact": "ดึงกลับคลังกลางหรือโอนตรง ประหยัด ฿17,600",
-        },
-    ]
-
+    """รวบรวมตัวเลขและรายการโอกาสดึงรายได้กลับจากเวชภัณฑ์ที่ยังไม่ลงชาร์จของโรงพยาบาล"""
     unbilled_supplies = [
         {
             "ward": "ห้องผ่าตัดใหญ่ (OR)",
@@ -1126,37 +1101,44 @@ def hospital_savings_opportunities(conn: Optional[sqlite3.Connection] = None) ->
         },
     ]
 
+    total_unbilled_val = sum(u["value"] for u in unbilled_supplies)
+    total_unbilled_qty = sum(u["qty"] for u in unbilled_supplies)
+    unique_wards = len(set(u["ward"] for u in unbilled_supplies))
+
     summary_cards = [
         {
-            "title": "มูลค่ายาทำเรื่องคืนบริษัทได้ทันที",
-            "value": near_expiry["total_return_value"],
-            "unit": "บาท",
-            "hint": "เร่งทำเรื่องก่อนหมดสิทธิ์สัญญา (ใน 90 วัน)",
-            "badge": "ด่วน",
-            "badge_class": "late",
-        },
-        {
-            "title": "ประหยัดจากการ Swap ยา FEFO ข้ามตึก",
-            "value": sum(m["value"] for m in fefo_matches),
-            "unit": "บาท",
-            "hint": "โอนไปตึกที่ใช้เร็วทันวันหมดอายุ",
-            "badge": "ทำได้ทันที",
-            "badge_class": "ok",
-        },
-        {
             "title": "ดึงรายได้กลับจากเวชภัณฑ์ยังไม่ลงชาร์จ",
-            "value": sum(u["value"] for u in unbilled_supplies),
+            "value": total_unbilled_val,
+            "is_money": True,
             "unit": "บาท",
             "hint": "แจ้งเตือนวอร์ดคีย์คิดเงินคนไข้",
             "badge": "ติดตามด่วน",
+            "badge_class": "late",
+        },
+        {
+            "title": "จำนวนเวชภัณฑ์ที่ค้างลงชาร์จ",
+            "value": total_unbilled_qty,
+            "is_money": False,
+            "unit": "ชิ้น",
+            "hint": "เบิกออกจากคลังเกิน 48 ชม.",
+            "badge": "รอคีย์ข้อมูล",
             "badge_class": "slow",
+        },
+        {
+            "title": "หน่วยงานที่ต้องเร่งรัดติดตาม",
+            "value": unique_wards,
+            "is_money": False,
+            "unit": "แผนก",
+            "hint": "ห้องผ่าตัดใหญ่ (OR), หอผู้ป่วย ICU",
+            "badge": "ตรวจสอบ",
+            "badge_class": "ok",
         },
     ]
 
     return {
         "summary_cards": summary_cards,
-        "fefo_matches": fefo_matches,
         "unbilled_supplies": unbilled_supplies,
+        "total_unbilled_value": total_unbilled_val,
     }
 
 

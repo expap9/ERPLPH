@@ -774,11 +774,9 @@ def savings_page():
         return render_template("savings.html", problem=NO_WAREHOUSE, active="savings")
     try:
         data = executive_analytics.hospital_savings_opportunities(conn)
-        near_expiry = executive_analytics.detect_near_expiry_returns(conn)
     finally:
         conn.close()
-    return render_template("savings.html", problem=None, active="savings",
-                           near_expiry=near_expiry, **data)
+    return render_template("savings.html", problem=None, active="savings", **data)
 
 
 @app.route("/governance")
