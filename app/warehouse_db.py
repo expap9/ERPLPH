@@ -128,6 +128,44 @@ CREATE TABLE IF NOT EXISTS issues (
     PRIMARY KEY (period, store, irno, suffix, stock_code, movement_key)
 );
 
+-- ใบสั่งซื้อจริงจาก SKPO/SKPODTL (SSBSTOCK) — ไม่มีมิติ "งวด" แบบตารางอื่น เพราะ
+-- PO เป็นเอกสารที่มีวงจรชีวิตของตัวเอง (ออก/อนุมัติ/รับของ) ไม่ใช่ยอดสะสมรายเดือน
+-- ดึงด้วย scripts/pull_purchase_orders.py แยกจาก pull_warehouse_data.py
+CREATE TABLE IF NOT EXISTS purchase_orders (
+    po_no          TEXT NOT NULL,
+    suffix         INTEGER NOT NULL DEFAULT 0,   -- SKPODTL.SUFFIX เลขบรรทัดในใบสั่งซื้อ
+    store          TEXT NOT NULL,
+    stock_code     TEXT NOT NULL,
+    lot_no         TEXT DEFAULT '',
+    supplier_code  TEXT DEFAULT '',
+    -- ชื่อผู้ขายจริงจาก SSBBACKOFFICE.dbo.APMASTER (ตาราง APMASTER ตาม
+    -- config/table_mappings.json ของ Stock5) ไม่ใช่ค่าที่ระบบเดาขึ้น
+    supplier_name  TEXT DEFAULT '',
+    request_qty    REAL DEFAULT 0,
+    lot_qty        REAL DEFAULT 0,
+    lot_price      REAL DEFAULT 0,
+    amount         REAL DEFAULT 0,     -- SKPODTL.AMT ยอดเงินต่อบรรทัดที่ระบบต้นทางคำนวณไว้เอง
+    -- รหัสดิบจาก SKPODTL.POSTATUS เก็บไว้เฉยๆ ไม่ตีความว่าเลขไหนแปลว่าอะไร
+    -- (สำรวจ 15 ก.ย. 2569 เจอแค่ 0 กับ 2 ยังไม่ได้ถามผู้ใช้ว่าแต่ละเลขคืออะไร)
+    postatus       INTEGER,
+    division       TEXT DEFAULT '',
+    dept           TEXT DEFAULT '',
+    section        TEXT DEFAULT '',
+    issue_datetime         TEXT DEFAULT '',   -- SKPO.ISSUEDATETIME วันที่ออกใบสั่งซื้อ
+    -- ว่าง = ยังไม่อนุมัติ (ข้อเท็จจริงตรงจากข้อมูล ไม่ใช่การตีความ)
+    approve_datetime       TEXT DEFAULT '',
+    due_datetime           TEXT DEFAULT '',
+    last_receive_datetime  TEXT DEFAULT '',
+    contract_no    TEXT DEFAULT '',
+    pulled_at      TEXT DEFAULT '',
+    PRIMARY KEY (po_no, suffix, store, stock_code, lot_no)
+);
+
+CREATE INDEX IF NOT EXISTS idx_po_stock  ON purchase_orders(stock_code);
+CREATE INDEX IF NOT EXISTS idx_po_store  ON purchase_orders(store);
+CREATE INDEX IF NOT EXISTS idx_po_issue  ON purchase_orders(issue_datetime);
+CREATE INDEX IF NOT EXISTS idx_po_no     ON purchase_orders(po_no);
+
 CREATE INDEX IF NOT EXISTS idx_balances_lookup ON balances(store, stock_code);
 CREATE INDEX IF NOT EXISTS idx_receipts_lookup ON receipts(store, stock_code, period);
 CREATE INDEX IF NOT EXISTS idx_issues_lookup   ON issues(store, stock_code, period);

@@ -859,15 +859,113 @@ def top10_requisitioners_by_store(store_code: str,
 # 6. Procure-to-Pay Pipeline & Budget Plan Tracking
 # ---------------------------------------------------------------------------
 
+def get_real_po_status(conn: sqlite3.Connection, months: int = 18,
+                       limit: int = 200) -> Optional[Dict[str, Any]]:
+    """สถานะใบสั่งซื้อจริงจาก purchase_orders (SKPO/SKPODTL, ดึงด้วย
+    scripts/pull_purchase_orders.py) เทียบกับยอดรับจริงจาก receipts
+
+    คืน None ถ้ายังไม่เคยรัน pull_purchase_orders.bat (ไม่มีตาราง หรือมีแต่ว่าง)
+    เพื่อให้ procure_to_pay_pipeline() ใช้ fallback แบบเดิมได้อย่างสุจริต
+
+    "อนุมัติแล้วหรือยัง" มาจาก approve_datetime ไม่ว่างเปล่า (ข้อเท็จจริงตรงจาก
+    ข้อมูล) ไม่ได้ตีความรหัส POSTATUS แต่อย่างใด — ยังไม่มีสถานะจ่ายเงิน (AP)
+    เพราะ APMASTER เป็นแค่ทะเบียนชื่อผู้ขาย ไม่ใช่ตารางรายการจ่ายเงินจริง
+    """
+    has_table = conn.execute(
+        "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='purchase_orders'"
+    ).fetchone()[0]
+    if not has_table:
+        return None
+
+    cutoff = (datetime.now() - timedelta(days=30 * months)).strftime("%Y-%m-%d")
+    po_rows = conn.execute("""
+        SELECT po_no,
+               MAX(supplier_name) AS supplier_name,
+               MAX(store) AS store,
+               MIN(issue_datetime) AS issue_datetime,
+               MAX(approve_datetime) AS approve_datetime,
+               SUM(amount) AS ordered_amount,
+               COUNT(DISTINCT stock_code) AS item_count
+        FROM purchase_orders
+        WHERE issue_datetime >= ?
+        GROUP BY po_no
+        ORDER BY issue_datetime DESC
+        LIMIT ?
+    """, (cutoff, limit)).fetchall()
+    if not po_rows:
+        return None
+
+    po_nos = [row["po_no"] for row in po_rows]
+    placeholders = ", ".join("?" for _ in po_nos)
+    received_rows = conn.execute(f"""
+        SELECT po_no, SUM(value) AS received_amount, MAX(rcv_date) AS rcv_date, MAX(rcv_no) AS rcv_no
+        FROM receipts
+        WHERE po_no IN ({placeholders})
+        GROUP BY po_no
+    """, po_nos).fetchall()
+    received_map = {row["po_no"]: row for row in received_rows}
+
+    pipeline_items = []
+    total_ordered = 0.0
+    total_received = 0.0
+    approved_count = 0
+    not_received_count = 0
+    for row in po_rows:
+        po_no = row["po_no"]
+        ordered = float(row["ordered_amount"] or 0)
+        received_row = received_map.get(po_no)
+        received = float(received_row["received_amount"] or 0) if received_row else 0.0
+        total_ordered += ordered
+        total_received += received
+        approved = bool(row["approve_datetime"])
+        if approved:
+            approved_count += 1
+
+        if received <= 0:
+            receiving_status = "ยังไม่ได้รับของ"
+            not_received_count += 1
+        elif ordered > 0 and received >= ordered * 0.98:
+            receiving_status = "ได้รับครบแล้ว"
+        else:
+            receiving_status = "ได้รับบางส่วน"
+
+        pipeline_items.append({
+            "po_no": po_no,
+            "supplier": row["supplier_name"] or "",
+            "store": row["store"] or "",
+            "store_name": stores.store_name(row["store"] or ""),
+            "issue_date": (row["issue_datetime"] or "")[:10],
+            "approved": approved,
+            "item_count": row["item_count"],
+            "ordered_amount": ordered,
+            "received_amount": received,
+            "receiving_status": receiving_status,
+            "rcv_no": received_row["rcv_no"] if received_row else "",
+            "rcv_date": received_row["rcv_date"] if received_row else "",
+        })
+
+    return {
+        "po_amount_available": True,
+        "po_amount_note": "ยอดสั่งซื้อและวันที่อนุมัติเป็นข้อมูลจริงจากตาราง PO (SKPO) — "
+                           "สถานะจ่ายเงิน (AP) ยังไม่มีในคลังข้อมูล ต้องดึงตารางบัญชีเพิ่ม",
+        "total_pos": len(pipeline_items),
+        "total_ordered": total_ordered,
+        "total_received": total_received,
+        "approved_count": approved_count,
+        "not_received_count": not_received_count,
+        "pipeline_items": pipeline_items,
+    }
+
+
 def procure_to_pay_pipeline(conn: Optional[sqlite3.Connection] = None,
                             po_limit: int = 30) -> Dict[str, Any]:
-    """ใบรับที่มีเลขที่ PO อ้างอิง — จากตาราง receipts จริงเท่านั้น (ไม่เดา)
+    """สถานะใบสั่งซื้อ: ของจริงถ้าเคยดึง purchase_orders แล้ว (get_real_po_status)
+    ไม่งั้น fallback เป็นยอดรับที่มีเลขที่ PO อ้างอิงจาก receipts เท่านั้น (ไม่เดา)
 
-    คลังข้อมูลยังไม่มีตาราง PO จริง (SKPO/SKPODTL) หรือตารางจ่ายเงิน (AP) จึง
-    ยังไม่มี "ยอดสั่งซื้อจริง" หรือ "สถานะจ่ายเงิน" ให้แสดง — เดิมฟังก์ชันนี้เคย
+    คลังข้อมูลเคยไม่มีตาราง PO จริง (SKPO/SKPODTL) หรือตารางจ่ายเงิน (AP) จึง
+    ไม่มี "ยอดสั่งซื้อจริง" หรือ "สถานะจ่ายเงิน" ให้แสดง — เดิมฟังก์ชันนี้เคย
     คำนวณตัวเลขเหล่านั้นขึ้นเอง (ยอดสั่งซื้อ = ยอดรับ×1.15, สถานะจ่ายเงินสลับกัน
     ตามลำดับแถว) ซึ่งเป็นข้อมูลปลอมทั้งหมด ตัดออกแล้วตามกติกาไม่เดาของโปรเจกต์
-    คืนค่า `po_amount_available=False` ให้หน้าเว็บแสดงข้อความบอกตรง ๆ แทน
     """
     close_after = False
     if conn is None:
@@ -875,6 +973,10 @@ def procure_to_pay_pipeline(conn: Optional[sqlite3.Connection] = None,
         close_after = True
 
     try:
+        real = get_real_po_status(conn, months=18, limit=po_limit)
+        if real is not None:
+            return real
+
         query = """
             SELECT r.po_no, r.supplier, r.rcv_no, r.rcv_date, r.store,
                    SUM(r.value) as rcv_val, COUNT(r.stock_code) as item_count

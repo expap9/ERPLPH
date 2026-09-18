@@ -203,6 +203,56 @@ def test_procure_to_pay_and_substores(test_db):
         assert "po_ordered_amount" not in item, "ห้ามมีเลขสั่งซื้อปลอม (เดิม = ยอดรับ×1.15)"
         assert "ap_status" not in item, "ห้ามมีสถานะจ่ายเงินปลอม (เดิมสลับกันตาม index)"
 
+
+def test_real_po_status_once_purchase_orders_table_is_pulled(test_db):
+    """หลังรัน pull_purchase_orders.bat แล้ว ต้องได้ยอดสั่งซื้อจริง ไม่ใช่ fallback"""
+    test_db.executescript("""
+        CREATE TABLE purchase_orders (
+            po_no TEXT, suffix INTEGER, store TEXT, stock_code TEXT, lot_no TEXT,
+            supplier_code TEXT, supplier_name TEXT, request_qty REAL, lot_qty REAL,
+            lot_price REAL, amount REAL, postatus INTEGER,
+            division TEXT, dept TEXT, section TEXT,
+            issue_datetime TEXT, approve_datetime TEXT, due_datetime TEXT,
+            last_receive_datetime TEXT, contract_no TEXT, pulled_at TEXT
+        );
+        -- PO01 ตรงกับ receipts ที่มีอยู่แล้วในฟิกซ์เจอร์ (รับแล้ว 450,000) และอนุมัติแล้ว
+        -- สั่ง 450,000 พอดี = ได้รับครบ (ทดสอบ "ได้รับบางส่วน" แยกไว้ที่ระดับ SQL ยอดจริงเอง)
+        INSERT INTO purchase_orders (po_no, suffix, store, stock_code, supplier_name, amount,
+                                     issue_datetime, approve_datetime)
+        VALUES ('PO01', 1, '2', '1001', 'Pharma A Co', 450000.0, '2026-08-25', '2026-08-26');
+        -- PO03 ยังไม่มีใบรับเลย (ทดสอบสถานะ "ยังไม่ได้รับของ" และ "ยังไม่อนุมัติ")
+        INSERT INTO purchase_orders (po_no, suffix, store, stock_code, supplier_name, amount,
+                                     issue_datetime, approve_datetime)
+        VALUES ('PO03', 1, '2', '1002', 'Pharma B Co', 20000.0, '2026-09-01', '');
+    """)
+    p2p = executive_analytics.procure_to_pay_pipeline(test_db)
+    assert p2p["po_amount_available"] is True, "มีตาราง purchase_orders แล้วต้องใช้ของจริง ไม่ fallback"
+    items = {item["po_no"]: item for item in p2p["pipeline_items"]}
+
+    po1 = items["PO01"]
+    assert po1["ordered_amount"] == 450000.0
+    assert po1["received_amount"] == 450000.0, "ต้องดึงยอดรับจริงจาก receipts มาเทียบ"
+    assert po1["approved"] is True
+    assert po1["receiving_status"] == "ได้รับครบแล้ว"
+
+    po3 = items["PO03"]
+    assert po3["received_amount"] == 0.0
+    assert po3["approved"] is False, "approve_datetime ว่าง ต้องไม่ถูกตีความว่าอนุมัติแล้ว"
+    assert po3["receiving_status"] == "ยังไม่ได้รับของ"
+
+    assert p2p["not_received_count"] == 1
+    assert p2p["approved_count"] == 1
+
+    # get_real_po_status() ตรง ๆ ก็ต้องคืนของจริงชุดเดียวกัน
+    direct = executive_analytics.get_real_po_status(test_db)
+    assert direct is not None
+    assert direct["total_pos"] == 2
+
+
+def test_real_po_status_returns_none_without_the_table(test_db):
+    assert executive_analytics.get_real_po_status(test_db) is None, \
+        "ยังไม่มีตาราง purchase_orders ต้องคืน None ให้ fallback ทำงาน ไม่ใช่ error"
+
     sub = executive_analytics.substore_status_summary(test_db)
     assert "in_transit" in sub
     assert "overstock" in sub

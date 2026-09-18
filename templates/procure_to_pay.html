@@ -98,12 +98,58 @@
   </div>
 </div>
 
-<!-- ส่วนที่ 3: ใบรับที่มีเลขที่ PO อ้างอิง -->
+<!-- ส่วนที่ 3: สถานะใบสั่งซื้อ (PO) -->
 <div class="card">
-  <h2>ใบรับที่มีเลขที่ PO อ้างอิง</h2>
+  <h2>{{ 'สถานะใบสั่งซื้อ (PO)' if po_amount_available else 'ใบรับที่มีเลขที่ PO อ้างอิง' }}</h2>
   <div class="notice" style="margin-bottom:14px;">
     {{ po_amount_note }}
   </div>
+
+  {% if po_amount_available %}
+  <p class="card-hint" style="color:var(--muted); font-size:13px; margin:-4px 0 12px;">
+    {{ '{:,}'.format(total_pos) }} ใบสั่งซื้อ · สั่งรวม {{ money(total_ordered) }} บาท ·
+    รับแล้ว {{ money(total_received) }} บาท · อนุมัติแล้ว {{ approved_count }}/{{ total_pos }} ใบ
+    {% if not_received_count %}
+    · <span class="pill slow">{{ not_received_count }} ใบยังไม่ได้รับของเลย</span>
+    {% endif %}
+  </p>
+  <div class="scroll">
+    <table>
+      <thead>
+        <tr>
+          <th>เลขที่ PO</th>
+          <th>บริษัทคู่ค้า</th>
+          <th>คลัง</th>
+          <th>วันที่ออก PO</th>
+          <th>อนุมัติแล้ว</th>
+          <th class="num">ยอดสั่งซื้อ</th>
+          <th class="num">ยอดรับจริง</th>
+          <th>สถานะรับของ</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for p in pipeline_items %}
+        <tr>
+          <td><strong>{{ p.po_no }}</strong></td>
+          <td>{{ p.supplier }}</td>
+          <td>{{ p.store_name }}</td>
+          <td>{{ p.issue_date }}</td>
+          <td>{{ '✓ อนุมัติแล้ว' if p.approved else '⌛ ยังไม่อนุมัติ' }}</td>
+          <td class="num">฿{{ money(p.ordered_amount) }}</td>
+          <td class="num">฿{{ money(p.received_amount) }}</td>
+          <td>
+            <span class="pill {{ 'ok' if p.receiving_status == 'ได้รับครบแล้ว' else ('late' if p.receiving_status == 'ยังไม่ได้รับของ' else 'slow') }}">
+              {{ p.receiving_status }}
+            </span>
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="8" style="text-align:center; padding:20px; color:var(--muted);">ไม่มีใบสั่งซื้อในช่วงนี้</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
   <div class="scroll">
     <table>
       <thead>
@@ -130,6 +176,7 @@
       </tbody>
     </table>
   </div>
+  {% endif %}
 </div>
 
 {% endif %}
