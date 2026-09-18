@@ -1,94 +1,47 @@
 <div class="login-shell">
-  <!-- Ambient background glow elements -->
-  <div class="glow-orb glow-top"></div>
-  <div class="glow-orb glow-bottom"></div>
-
-  <div class="login-container">
-    <div class="hospital-badge">
-      <span class="badge-icon">🏥</span>
-      <span>โรงพยาบาลลำปาง · กระทรวงสาธารณสุข</span>
+  <form class="login-card panel" (ngSubmit)="submit()">
+    <div class="login-brand">
+      <div class="brand-mark">LPH</div>
+      <div>
+        <strong>ERPLPH</strong>
+        <span>ระบบบริหารคลังและพัสดุ โรงพยาบาลลำปาง</span>
+      </div>
     </div>
 
-    <form class="login-card panel" (ngSubmit)="submit()">
-      <div class="login-brand">
-        <div class="brand-mark">LPH</div>
-        <div class="brand-text">
-          <div class="title-row">
-            <strong class="brand-title">ERPLPH</strong>
-            <span class="version-tag">PORTAL</span>
-          </div>
-          <span class="brand-desc">ระบบบริหารคลังและพัสดุ โรงพยาบาลลำปาง</span>
-        </div>
-      </div>
+    @if (error) {
+      <div class="notice error">{{ error }}</div>
+    }
 
-      <div class="system-intro">
-        ระบบบูรณาการข้อมูลคลัง ยา เวชภัณฑ์ พัสดุ ครุภัณฑ์ และงานจ้าง ทั้งโรงพยาบาล
-      </div>
+    <div class="field">
+      <label for="login-username">ชื่อผู้ใช้</label>
+      <input
+        id="login-username"
+        type="text"
+        name="username"
+        autocomplete="username"
+        [(ngModel)]="username"
+        [disabled]="submitting"
+        required
+      />
+    </div>
 
-      @if (error) {
-        <div class="notice error">
-          <span class="notice-icon">⚠️</span>
-          <span>{{ error }}</span>
-        </div>
-      }
+    <div class="field">
+      <label for="login-password">รหัสผ่าน</label>
+      <input
+        id="login-password"
+        type="password"
+        name="password"
+        autocomplete="current-password"
+        [(ngModel)]="password"
+        [disabled]="submitting"
+        required
+      />
+    </div>
 
-      <div class="field">
-        <label for="login-username">
-          <span>ชื่อผู้ใช้งานระบบ</span>
-          <span class="label-en">Username</span>
-        </label>
-        <div class="input-wrap">
-          <span class="input-icon">👤</span>
-          <input
-            id="login-username"
-            type="text"
-            name="username"
-            placeholder="รหัสหรือชื่อผู้ใช้ระบบโรงพยาบาล"
-            autocomplete="username"
-            [(ngModel)]="username"
-            [disabled]="submitting"
-            required
-          />
-        </div>
-      </div>
+    <button type="submit" class="btn primary login-submit" [disabled]="submitting">
+      {{ submitting ? 'กำลังเข้าสู่ระบบ...' : 'เข้าสู่ระบบ' }}
+    </button>
 
-      <div class="field">
-        <label for="login-password">
-          <span>รหัสผ่าน</span>
-          <span class="label-en">Password</span>
-        </label>
-        <div class="input-wrap">
-          <span class="input-icon">🔒</span>
-          <input
-            id="login-password"
-            type="password"
-            name="password"
-            placeholder="รหัสผ่านเข้าใช้งานระบบ"
-            autocomplete="current-password"
-            [(ngModel)]="password"
-            [disabled]="submitting"
-            required
-          />
-        </div>
-      </div>
-
-      <button type="submit" class="btn primary login-submit" [disabled]="submitting">
-        @if (submitting) {
-          <span class="spinner"></span>
-          <span>กำลังเข้าสู่ระบบ...</span>
-        } @else {
-          <span>เข้าสู่ระบบ (Log In)</span>
-        }
-      </button>
-
-      <div class="login-footer">
-        <p class="login-hint">
-          เข้าสู่ระบบด้วยบัญชีผู้ใช้งานระบบสารสนเทศโรงพยาบาลลำปาง (SSB / HIS)
-        </p>
-        <div class="hospital-copyright">
-          © โรงพยาบาลลำปาง · Lampang Hospital
-        </div>
-      </div>
-    </form>
-  </div>
+    <p class="login-hint">เข้าสู่ระบบด้วยบัญชีผู้ใช้งานระบบโรงพยาบาล (SSB / HIS)</p>
+  </form>
 </div>
