@@ -2615,6 +2615,15 @@
         closeDeptItemsModal();
       }
     });
+
+    // Auto-open Item Detail Modal if ?code= or ?item= in URL
+    document.addEventListener('DOMContentLoaded', function() {
+      const urlParams = new URLSearchParams(window.location.search);
+      const itemCode = urlParams.get('code') || urlParams.get('item');
+      if (itemCode) {
+        openItemModal('{{ current_store }}', itemCode);
+      }
+    });
   </script>
 
 {% endblock %}

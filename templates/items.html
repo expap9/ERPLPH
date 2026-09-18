@@ -3,15 +3,15 @@
 {% block content %}
 
 <h1>ค้นหารายการ</h1>
-<p class="sub">ค้นด้วยรหัสหรือชื่อ ได้ทุกประเภท — ยา เวชภัณฑ์ พัสดุ ครุภัณฑ์ อาหาร งานจ้าง ·
-  หรือเลือกกลุ่มเพื่อดูรายการที่เงินหมุนเวียนมากที่สุด</p>
+<p class="sub">ค้นด้วยรหัสหรือชื่อ ยา เวชภัณฑ์ พัสดุ ครุภัณฑ์ อาหาร งานจ้าง ·
+  หรือค้นด้วยเลขที่ใบสั่งซื้อ (PO / สัญญา) และชื่อบริษัทคู่ค้า</p>
 
 {% if problem %}
   <div class="problem">{{ problem }}</div>
 {% else %}
 
 <form class="card" method="get" action="/items" style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:12px">
-  <input type="search" name="q" value="{{ search_text }}" placeholder="เช่น กระดาษ, paracetamol, หมึก, 1021030"
+  <input type="search" name="q" value="{{ search_text }}" placeholder="เช่น กระดาษ, paracetamol, เลขที่สัญญา/PO, ชื่อบริษัทคู่ค้า, 1021030"
          style="flex:1 1 260px;padding:8px 10px;border:1px solid var(--line);border-radius:6px;font:inherit;background:var(--card);color:var(--ink)">
   {% if group %}<input type="hidden" name="group" value="{{ group }}">{% endif %}
   {% if store %}<input type="hidden" name="store" value="{{ store }}">{% endif %}
@@ -47,7 +47,14 @@
       <tr>
         <td><a href="/items/{{ row.stock_code | urlencode }}">{{ row.name or '(ไม่มีชื่อ)' }}</a>
           {% if row.retired %}<span class="pill slow">เลิกใช้</span>{% endif %}
-          <br><span class="code">รหัส {{ row.stock_code }}{% if row.trade_name and row.trade_name != row.name %} · {{ row.trade_name }}{% endif %}</span></td>
+          <br><span class="code">รหัส {{ row.stock_code }}{% if row.trade_name and row.trade_name != row.name %} · {{ row.trade_name }}{% endif %}</span>
+          {% if row.match_po %}
+            <span class="pill ok" style="font-size:11px; margin-left:4px;">📄 สัญญา/PO: {{ row.match_po }}</span>
+          {% endif %}
+          {% if row.match_supplier %}
+            <span class="pill slow" style="font-size:11px; margin-left:4px;">🏢 คู่ค้า: {{ row.match_supplier }}</span>
+          {% endif %}
+        </td>
         <td style="white-space:nowrap"><i class="dot" style="background:var(--g-{{ row.group_key }})"></i>{{ row.group }}</td>
         <td class="num">{{ money(row.stock_value) }}</td>
         <td class="num">{{ row.stores or '—' }}</td>

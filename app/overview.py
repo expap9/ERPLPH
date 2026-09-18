@@ -293,16 +293,37 @@ def dormant(conn, store: str | None = None, group: str | None = None,
 
 def search(conn, text: str = "", group: str | None = None, store: str | None = None,
            months: int = DEFAULT_MONTHS, limit: int = SEARCH_LIMIT) -> list[dict[str, Any]]:
-    """ค้นด้วยรหัสหรือชื่อ ข้ามทุกกลุ่ม ไม่ใส่คำค้นแต่เลือกกลุ่ม = รายการเด่นของกลุ่มนั้น
+    """ค้นด้วยรหัสหรือชื่อ ข้ามทุกกลุ่ม รวมถึงค้นหาจากเลขที่ PO / สัญญา และชื่อบริษัทคู่ค้า
 
     เรียงตามความสำคัญ (คงคลัง + ยอดใช้ + ยอดรับ) เพราะคำค้นสั้น ๆ อย่าง "กระดาษ" ได้หลายร้อย
     รายการ รายการที่เงินหมุนเวียนมากควรขึ้นก่อน
     """
     text = (text or "").strip()[:60]
     where, values = ["1 = 1"], []
+    po_matches: dict[str, dict[str, str]] = {}
+
     if text:
-        where.append("(m.stock_code LIKE ? OR m.name LIKE ? OR m.trade_name LIKE ?)")
-        values += [f"{text}%", f"%{text}%", f"%{text}%"]
+        clean_text = text.replace(" ", "")
+        try:
+            cur = conn.execute(
+                "SELECT stock_code, po_no, supplier FROM receipts "
+                "WHERE (REPLACE(po_no, ' ', '') LIKE ? OR supplier LIKE ?) "
+                "ORDER BY rcv_date DESC LIMIT 200",
+                [f"%{clean_text}%", f"%{text}%"]
+            )
+            for r_code, r_po, r_sup in cur.fetchall():
+                if r_code not in po_matches:
+                    po_matches[r_code] = {"po_no": r_po or "", "supplier": clean_name(r_sup or "")}
+        except Exception:
+            pass
+
+        where.append("""(
+            m.stock_code LIKE ?
+            OR m.name LIKE ?
+            OR m.trade_name LIKE ?
+            OR m.stock_code IN (SELECT stock_code FROM receipts WHERE REPLACE(po_no, ' ', '') LIKE ? OR supplier LIKE ?)
+        )""")
+        values += [f"{text}%", f"%{text}%", f"%{text}%", f"%{clean_text}%", f"%{text}%"]
     if group:
         where.append(categories.sql_category_filter(group, "m.main_category"))
     if not text and not group:
@@ -334,7 +355,9 @@ def search(conn, text: str = "", group: str | None = None, store: str | None = N
              "group_key": categories.group_of(category),
              "group": categories.group_name(categories.group_of(category)),
              "stock_value": stock_value, "stores": store_count, "used": used,
-             "received": received, "last_received": last_received or ""}
+             "received": received, "last_received": last_received or "",
+             "match_po": po_matches.get(code, {}).get("po_no", ""),
+             "match_supplier": po_matches.get(code, {}).get("supplier", "")}
             for code, name, trade, category, retired, stock_value, store_count, used, received,
             last_received in rows]
 

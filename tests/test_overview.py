@@ -179,6 +179,18 @@ class OverviewTests(unittest.TestCase):
         self.assertEqual([row["stock_code"] for row in overview.search(self.conn, "700")], ["7000"])
         self.assertEqual(overview.search(self.conn, "paracetamol")[0]["group"], "ยา")
 
+    def test_search_finds_by_po_no_or_supplier(self):
+        # ค้นหาด้วยเลข PO
+        rows = overview.search(self.conn, "PO1")
+        codes = [row["stock_code"] for row in rows]
+        self.assertIn("1000", codes)
+        self.assertEqual(rows[0]["match_po"], "PO1")
+
+        # ค้นหาด้วยชื่อผู้ขาย
+        sup_rows = overview.search(self.conn, "อินโดไชน่า")
+        sup_codes = [row["stock_code"] for row in sup_rows]
+        self.assertIn("1000", sup_codes)
+
     def test_choosing_a_group_without_text_lists_that_group(self):
         rows = overview.search(self.conn, "", group=categories.HIRE)
         self.assertEqual([row["stock_code"] for row in rows], ["9000"])

@@ -497,6 +497,7 @@ def top10_page():
 
 
 @app.route("/procure-to-pay")
+@app.route("/purchasing")
 def procure_to_pay_page():
     conn = open_warehouse()
     if conn is None:
