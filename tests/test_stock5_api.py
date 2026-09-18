@@ -237,6 +237,17 @@ class Stock5RouteTests(unittest.TestCase):
     def test_unknown_api_paths_are_not_swallowed_by_the_angular_fallback(self):
         self.assertEqual(self.client.get("/api/ไม่มีเส้นทางนี้").status_code, 404)
 
-    def test_client_side_routes_return_the_angular_page(self):
-        response = self.client.get("/dashboard")
-        self.assertIn(response.status_code, (200, 503), "503 = ยังไม่ได้ build หน้าจอบนเครื่องนี้")
+    def test_legacy_angular_routes_redirect_to_the_jinja_page(self):
+        """18 ก.ย. 2569: เลิกใช้ Angular เป็นหน้านำทางหลัก (ซ้ำกับ Jinja ที่มีข้อมูลจริงครบกว่า)
+        ลิงก์/bookmark เดิมของ Angular ต้องยัง redirect ไปหน้า Jinja ที่ทำหน้าที่เดียวกัน ไม่ 404"""
+        cases = {
+            "/dashboard": "/overview",
+            "/purchasing": "/procure-to-pay",
+            "/drug-search": "/items",
+            "/procurement-plan": "/overview",
+        }
+        for path, expected_location in cases.items():
+            with self.subTest(path=path):
+                response = self.client.get(path)
+                self.assertEqual(response.status_code, 302)
+                self.assertEqual(response.headers["Location"], expected_location)

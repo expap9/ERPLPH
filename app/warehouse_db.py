@@ -135,6 +135,9 @@ CREATE INDEX IF NOT EXISTS idx_issues_period   ON issues(period, store);
 CREATE INDEX IF NOT EXISTS idx_issues_kind     ON issues(movement_kind, period);
 CREATE INDEX IF NOT EXISTS idx_issues_division  ON issues(division, period);
 CREATE INDEX IF NOT EXISTS idx_issues_store_period ON issues(store, period);
+-- ให้ตัด Stock รายวัน (get_pharmacy_daily_stock_cut) กรองตามช่วงวันที่ issued_at
+-- ได้เร็วแบบ index range scan แทนสแกนทั้งตาราง (เดิมใช้ substr(issued_at,1,10)=? ใช้ index ไม่ได้)
+CREATE INDEX IF NOT EXISTS idx_issues_type_dir_at ON issues(document_type, direction, issued_at);
 CREATE INDEX IF NOT EXISTS idx_items_group     ON items(item_group, retired);
 """
 

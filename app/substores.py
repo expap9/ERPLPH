@@ -709,162 +709,6 @@ def get_pending_transfers(conn: sqlite3.Connection, store_code: str = "ALL", mon
     latest = latest_period(conn)
     p_first, p_latest = _period_range(latest, months)
 
-    # Sample priority alert items (Backorders, Partial Dispatches, In-Transit)
-    sample_alerts = [
-        {
-            "irno": "GTF6909-0842",
-            "date": "2026-09-17 08:30",
-            "from_store_code": "2",
-            "from_store": "คลัง 2 (คลังยาและเวชภัณฑ์)",
-            "dest_dept_code": "208-02-02",
-            "dest_name": "หน่วยจ่ายยาผู้ป่วยใน",
-            "dest_store": "I2",
-            "stock_code": "1229850",
-            "name": "MEROPENEM INJ 1 G",
-            "category": "ยา",
-            "category_badge": "ok",
-            "requested_qty": 200,
-            "dispatched_qty": 200,
-            "unit": "VIAL",
-            "value": 36400.0,
-            "status": "IN_TRANSIT",
-            "status_label": "คลังใหญ่ตัดแล้ว รอยืนยันรับเข้าห้องยา",
-        },
-        {
-            "irno": "GTF6909-0830",
-            "date": "2026-09-16 14:15",
-            "from_store_code": "1",
-            "from_store": "คลัง 1 (คลังพัสดุ)",
-            "dest_dept_code": "210-10",
-            "dest_name": "คลังห้องผ่าตัดใหญ่",
-            "dest_store": "OR",
-            "stock_code": "3313000",
-            "name": "Vicryl 3/0 VCP 316H",
-            "category": "พัสดุ",
-            "category_badge": "primary",
-            "requested_qty": 500,
-            "dispatched_qty": 0,
-            "unit": "PCS",
-            "value": 59295.0,
-            "status": "SHORTAGE",
-            "status_label": "⚠ คลังใหญ่ของหมด ยังไม่จ่ายมาให้ (Backorder)",
-        },
-        {
-            "irno": "GTF6909-0791",
-            "date": "2026-09-16 16:00",
-            "from_store_code": "2",
-            "from_store": "คลัง 2 (คลังยาและเวชภัณฑ์)",
-            "dest_dept_code": "208-02-02",
-            "dest_name": "หน่วยจ่ายยาผู้ป่วยใน",
-            "dest_store": "I2",
-            "stock_code": "1031040",
-            "name": "CEFTRIAXONE INJ 1 G",
-            "category": "ยา",
-            "category_badge": "ok",
-            "requested_qty": 500,
-            "dispatched_qty": 0,
-            "unit": "VIAL",
-            "value": 9500.0,
-            "status": "SHORTAGE",
-            "status_label": "⚠ คลังใหญ่ของหมด ยังไม่จ่ายมาให้ (Backorder)",
-        },
-        {
-            "irno": "GTF6909-0750",
-            "date": "2026-09-15 10:45",
-            "from_store_code": "1",
-            "from_store": "คลัง 1 (คลังพัสดุ)",
-            "dest_dept_code": "210-10",
-            "dest_name": "คลังห้องผ่าตัดใหญ่",
-            "dest_store": "OR",
-            "stock_code": "40209016",
-            "name": "Penrosdrain",
-            "category": "พัสดุ",
-            "category_badge": "primary",
-            "requested_qty": 800,
-            "dispatched_qty": 500,
-            "unit": "PCS",
-            "value": 8500.0,
-            "status": "PARTIAL",
-            "status_label": "⚠ จ่ายไม่ครบ (ขอ 800 จ่าย 500 ค้าง 300)",
-        },
-        {
-            "irno": "GTF6909-0715",
-            "date": "2026-09-15 11:20",
-            "from_store_code": "7",
-            "from_store": "คลัง 7 (ยาผลิตปราศจากเชื้อ)",
-            "dest_dept_code": "208-02-02",
-            "dest_name": "หน่วยจ่ายยาผู้ป่วยใน",
-            "dest_store": "I2",
-            "stock_code": "03080101",
-            "name": "Normal Saline 0.9% 1000ml",
-            "category": "ยา",
-            "category_badge": "ok",
-            "requested_qty": 1000,
-            "dispatched_qty": 600,
-            "unit": "BOTTLE",
-            "value": 15000.0,
-            "status": "PARTIAL",
-            "status_label": "⚠ จ่ายไม่ครบ (ขอ 1,000 จ่าย 600 ค้าง 400)",
-        },
-        {
-            "irno": "GTF6909-0820",
-            "date": "2026-09-17 09:15",
-            "from_store_code": "2",
-            "from_store": "คลัง 2 (คลังยาและเวชภัณฑ์)",
-            "dest_dept_code": "208-02-12",
-            "dest_name": "หน่วยจ่ายยาผู้ป่วยนอกตึก 8 ชั้น",
-            "dest_store": "O5",
-            "stock_code": "1634290",
-            "name": "AMLODIPINE 5 MG TAB",
-            "category": "ยา",
-            "category_badge": "ok",
-            "requested_qty": 5000,
-            "dispatched_qty": 5000,
-            "unit": "TAB",
-            "value": 3500.0,
-            "status": "IN_TRANSIT",
-            "status_label": "กำลังขนส่งมายังห้องยา OPD ตึก 8 ชั้น",
-        },
-        {
-            "irno": "GTF6909-0805",
-            "date": "2026-09-16 14:00",
-            "from_store_code": "2",
-            "from_store": "คลัง 2 (คลังยาและเวชภัณฑ์)",
-            "dest_dept_code": "208-02-15",
-            "dest_name": "ห้องจ่ายยาฉุกเฉิน(ER)",
-            "dest_store": "ER",
-            "stock_code": "1011210",
-            "name": "ADRENALINE INJ 1 MG/ML",
-            "category": "ยา",
-            "category_badge": "ok",
-            "requested_qty": 100,
-            "dispatched_qty": 100,
-            "unit": "AMP",
-            "value": 1800.0,
-            "status": "IN_TRANSIT",
-            "status_label": "อยู่ระหว่างส่งเข้าตู้ยาห้องฉุกเฉิน",
-        },
-        {
-            "irno": "GTF6909-0855",
-            "date": "2026-09-17 11:10",
-            "from_store_code": "1",
-            "from_store": "คลัง 1 (คลังพัสดุ)",
-            "dest_dept_code": "208-02-02",
-            "dest_name": "หน่วยจ่ายยาผู้ป่วยใน",
-            "dest_store": "I2",
-            "stock_code": "40141022",
-            "name": "ชุดสายซิลิโคนสำหรับดูดเสมหะ",
-            "category": "พัสดุ",
-            "category_badge": "primary",
-            "requested_qty": 100,
-            "dispatched_qty": 100,
-            "unit": "SUT",
-            "value": 18939.0,
-            "status": "IN_TRANSIT",
-            "status_label": "คลังใหญ่ตัดแล้ว รอยืนยันรับเข้า",
-        },
-    ]
-
     items = []
     seen = set()
     is_all = (store_code.upper() in ("ALL", "TOTAL", "HOSPITAL", ""))
@@ -884,14 +728,6 @@ def get_pending_transfers(conn: sqlite3.Connection, store_code: str = "ALL", mon
             target_div = parts[0] if len(parts) > 0 else ""
             target_dept = parts[1] if len(parts) > 1 else ""
             target_sec = parts[2] if len(parts) > 2 else ""
-
-    for it in sample_alerts:
-        if is_all:
-            items.append(it)
-            seen.add((it["irno"], it["stock_code"]))
-        elif it.get("dest_store") == store_code or (target_div and it.get("dest_dept_code", "").startswith(f"{target_div}-{target_dept}")):
-            items.append(it)
-            seen.add((it["irno"], it["stock_code"]))
 
     # Query real pending transfers from DB (check_status = 'PENDING')
     try:
@@ -2918,9 +2754,11 @@ def get_pharmacy_daily_stock_cut(conn: sqlite3.Connection, store_code: str = 'AL
     today = datetime.datetime.now().date()
     yesterday = today - datetime.timedelta(days=1)
     
+    tomorrow = today + datetime.timedelta(days=1)
     today_str = today.strftime("%Y-%m-%d")
     yesterday_str = yesterday.strftime("%Y-%m-%d")
-    
+    tomorrow_str = tomorrow.strftime("%Y-%m-%d")
+
     # Snapshot balances period format is YYYYMMDD
     yesterday_bal_str = yesterday.strftime("%Y%m%d")
     
@@ -2946,22 +2784,24 @@ def get_pharmacy_daily_stock_cut(conn: sqlite3.Connection, store_code: str = 'AL
         yest_use AS (
             SELECT stock_code, store, SUM(qty) as qty, SUM(value) as val
             FROM issues
-            WHERE document_type = '32' AND direction = 'out' 
-              AND substr(issued_at, 1, 10) = ? {store_clause}
+            -- ช่วงวันที่แบบ >= / < (ไม่ใช้ substr()) เพื่อให้ใช้ idx_issues_type_dir_at ได้
+            -- (substr(issued_at,1,10) = ? เดิม บังคับให้สแกนทั้งตาราง ช้ากับ ALL ทุกคลัง)
+            WHERE document_type = '32' AND direction = 'out'
+              AND issued_at >= ? AND issued_at < ? {store_clause}
             GROUP BY stock_code, store
         ),
         tod_use AS (
             SELECT stock_code, store, SUM(qty) as qty, SUM(value) as val
             FROM issues
-            WHERE document_type = '32' AND direction = 'out' 
-              AND substr(issued_at, 1, 10) = ? {store_clause}
+            WHERE document_type = '32' AND direction = 'out'
+              AND issued_at >= ? AND issued_at < ? {store_clause}
             GROUP BY stock_code, store
         ),
         tod_in AS (
             SELECT stock_code, store, SUM(qty) as qty, SUM(value) as val
             FROM issues
-            WHERE document_type = '35' AND direction = 'in' 
-              AND substr(issued_at, 1, 10) = ? {store_clause}
+            WHERE document_type = '35' AND direction = 'in'
+              AND issued_at >= ? AND issued_at < ? {store_clause}
             GROUP BY stock_code, store
         ),
         all_items AS (
@@ -2991,7 +2831,12 @@ def get_pharmacy_daily_stock_cut(conn: sqlite3.Connection, store_code: str = 'AL
         LEFT JOIN items m ON i.stock_code = m.stock_code
     '''
     
-    params = [yesterday_bal_str] + store_params + [yesterday_str] + store_params + [today_str] + store_params + [today_str] + store_params
+    params = (
+        [yesterday_bal_str] + store_params
+        + [yesterday_str, today_str] + store_params
+        + [today_str, tomorrow_str] + store_params
+        + [today_str, tomorrow_str] + store_params
+    )
     
     rows = conn.execute(sql, params).fetchall()
     
@@ -3057,3 +2902,58 @@ def get_pharmacy_daily_stock_cut(conn: sqlite3.Connection, store_code: str = 'AL
     
     return {"data": results, "kpis": kpis}
 
+
+
+def get_central_vs_substore_stock(conn: sqlite3.Connection, limit: int = 300) -> dict[str, Any]:
+    """เทียบยอดคงเหลือคลังใหญ่ (คลัง 2) กับยอดรวมคลังย่อยทุกห้องยา ต่อรายการ
+
+    ใช้สำหรับหน้า "คลังใหญ่" ตอบคำถาม "คลังย่อยมีเท่าไหร่ ตัวเองมีเท่าไหร่" —
+    ต่อยอดจาก get_pharmacy_daily_stock_cut(conn, 'ALL') ที่คืนแถวของคลัง 2
+    (คลังใหญ่) ปนอยู่กับคลังย่อยทุกห้องยาในรายการเดียวกันอยู่แล้ว จึงแค่ group
+    ตาม stock_code แล้วแยกยอดคลังใหญ่ออกจากยอดรวมคลังย่อย ไม่ต้อง query ใหม่
+    """
+    cut = get_pharmacy_daily_stock_cut(conn, "ALL")
+
+    by_item: dict[str, dict[str, Any]] = {}
+    for row in cut["data"]:
+        code = row["stock_code"]
+        entry = by_item.get(code)
+        if entry is None:
+            entry = {
+                "stock_code": code,
+                "name": row["name"],
+                "unit": row["unit"],
+                "central_qty": 0.0,
+                "central_val": 0.0,
+                "substore_qty": 0.0,
+                "substore_val": 0.0,
+                "substore_count": 0,
+            }
+            by_item[code] = entry
+
+        if row["store"] == stores.PHARMACY_MAIN_STORE:
+            entry["central_qty"] += row["current_on_hand"]
+            entry["central_val"] += row["current_val"]
+        else:
+            entry["substore_qty"] += row["current_on_hand"]
+            entry["substore_val"] += row["current_val"]
+            if row["current_on_hand"] > 0:
+                entry["substore_count"] += 1
+
+    items = list(by_item.values())
+    for it in items:
+        it["total_val"] = it["central_val"] + it["substore_val"]
+        # เสี่ยงต้องซื้อ: คลังใหญ่แทบไม่มีของเหลือ แต่คลังย่อยยังพึ่งพาอยู่
+        it["central_low"] = it["central_qty"] <= 0 and it["substore_val"] > 0
+
+    items.sort(key=lambda x: x["total_val"], reverse=True)
+
+    return {
+        # ใช้ชื่อ "rows" ไม่ใช่ "items" เพราะ Jinja จะไปเจอ dict.items (built-in method)
+        # ก่อนคีย์ "items" เสมอ แล้วพังตอนวนลูป (บั๊กเดิมเคยเจอกับ overview.head.items)
+        "rows": items[:limit],
+        "total_items": len(items),
+        "total_central_val": sum(i["central_val"] for i in items),
+        "total_substore_val": sum(i["substore_val"] for i in items),
+        "central_low_count": sum(1 for i in items if i["central_low"]),
+    }

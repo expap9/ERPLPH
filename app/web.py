@@ -498,16 +498,19 @@ def top10_page():
 
 
 @app.route("/procure-to-pay")
-@app.route("/purchasing")
 def procure_to_pay_page():
+    """คลังใหญ่ & จัดซื้อ — เทียบคลังใหญ่กับคลังย่อยทุกที่, ต้องซื้อยัง, และใบรับที่มี PO อ้างอิง"""
     conn = open_warehouse()
     if conn is None:
         return render_template("procure_to_pay.html", problem=NO_WAREHOUSE, active="p2p")
     try:
         pipeline = executive_analytics.procure_to_pay_pipeline(conn)
+        central_vs_substore = substores.get_central_vs_substore_stock(conn)
+        reorder = substores.get_requisition_recommendations(conn, "ALL", target_mos=1.0)
     finally:
         conn.close()
-    return render_template("procure_to_pay.html", problem=None, active="p2p", **pipeline)
+    return render_template("procure_to_pay.html", problem=None, active="p2p",
+                            central_vs_substore=central_vs_substore, reorder=reorder, **pipeline)
 
 
 @app.route("/substores")
@@ -543,17 +546,34 @@ def substores_page():
 
         is_all_stores = raw_store.upper() in ("ALL", "TOTAL", "HOSPITAL")
         if is_all_stores:
-            h_data = substores.get_hospital_all_stores_analytics(conn, months=months)
-            kpis = h_data["kpis"]
-            all_groups = h_data["groups_data"]
-            hospital_top_items = h_data["top_items"]
-            substore_monthly_trend = h_data["monthly_trend"]
-            amc_mos_list = substores.get_amc_and_mos_list(conn, "ALL", limit=100)
-            reorder_recommendations = substores.get_requisition_recommendations(conn, "ALL", target_mos=1.0)
-            expiring_data = substores.get_expiring_medicines(conn, "ALL", limit=100)
-            ward_dispensations = substores.get_ward_dispensations(conn, "ALL", limit=25, months=months)
-            transfers_received = substores.get_transfers_received(conn, "ALL", limit=50, months=months)
-            pending_transfers = substores.get_pending_transfers(conn, "ALL", months=12)
+            # ขอบเขต ALL ต้องกวาดตาราง issues 2 ล้านแถวหลายรอบ (COUNT DISTINCT ต่อกลุ่มคลัง)
+            # หนักหลายวินาทีถึงหลักสิบวินาที แต่ข้อมูลเปลี่ยนเฉพาะตอนดึงข้อมูลรอบใหม่เท่านั้น
+            # แคชตามเวลาแก้ไขไฟล์คลังข้อมูล (แพทเทิร์นเดียวกับ stock5_api._cached) กันคำนวณซ้ำทุกครั้ง
+            def _build_all_stores_bundle():
+                h_data = substores.get_hospital_all_stores_analytics(conn, months=months)
+                return {
+                    "kpis": h_data["kpis"],
+                    "all_groups": h_data["groups_data"],
+                    "hospital_top_items": h_data["top_items"],
+                    "substore_monthly_trend": h_data["monthly_trend"],
+                    "amc_mos_list": substores.get_amc_and_mos_list(conn, "ALL", limit=100),
+                    "reorder_recommendations": substores.get_requisition_recommendations(conn, "ALL", target_mos=1.0),
+                    "expiring_data": substores.get_expiring_medicines(conn, "ALL", limit=100),
+                    "ward_dispensations": substores.get_ward_dispensations(conn, "ALL", limit=25, months=months),
+                    "transfers_received": substores.get_transfers_received(conn, "ALL", limit=50, months=months),
+                    "pending_transfers": substores.get_pending_transfers(conn, "ALL", months=12),
+                }
+            bundle = stock5_api._cached(("substores_all", months), _build_all_stores_bundle)
+            kpis = bundle["kpis"]
+            all_groups = bundle["all_groups"]
+            hospital_top_items = bundle["hospital_top_items"]
+            substore_monthly_trend = bundle["substore_monthly_trend"]
+            amc_mos_list = bundle["amc_mos_list"]
+            reorder_recommendations = bundle["reorder_recommendations"]
+            expiring_data = bundle["expiring_data"]
+            ward_dispensations = bundle["ward_dispensations"]
+            transfers_received = bundle["transfers_received"]
+            pending_transfers = bundle["pending_transfers"]
             return render_template(
                 "substores.html", problem=None, active="substores",
                 current_store="ALL", is_ward=False, is_all_stores=True,
@@ -855,6 +875,37 @@ def angular_root():
     return _angular_index()
 
 
+# --------------------------------------------------------------------------- ลิงก์เก่าของ Angular SPA
+# 18 ก.ย. 2569: รวมหน้าจอเป็น Jinja ชุดเดียว (Angular dashboard/purchasing/drug-search/
+# procurement-plan มีข้อมูลจริงน้อยกว่าหน้า Jinja ที่มีอยู่แล้ว และ /purchasing เคยชน
+# URL กับ Jinja procure_to_pay_page จนเปิดหน้า Angular จริงไม่ได้เลย) กันลิงก์/bookmark
+# เดิมเสีย ด้วยการ redirect ไปหน้า Jinja ที่ทำหน้าที่เดียวกัน
+
+@app.route("/dashboard")
+def legacy_dashboard_redirect():
+    return redirect("/overview")
+
+
+@app.route("/purchasing")
+def legacy_purchasing_redirect():
+    return redirect("/procure-to-pay")
+
+
+@app.route("/drug-search")
+def legacy_drug_search_redirect():
+    return redirect("/items")
+
+
+@app.route("/drugs/<path:code>")
+def legacy_drug_detail_redirect(code):
+    return redirect("/items/" + quote(code, safe=""))
+
+
+@app.route("/procurement-plan")
+def legacy_procurement_plan_redirect():
+    return redirect("/overview")
+
+
 @app.route("/<path:asset_path>")
 def angular_assets(asset_path):
     """ไฟล์ของหน้าจอ Angular และเส้นทางฝั่งเบราว์เซอร์ (เช่น /dashboard /drugs/1021030)"""
@@ -877,6 +928,22 @@ def warm_cache():
                            lambda: stock5_api.build_summary(connection))
         stock5_api._cached(("catalog", None, None), lambda: stock5_api.build_catalog(connection))
         substores.get_top_requisition_leaders_dashboard(connection, months=18)
+        # หน้า "คลังย่อย-วอร์ด" ขอบเขต ALL (ค่าเริ่มต้นของ /substores เมื่อไม่ระบุ store)
+        # หนักหลักสิบวินาที อุ่นแคชของช่วงเวลาเริ่มต้น (18 เดือน) ไว้ก่อน ไม่ให้ผู้ใช้คนแรกต้องรอ
+        default_months = 18
+        h = substores.get_hospital_all_stores_analytics(connection, months=default_months)
+        stock5_api._cached(("substores_all", default_months), lambda: {
+            "kpis": h["kpis"],
+            "all_groups": h["groups_data"],
+            "hospital_top_items": h["top_items"],
+            "substore_monthly_trend": h["monthly_trend"],
+            "amc_mos_list": substores.get_amc_and_mos_list(connection, "ALL", limit=100),
+            "reorder_recommendations": substores.get_requisition_recommendations(connection, "ALL", target_mos=1.0),
+            "expiring_data": substores.get_expiring_medicines(connection, "ALL", limit=100),
+            "ward_dispensations": substores.get_ward_dispensations(connection, "ALL", limit=25, months=default_months),
+            "transfers_received": substores.get_transfers_received(connection, "ALL", limit=50, months=default_months),
+            "pending_transfers": substores.get_pending_transfers(connection, "ALL", months=12),
+        })
     finally:
         connection.close()
 

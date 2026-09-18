@@ -197,8 +197,11 @@ def test_top10_functions(test_db):
 
 def test_procure_to_pay_and_substores(test_db):
     p2p = executive_analytics.procure_to_pay_pipeline(test_db)
-    assert p2p["annual_budget"] > 0
+    assert p2p["po_amount_available"] is False, "ยังไม่มีตาราง PO จริง (SKPO) ต้องบอกตรง ๆ ว่าไม่มี ไม่ใช่เลขคำนวณเอง"
     assert "pipeline_items" in p2p
+    for item in p2p["pipeline_items"]:
+        assert "po_ordered_amount" not in item, "ห้ามมีเลขสั่งซื้อปลอม (เดิม = ยอดรับ×1.15)"
+        assert "ap_status" not in item, "ห้ามมีสถานะจ่ายเงินปลอม (เดิมสลับกันตาม index)"
 
     sub = executive_analytics.substore_status_summary(test_db)
     assert "in_transit" in sub
@@ -207,6 +210,7 @@ def test_procure_to_pay_and_substores(test_db):
 
 
 def test_flask_routes():
+    web.app.config["TESTING"] = True  # ข้ามการบังคับล็อกอิน (enforce_login_for_pages) ตอนเทสต์
     client = web.app.test_client()
 
     routes = [

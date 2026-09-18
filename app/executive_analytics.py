@@ -861,7 +861,14 @@ def top10_requisitioners_by_store(store_code: str,
 
 def procure_to_pay_pipeline(conn: Optional[sqlite3.Connection] = None,
                             po_limit: int = 30) -> Dict[str, Any]:
-    """วงจรจัดซื้อถึงการเบิกจ่ายงบประมาณ (PO -> รับของ -> จ่ายของ -> จ่ายเงิน AP -> แผนงบ)"""
+    """ใบรับที่มีเลขที่ PO อ้างอิง — จากตาราง receipts จริงเท่านั้น (ไม่เดา)
+
+    คลังข้อมูลยังไม่มีตาราง PO จริง (SKPO/SKPODTL) หรือตารางจ่ายเงิน (AP) จึง
+    ยังไม่มี "ยอดสั่งซื้อจริง" หรือ "สถานะจ่ายเงิน" ให้แสดง — เดิมฟังก์ชันนี้เคย
+    คำนวณตัวเลขเหล่านั้นขึ้นเอง (ยอดสั่งซื้อ = ยอดรับ×1.15, สถานะจ่ายเงินสลับกัน
+    ตามลำดับแถว) ซึ่งเป็นข้อมูลปลอมทั้งหมด ตัดออกแล้วตามกติกาไม่เดาของโปรเจกต์
+    คืนค่า `po_amount_available=False` ให้หน้าเว็บแสดงข้อความบอกตรง ๆ แทน
+    """
     close_after = False
     if conn is None:
         conn = warehouse_db.connect()
@@ -880,19 +887,11 @@ def procure_to_pay_pipeline(conn: Optional[sqlite3.Connection] = None,
         rows = conn.execute(query, (po_limit,)).fetchall()
 
         pipeline_items = []
-        total_committed = 0.0
         total_received = 0.0
-        total_paid = 0.0
 
-        for i, row in enumerate(rows):
-            p_val = float(row["rcv_val"] or 0)
-            po_ordered_val = p_val * 1.15
-            ap_paid_val = p_val if (i % 3 != 0) else p_val * 0.5
-            ap_status = "PAID" if ap_paid_val >= p_val else "PENDING_AP"
-
-            total_committed += po_ordered_val
-            total_received += p_val
-            total_paid += ap_paid_val
+        for row in rows:
+            received_val = float(row["rcv_val"] or 0)
+            total_received += received_val
 
             pipeline_items.append({
                 "po_no": row["po_no"],
@@ -901,22 +900,17 @@ def procure_to_pay_pipeline(conn: Optional[sqlite3.Connection] = None,
                 "store_name": stores.store_name(row["store"]),
                 "rcv_no": row["rcv_no"],
                 "rcv_date": row["rcv_date"],
-                "po_ordered_amount": po_ordered_val,
-                "received_amount": p_val,
-                "ap_paid_amount": ap_paid_val,
-                "ap_status": ap_status,
-                "dispensed_status": "เบิกจ่ายแล้ว 85%" if (i % 2 == 0) else "รอเบิก",
+                "received_amount": received_val,
+                "item_count": row["item_count"],
             })
 
-        total_annual_budget = 450000000.0
-        spent_ratio = (total_committed / total_annual_budget * 100.0) if total_annual_budget > 0 else 0.0
-
         return {
-            "annual_budget": total_annual_budget,
-            "total_committed": total_committed,
+            "po_amount_available": False,
+            "po_amount_note": "ยอดสั่งซื้อจริงและสถานะจ่ายเงิน (AP) ยังไม่มีในคลังข้อมูล "
+                               "เพราะยังไม่ได้ดึงตาราง PO (SKPO) และตารางจ่ายเงินจาก SSB "
+                               "— ตารางด้านล่างแสดงเฉพาะยอดรับเข้าคลังจริงที่มีเลขที่ PO อ้างอิง",
             "total_received": total_received,
-            "total_paid": total_paid,
-            "budget_spent_pct": round(spent_ratio, 1),
+            "po_count": len(pipeline_items),
             "pipeline_items": pipeline_items,
         }
     finally:
