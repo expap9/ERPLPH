@@ -193,7 +193,8 @@
         <span class="pill ok" style="font-size:12.5px; font-weight:700; background:rgba(16,185,129,0.15); border:1px solid rgba(16,185,129,0.35); color:#047857;">กำลังดู: 🏢 รวมทุกคลังในโรงพยาบาล</span>
       {% elif is_ward %}
         <span class="pill ok" style="font-size:12.5px; font-weight:600; background:rgba(37,99,235,0.12); border:1px solid rgba(37,99,235,0.3); color:#1d4ed8;">กำลังดู: {{ ward_info.name }} [{{ ward_info.dept_code }}]</span>
-      {% else %}
+      
+  {% else %}
         <span class="pill ok" style="font-size:12.5px; font-weight:600;">กำลังดู: {{ kpis.store_name }} ({{ current_store }})</span>
       {% endif %}
     </h1>
@@ -319,8 +320,13 @@
   <!-- Feature Navigation Tabs: Sub-stores vs Requisitions Leaders Dashboard -->
   <div style="display: flex; gap: 8px; margin: 18px 0 20px; border-bottom: 2px solid var(--line); padding-bottom: 0;">
     <a href="/substores?store={{ current_store }}&months={{ months }}&tab=substores"
-       style="padding: 10px 20px; border-radius: 8px 8px 0 0; text-decoration: none; font-size: 14px; font-weight: 700; display: flex; align-items: center; gap: 8px; {{ 'background: var(--card); color: var(--link); border: 1.5px solid var(--line); border-bottom: 2px solid var(--card); margin-bottom: -2px; box-shadow: 0 -2px 5px rgba(0,0,0,0.03);' if current_tab != 'leaders' else 'color: var(--muted); background: transparent; border: 1.5px solid transparent;' }}">
+       style="padding: 10px 20px; border-radius: 8px 8px 0 0; text-decoration: none; font-size: 14px; font-weight: 700; display: flex; align-items: center; gap: 8px; {{ 'background: var(--card); color: var(--link); border: 1.5px solid var(--line); border-bottom: 2px solid var(--card); margin-bottom: -2px; box-shadow: 0 -2px 5px rgba(0,0,0,0.03);' if current_tab not in ('leaders', 'daily') else 'color: var(--muted); background: transparent; border: 1.5px solid transparent;' }}">
       <span>🏬 รายละเอียดคลังย่อยและวอร์ด</span>
+    </a>
+
+    <a href="/substores?store={{ current_store }}&months={{ months }}&tab=daily"
+       style="padding: 10px 20px; border-radius: 8px 8px 0 0; text-decoration: none; font-size: 14px; font-weight: 700; display: flex; align-items: center; gap: 8px; {{ 'background: var(--card); color: var(--link); border: 1.5px solid var(--line); border-bottom: 2px solid var(--card); margin-bottom: -2px; box-shadow: 0 -2px 5px rgba(0,0,0,0.03);' if current_tab == 'daily' else 'color: var(--muted); background: transparent; border: 1.5px solid transparent;' }}">
+      <span>⚡ ตัด Stock รายวันห้องยา (Daily Drug Cut)</span>
     </a>
     <a href="/substores?store={{ current_store }}&months={{ months }}&tab=leaders"
        style="padding: 10px 20px; border-radius: 8px 8px 0 0; text-decoration: none; font-size: 14px; font-weight: 700; display: flex; align-items: center; gap: 8px; {{ 'background: var(--card); color: var(--link); border: 1.5px solid var(--line); border-bottom: 2px solid var(--card); margin-bottom: -2px; box-shadow: 0 -2px 5px rgba(0,0,0,0.03);' if current_tab == 'leaders' else 'color: var(--muted); background: transparent; border: 1.5px solid transparent;' }}">
@@ -662,6 +668,69 @@
         </div>
       </div>
     </div>
+  
+  {% elif current_tab == 'daily' %}
+    <div style="margin-bottom: 28px;" id="daily-stock-container">
+      <div style="background: linear-gradient(135deg, #4f46e5 0%, #312e81 100%); color: #fff; border-radius: 12px; padding: 22px 26px; margin-bottom: 24px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); position: relative;">
+        <h2 style="margin: 0 0 8px; font-size: 22px; font-weight: 800; color: #fff; display: flex; align-items: center; gap: 10px;">
+          <span>⚡ ตัด Stock รายวันห้องยา (Daily Drug Cut)</span>
+        </h2>
+        <p style="margin: 0; font-size: 14px; color: #e0e7ff; line-height: 1.5;">
+          แสดงยอดคงเหลือแบบ Real-time เปรียบเทียบกับยอดใช้เมื่อวาน และยอดใช้สะสมของวันนี้
+        </p>
+        
+        <div style="position: absolute; right: 26px; top: 22px; text-align: right;">
+            <div style="font-size: 13px; color: #e0e7ff; margin-bottom: 6px;" id="daily-timestamp">🕒 ข้อมูลอัปเดตล่าสุด...</div>
+            <button onclick="fetchDailyStock(true)" class="pill" style="background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.4); color: #fff; cursor: pointer; padding: 6px 14px; border-radius: 6px; font-weight: 700; font-size: 13px;">
+                🔄 อัปเดตข้อมูลสดเดี๋ยวนี้
+            </button>
+        </div>
+      </div>
+      
+      <!-- KPIs -->
+      <div class="kpi-grid" id="daily-kpis">
+        <!-- populated by js -->
+      </div>
+      
+      <!-- Filters -->
+      <div class="section-card" style="padding: 14px 20px; margin-bottom: 20px;">
+          <div class="filter-search-box" style="margin-bottom: 0;">
+              <span style="font-size: 16px;">🔍</span>
+              <input type="text" id="daily-search" placeholder="ค้นหารหัส หรือชื่อยา..." onkeyup="filterDailyTable()">
+              
+              <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-left: 10px;">
+                  <button class="pill reorder-filter-btn active" onclick="setDailyFilter('all', this)">ยาทั้งหมด</button>
+                  <button class="pill reorder-filter-btn" onclick="setDailyFilter('active', this)">มีการใช้เมื่อวาน/วันนี้</button>
+                  <button class="pill reorder-filter-btn" onclick="setDailyFilter('has_stock', this)">มียอดคงเหลือ</button>
+                  <button class="pill reorder-filter-btn" onclick="setDailyFilter('alert', this)">เสี่ยงขาด/หมดคลัง 🚨</button>
+              </div>
+          </div>
+      </div>
+      
+      <!-- Table -->
+      <div class="table-scroll-container" style="max-height: 70vh;">
+          <table class="data-table" id="daily-table">
+              <thead>
+                  <tr>
+                      <th class="sortable" onclick="sortDaily(0)">รหัสยา <span class="sort-indicator"></span></th>
+                      <th class="sortable" onclick="sortDaily(1)">ชื่อยา <span class="sort-indicator"></span></th>
+                      <th class="sortable" onclick="sortDaily(2)">คลัง <span class="sort-indicator"></span></th>
+                      <th class="num sortable" onclick="sortDaily(3)">ยกมาล่าสุด <span class="sort-indicator"></span></th>
+                      <th class="num sortable" onclick="sortDaily(4)">ใช้เมื่อวาน <span class="sort-indicator"></span></th>
+                      <th class="num sortable" onclick="sortDaily(5)">จ่ายวันนี้ <span class="sort-indicator"></span></th>
+                      <th class="num sortable" onclick="sortDaily(6)" style="background: #e0f2fe; color: #0369a1;">คงเหลือ <span class="sort-indicator"></span></th>
+                      <th class="num sortable" onclick="sortDaily(7)">มูลค่า (฿) <span class="sort-indicator"></span></th>
+                      <th class="sortable" onclick="sortDaily(8)">สถานะ <span class="sort-indicator"></span></th>
+                      <th style="width: 40px; text-align: center;">ดู</th>
+                  </tr>
+              </thead>
+              <tbody id="daily-tbody">
+                  <tr><td colspan="10" style="text-align:center; padding: 40px; color: var(--muted);">กำลังโหลดข้อมูลการตัดสต็อกรายวัน...</td></tr>
+              </tbody>
+          </table>
+      </div>
+    </div>
+
   {% else %}
 
   {% if is_ward %}
@@ -884,6 +953,7 @@
       </div>
     </div>
 
+  
   {% else %}
 
     <!-- 6 KPI Blocks for Selected Sub-store or Hospital-wide -->
@@ -894,7 +964,8 @@
         <div class="hint">
           {% if is_all_stores %}
             {{ '{:,}'.format(kpis.stock_items) }} รายการ ใน {{ kpis.stores_count }} คลังทั่ว รพ.
-          {% else %}
+          
+  {% else %}
             {{ '{:,}'.format(kpis.stock_items) }} รายการในคลังย่อย
           {% endif %}
         </div>
@@ -914,7 +985,8 @@
             <span style="color:var(--late); font-weight:600;">⚠ เสี่ยงยาขาด (< 15 วัน)</span>
           {% elif kpis.mos_overall > 2.5 %}
             <span style="color:var(--slow); font-weight:600;">⚡ สต็อกบวม (> 2.5 เดือน)</span>
-          {% else %}
+          
+  {% else %}
             <span style="color:var(--ok); font-weight:600;">✓ เกณฑ์สำรองปลอดภัย</span>
           {% endif %}
         </div>
@@ -1178,7 +1250,8 @@
                       <span class="pill late" style="font-size:11.5px;">{{ p.status_label }}</span>
                     {% elif p.status == 'PARTIAL' %}
                       <span class="pill slow" style="font-size:11.5px;">{{ p.status_label }}</span>
-                    {% else %}
+                    
+  {% else %}
                       <span class="pill ok" style="font-size:11.5px;">{{ p.status_label }}</span>
                     {% endif %}
                   </td>
@@ -1187,7 +1260,8 @@
             </tbody>
           </table>
         </div>
-      {% else %}
+      
+  {% else %}
         <div style="padding:16px; color:var(--muted); text-align:center; background:var(--bg); border-radius:6px;">
           ✓ ไม่พบใบโอนค้างส่งหรือรายการค้างจ่ายจากคลังใหญ่ในขณะนี้
         </div>
@@ -1304,7 +1378,8 @@
                       <span class="pill ok" style="font-size:12px; font-weight:600;">+{{ money(m.net_val) }}</span>
                     {% elif m.net_val < 0 %}
                       <span class="pill slow" style="font-size:12px; font-weight:600;">{{ money(m.net_val) }}</span>
-                    {% else %}
+                    
+  {% else %}
                       <span class="pill" style="font-size:12px; font-weight:600; background:var(--head);">0.00</span>
                     {% endif %}
                   </td>
@@ -1427,7 +1502,8 @@
                     <span class="pill ok" style="font-size:11px;" title="{{ item.pending_slips[0].irno if item.pending_slips else '' }}">🚚 ส่งมาแล้ว {{ '{:,.0f}'.format(item.pending_qty) }} {{ item.unit }}</span>
                   {% elif item.pending_qty > 0 %}
                     <span class="pill slow" style="font-size:11px;" title="{{ item.pending_slips[0].irno if item.pending_slips else '' }}">🚚 ส่งบางส่วน {{ '{:,.0f}'.format(item.pending_qty) }} {{ item.unit }}</span>
-                  {% else %}
+                  
+  {% else %}
                     <span style="color:var(--muted);">— ยังไม่มีค้างส่ง</span>
                   {% endif %}
                 </td>
@@ -1613,7 +1689,8 @@
                 {% endfor %}
               </tbody>
             </table>
-          {% else %}
+          
+  {% else %}
             <div style="padding:20px; text-align:center; color:var(--muted); background:var(--bg); border-radius:6px;">
               ✓ ไม่มียาหรือเวชภัณฑ์ที่ใกล้หมดอายุในอีก 8 เดือนข้างหน้า
             </div>
@@ -1654,7 +1731,8 @@
                 {% endfor %}
               </tbody>
             </table>
-          {% else %}
+          
+  {% else %}
             <div style="padding:20px; text-align:center; color:var(--muted); background:var(--bg); border-radius:6px;">
               ✓ ไม่พบยาที่หมดอายุตกค้างในคลังย่อย (ย้อนหลัง 6 เดือน)
             </div>
@@ -2616,6 +2694,151 @@
       });
     }
 
+    // ===== แท็บ ⚡ ตัด Stock รายวันห้องยา (Daily Drug Cut) =====
+    let dailyRawRows = [];
+    let dailyFilterMode = 'all';
+    let dailySortCol = -1;
+    let dailySortDir = 1;
+    const DAILY_SORT_KEYS = ['stock_code', 'name', 'store_name', 'prev_bal', 'yesterday_use', 'today_use', 'current_on_hand', 'current_val', 'status'];
+
+    function fetchDailyStock(manual) {
+      const tbody = document.getElementById('daily-tbody');
+      if (!tbody) return;
+      if (manual) {
+        tbody.innerHTML = '<tr><td colspan="10" style="text-align:center; padding: 40px; color: var(--muted);">กำลังโหลดข้อมูลการตัดสต็อกรายวัน...</td></tr>';
+      }
+      fetch(`/api/substores/daily-cut?store=${encodeURIComponent('{{ current_store }}')}`)
+        .then(res => res.json())
+        .then(res => {
+          if (!res || res.status !== 'success' || !res.data) {
+            tbody.innerHTML = `<tr><td colspan="10" style="text-align:center; padding:40px; color:var(--late);">โหลดข้อมูลไม่สำเร็จ: ${escapeHtml(res && res.message || '')}</td></tr>`;
+            return;
+          }
+          dailyRawRows = res.data.data || [];
+          renderDailyKpis(res.data.kpis || {});
+          renderDailyTable();
+          const ts = document.getElementById('daily-timestamp');
+          if (ts) {
+            const now = new Date();
+            ts.textContent = `🕒 ข้อมูล ณ ${now.toLocaleDateString('th-TH')} เวลา ${now.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })} น. · อัปเดตอัตโนมัติทุก 1 ชม.`;
+          }
+        })
+        .catch(err => {
+          tbody.innerHTML = `<tr><td colspan="10" style="text-align:center; padding:40px; color:var(--late);">เกิดข้อผิดพลาด: ${escapeHtml(String(err))}</td></tr>`;
+        });
+    }
+
+    function renderDailyKpis(kpis) {
+      const el = document.getElementById('daily-kpis');
+      if (!el) return;
+      el.innerHTML = `
+        <div class="kpi-card">
+          <div class="label">💰 ยอดคงเหลือปัจจุบัน (มูลค่า)</div>
+          <div class="value">${fmtNum(kpis.total_on_hand_val)} <small style="font-size:13px; font-weight:normal; color:var(--muted);">บาท</small></div>
+        </div>
+        <div class="kpi-card">
+          <div class="label">📤 ยอดใช้รายวันของเมื่อวาน</div>
+          <div class="value">${fmtNum(kpis.total_yesterday_val)} <small style="font-size:13px; font-weight:normal; color:var(--muted);">บาท</small></div>
+        </div>
+        <div class="kpi-card">
+          <div class="label">📦 ยอดจ่ายยาของวันนี้ (สะสม)</div>
+          <div class="value">${fmtNum(kpis.total_today_val)} <small style="font-size:13px; font-weight:normal; color:var(--muted);">บาท</small></div>
+        </div>
+        <div class="kpi-card">
+          <div class="label">📋 จำนวนรายการยาทั้งหมด</div>
+          <div class="value">${fmtNum(kpis.total_items)} <small style="font-size:13px; font-weight:normal; color:var(--muted);">รายการ</small></div>
+        </div>
+      `;
+    }
+
+    function dailyFilteredRows() {
+      let rows = dailyRawRows;
+      const q = (document.getElementById('daily-search')?.value || '').trim().toLowerCase();
+      if (q) {
+        rows = rows.filter(r => (r.name || '').toLowerCase().includes(q) || (r.stock_code || '').toLowerCase().includes(q));
+      }
+      if (dailyFilterMode === 'active') {
+        rows = rows.filter(r => r.yesterday_use > 0 || r.today_use > 0);
+      } else if (dailyFilterMode === 'has_stock') {
+        rows = rows.filter(r => r.current_on_hand > 0);
+      } else if (dailyFilterMode === 'alert') {
+        rows = rows.filter(r => r.status.includes('เสี่ยง') || r.status.includes('หมดคลัง'));
+      }
+      if (dailySortCol >= 0) {
+        const key = DAILY_SORT_KEYS[dailySortCol];
+        rows = rows.slice().sort((a, b) => {
+          const av = a[key], bv = b[key];
+          if (typeof av === 'number' && typeof bv === 'number') return (av - bv) * dailySortDir;
+          return String(av).localeCompare(String(bv), 'th') * dailySortDir;
+        });
+      }
+      return rows;
+    }
+
+    function renderDailyTable() {
+      const tbody = document.getElementById('daily-tbody');
+      if (!tbody) return;
+      const rows = dailyFilteredRows();
+      if (!rows.length) {
+        tbody.innerHTML = '<tr><td colspan="10" style="text-align:center; padding:30px; color:var(--muted);">ไม่พบรายการที่ตรงเงื่อนไข</td></tr>';
+        return;
+      }
+      tbody.innerHTML = rows.map(r => `
+        <tr>
+          <td><a href="javascript:void(0)" class="stock-link" onclick="openItemModal('${escapeHtml(r.store)}', '${escapeHtml(r.stock_code)}')">${escapeHtml(r.stock_code)}</a></td>
+          <td>${escapeHtml(r.name)}</td>
+          <td>${escapeHtml(r.store_name)}</td>
+          <td class="num">${fmtNum(r.prev_bal)}</td>
+          <td class="num">${fmtNum(r.yesterday_use)}</td>
+          <td class="num">${fmtNum(r.today_use)}</td>
+          <td class="num" style="font-weight:700; background:#f0f9ff;">${fmtNum(r.current_on_hand)}</td>
+          <td class="num">${fmtNum(r.current_val, 2)}</td>
+          <td>${r.status}</td>
+          <td style="text-align:center;">
+            <button type="button" class="pill" style="font-size:10px; cursor:pointer; padding:2px 6px; background:var(--head); border:1px solid var(--line);"
+                    onclick="openItemModal('${escapeHtml(r.store)}', '${escapeHtml(r.stock_code)}')" title="เจาะลึก">🔍</button>
+          </td>
+        </tr>
+      `).join('');
+    }
+
+    function filterDailyTable() {
+      renderDailyTable();
+    }
+
+    function setDailyFilter(mode, btn) {
+      dailyFilterMode = mode;
+      const container = document.getElementById('daily-stock-container');
+      if (container) {
+        container.querySelectorAll('.reorder-filter-btn').forEach(b => b.classList.remove('active'));
+      }
+      if (btn) btn.classList.add('active');
+      renderDailyTable();
+    }
+
+    function sortDaily(colIdx) {
+      if (dailySortCol === colIdx) {
+        dailySortDir *= -1;
+      } else {
+        dailySortCol = colIdx;
+        dailySortDir = 1;
+      }
+      const table = document.getElementById('daily-table');
+      if (table) {
+        table.querySelectorAll('th.sortable').forEach((th, idx) => {
+          th.classList.remove('sorted-asc', 'sorted-desc');
+          const ind = th.querySelector('.sort-indicator');
+          if (idx === colIdx) {
+            th.classList.add(dailySortDir === 1 ? 'sorted-asc' : 'sorted-desc');
+            if (ind) ind.textContent = dailySortDir === 1 ? '▲' : '▼';
+          } else if (ind) {
+            ind.textContent = '';
+          }
+        });
+      }
+      renderDailyTable();
+    }
+
     function escapeHtml(text) {
       return (text || '').replace(/'/g, "\\'").replace(/"/g, '&quot;');
     }
@@ -2636,6 +2859,12 @@
       const itemCode = urlParams.get('code') || urlParams.get('item');
       if (itemCode) {
         openItemModal('{{ current_store }}', itemCode);
+      }
+
+      // แท็บ ⚡ ตัด Stock รายวันห้องยา: โหลดข้อมูลทันทีที่เข้าแท็บ แล้วอัปเดตอัตโนมัติทุก 1 ชม.
+      if (document.getElementById('daily-stock-container')) {
+        fetchDailyStock(false);
+        setInterval(() => fetchDailyStock(false), 3600000);
       }
     });
   </script>

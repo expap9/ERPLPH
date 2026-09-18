@@ -225,10 +225,10 @@
      รองรับทั้งการตรึงไว้ด้านล่าง (Bottom Dock) และ ตรึงซ้าย (Left Sidebar)
      ========================================================================= */
   body.has-dock-bottom {
-    padding-bottom: 90px;
+    padding-bottom: 62px;
   }
   body.has-dock-left {
-    padding-left: 78px;
+    padding-left: 66px;
   }
 
   .erplph-dock {
@@ -238,24 +238,25 @@
     user-select: none;
   }
 
-  /* 1. Bottom Dock Mode (Default - ตรึงไว้ด้านล่าง) */
+  /* 1. Bottom Dock Mode (Default - มุมขวาล่าง ไม่บังกลางจอ) */
   .erplph-dock.dock-bottom {
-    bottom: 16px;
-    left: 50%;
-    transform: translateX(-50%);
+    bottom: 14px;
+    right: 14px;
+    left: auto;
+    transform: none;
   }
   .erplph-dock.dock-bottom .erplph-dock-inner {
     display: flex;
     flex-direction: row;
     align-items: center;
-    gap: 7px;
-    padding: 7px 12px;
+    gap: 4px;
+    padding: 5px 7px;
     background: rgba(11, 20, 38, 0.94);
     backdrop-filter: blur(16px);
     -webkit-backdrop-filter: blur(16px);
     border: 1px solid rgba(255, 255, 255, 0.16);
-    border-radius: 22px;
-    box-shadow: 0 14px 40px rgba(0, 0, 0, 0.45), 0 0 0 1px rgba(0, 0, 0, 0.25);
+    border-radius: 16px;
+    box-shadow: 0 10px 28px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(0, 0, 0, 0.25);
   }
 
   /* 2. Left Dock Mode (ตรึงไว้ด้านข้างซ้ายเหมือนรูปที่ 1) */
@@ -284,13 +285,13 @@
     justify-content: center;
   }
   .dock-brand-badge {
-    width: 42px;
-    height: 42px;
-    border-radius: 13px;
+    width: 34px;
+    height: 34px;
+    border-radius: 11px;
     background: linear-gradient(135deg, #67e8f9 0%, #34d399 100%);
     color: #04212a;
     font-weight: 900;
-    font-size: 16px;
+    font-size: 13px;
     letter-spacing: 0.5px;
     display: grid;
     place-items: center;
@@ -320,9 +321,9 @@
     position: relative;
     display: grid;
     place-items: center;
-    width: 42px;
-    height: 42px;
-    border-radius: 12px;
+    width: 34px;
+    height: 34px;
+    border-radius: 10px;
     color: #cbd5e1;
     text-decoration: none;
     background: rgba(15, 23, 42, 0.65);
@@ -330,7 +331,7 @@
     transition: all 0.18s cubic-bezier(0.4, 0, 0.2, 1);
   }
   .dock-item .dock-icon {
-    font-size: 21px;
+    font-size: 16px;
     line-height: 1;
     display: inline-block;
     transition: transform 0.18s ease;
@@ -412,13 +413,13 @@
     background: rgba(255, 255, 255, 0.06);
     border: 1px solid rgba(255, 255, 255, 0.12);
     color: #94a3b8;
-    border-radius: 8px;
-    width: 28px;
-    height: 28px;
+    border-radius: 7px;
+    width: 22px;
+    height: 22px;
     display: grid;
     place-items: center;
     cursor: pointer;
-    font-size: 11px;
+    font-size: 10px;
     padding: 0;
     transition: all 0.15s ease;
   }
@@ -461,22 +462,6 @@
   }
 
   @media (max-width: 600px) {
-    .dock-bottom .erplph-dock-inner {
-      padding: 5px 8px;
-      gap: 4px;
-    }
-    .dock-item {
-      width: 36px;
-      height: 36px;
-    }
-    .dock-brand-badge {
-      width: 36px;
-      height: 36px;
-      font-size: 14px;
-    }
-    .dock-item .dock-icon {
-      font-size: 18px;
-    }
     .dock-controls {
       display: none;
     }

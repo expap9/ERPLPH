@@ -46,6 +46,7 @@ import stock5_api  # noqa: E402
 import stores  # noqa: E402
 import substores  # noqa: E402
 import warehouse_db  # noqa: E402
+import auto_sync  # noqa: E402
 
 WINDOW_CHOICES = (30, 90, 180)
 DEFAULT_WINDOW = 90
@@ -697,6 +698,34 @@ def api_substores_dept_items():
     return {"status": "success", "data": data}
 
 
+@app.route("/api/substores/daily-cut")
+def api_substores_daily_cut():
+    """ตัด Stock รายวันของห้องยา: ยกมา/ใช้เมื่อวาน/จ่ายวันนี้/คงเหลือปัจจุบัน"""
+    store_code = (request.args.get("store") or "ALL").strip()
+    conn = open_warehouse()
+    if conn is None:
+        return {"status": "error", "message": NO_WAREHOUSE}, 503
+    try:
+        data = substores.get_pharmacy_daily_stock_cut(conn, store_code)
+        return {"status": "success", "data": data}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}, 500
+    finally:
+        conn.close()
+
+
+@app.route("/api/substores/daily-sync", methods=["POST"])
+def api_substores_daily_sync():
+    """สั่งอัปเดตข้อมูลสดสำหรับรายวัน"""
+    result = auto_sync.trigger_sync(background=True)
+    return {"status": "success", "result": result}
+
+
+@app.route("/daily-stock")
+def daily_stock_page():
+    return redirect(url_for("substores_page", tab="daily"))
+
+
 @app.route("/api/requisition-leaders")
 def api_requisition_leaders():
     """ดึงข้อมูลจัดอันดับใครเบิกอะไรเยอะสุด (Requisition Leaders) สำหรับแดชบอร์ดผู้บริหาร"""
@@ -867,3 +896,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

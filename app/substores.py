@@ -2911,3 +2911,149 @@ def get_category_all_depts(conn: sqlite3.Connection, scope: str, months: int = 1
     }
 
 
+
+
+def get_pharmacy_daily_stock_cut(conn: sqlite3.Connection, store_code: str = 'ALL') -> dict[str, Any]:
+    """คำนวณตัดสต็อกรายวันของห้องยา"""
+    today = datetime.datetime.now().date()
+    yesterday = today - datetime.timedelta(days=1)
+    
+    today_str = today.strftime("%Y-%m-%d")
+    yesterday_str = yesterday.strftime("%Y-%m-%d")
+    
+    # Snapshot balances period format is YYYYMMDD
+    yesterday_bal_str = yesterday.strftime("%Y%m%d")
+    
+    valid_stores = [s['code'] for s in PHARMACY_SUBSTORES]
+    
+    if store_code != 'ALL':
+        store_clause = "AND store = ?"
+        store_params = [store_code]
+    else:
+        # Include all valid pharmacy substores plus main store 2 if we consider it
+        valid_stores = valid_stores + ['2']
+        store_clause = f"AND store IN ({','.join(['?']*len(valid_stores))})"
+        store_params = valid_stores
+
+    sql = f'''
+        WITH 
+        prev_bal AS (
+            SELECT stock_code, store, SUM(qty) as qty, SUM(value) as val
+            FROM balances
+            WHERE period = ? {store_clause}
+            GROUP BY stock_code, store
+        ),
+        yest_use AS (
+            SELECT stock_code, store, SUM(qty) as qty, SUM(value) as val
+            FROM issues
+            WHERE document_type = '32' AND direction = 'out' 
+              AND substr(issued_at, 1, 10) = ? {store_clause}
+            GROUP BY stock_code, store
+        ),
+        tod_use AS (
+            SELECT stock_code, store, SUM(qty) as qty, SUM(value) as val
+            FROM issues
+            WHERE document_type = '32' AND direction = 'out' 
+              AND substr(issued_at, 1, 10) = ? {store_clause}
+            GROUP BY stock_code, store
+        ),
+        tod_in AS (
+            SELECT stock_code, store, SUM(qty) as qty, SUM(value) as val
+            FROM issues
+            WHERE document_type = '35' AND direction = 'in' 
+              AND substr(issued_at, 1, 10) = ? {store_clause}
+            GROUP BY stock_code, store
+        ),
+        all_items AS (
+            SELECT DISTINCT stock_code, store FROM prev_bal
+            UNION SELECT DISTINCT stock_code, store FROM yest_use
+            UNION SELECT DISTINCT stock_code, store FROM tod_use
+            UNION SELECT DISTINCT stock_code, store FROM tod_in
+        )
+        SELECT 
+            i.stock_code,
+            i.store,
+            COALESCE(m.name, i.stock_code) as name,
+            COALESCE(m.base_unit, 'หน่วย') as unit,
+            COALESCE(pb.qty, 0) as prev_bal_qty,
+            COALESCE(pb.val, 0) as prev_bal_val,
+            COALESCE(yu.qty, 0) as yest_use_qty,
+            COALESCE(yu.val, 0) as yest_use_val,
+            COALESCE(tu.qty, 0) as tod_use_qty,
+            COALESCE(tu.val, 0) as tod_use_val,
+            COALESCE(ti.qty, 0) as tod_in_qty,
+            COALESCE(ti.val, 0) as tod_in_val
+        FROM all_items i
+        LEFT JOIN prev_bal pb ON i.stock_code = pb.stock_code AND i.store = pb.store
+        LEFT JOIN yest_use yu ON i.stock_code = yu.stock_code AND i.store = yu.store
+        LEFT JOIN tod_use tu ON i.stock_code = tu.stock_code AND i.store = tu.store
+        LEFT JOIN tod_in ti ON i.stock_code = ti.stock_code AND i.store = ti.store
+        LEFT JOIN items m ON i.stock_code = m.stock_code
+    '''
+    
+    params = [yesterday_bal_str] + store_params + [yesterday_str] + store_params + [today_str] + store_params + [today_str] + store_params
+    
+    rows = conn.execute(sql, params).fetchall()
+    
+    results = []
+    total_on_hand_val = 0
+    total_yest_val = 0
+    total_tod_val = 0
+    
+    for r in rows:
+        sc = r[0]
+        st = r[1]
+        name = r[2]
+        unit = r[3]
+        
+        pb_qty = r[4]
+        pb_val = r[5]
+        yu_qty = r[6]
+        yu_val = r[7]
+        tu_qty = r[8]
+        tu_val = r[9]
+        ti_qty = r[10]
+        ti_val = r[11]
+        
+        cur_qty = pb_qty + ti_qty - tu_qty
+        cur_val = pb_val + ti_val - tu_val
+        if cur_qty <= 0: cur_val = 0
+        
+        status = "✓ ปกติ"
+        if cur_qty <= 0:
+            status = "🚨 ยาหมดคลัง"
+        elif cur_qty < (yu_qty * 3):
+            status = "⚠️ เสี่ยงขาด"
+        elif cur_qty > (yu_qty * 30) and yu_qty > 0:
+            status = "⚡ สต็อกบวม"
+        
+        results.append({
+            "stock_code": sc,
+            "store": st,
+            "store_name": stores.store_name(st),
+            "name": name,
+            "unit": unit,
+            "prev_bal": pb_qty,
+            "yesterday_use": yu_qty,
+            "today_use": tu_qty,
+            "current_on_hand": cur_qty,
+            "current_val": cur_val,
+            "status": status
+        })
+        
+        total_on_hand_val += cur_val
+        total_yest_val += yu_val
+        total_tod_val += tu_val
+
+    # Sort results
+    results.sort(key=lambda x: x['current_val'], reverse=True)
+
+    kpis = {
+        "total_on_hand_val": total_on_hand_val,
+        "total_yesterday_val": total_yest_val,
+        "total_today_val": total_tod_val,
+        "total_items": len(results)
+    }
+    
+    return {"data": results, "kpis": kpis}
+

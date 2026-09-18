@@ -36,8 +36,7 @@ def _get_default_interval() -> int:
             return max(300, int(sec_str))
         except (ValueError, TypeError):
             pass
-    return 6 * 3600  #: ค่าเริ่มต้น 6 ชั่วโมง (4 รอบต่อวัน)
-
+    return 3600  #: ค่าเริ่มต้น 1 ชั่วโมง
 
 DEFAULT_INTERVAL_SECONDS = _get_default_interval()
 RETRY_INTERVAL_SECONDS = 5 * 60     #: เมื่อล้มเหลว รอ 5 นาทีแล้วลองใหม่ตามกติกาหน้าจอ
