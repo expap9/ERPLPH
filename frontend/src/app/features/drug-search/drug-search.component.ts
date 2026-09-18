@@ -93,10 +93,20 @@ export class DrugSearchComponent implements OnInit {
 
   ngOnInit(): void {
     this.api.scopes().subscribe({ next: options => { this.groupOptions = options?.groups || []; this.cdr.detectChanges(); }, error: () => {} });
+    this.route.paramMap.subscribe(params => {
+      const code = params.get('code');
+      if (code) {
+        this.open(code);
+      }
+    });
     this.route.queryParamMap.subscribe(params => {
-      this.query = params.get('q') || this.query;
-      this.group = params.get('group') || this.group;
-      this.search(1);
+      const q = params.get('q');
+      const grp = params.get('group');
+      if (q !== null || grp !== null || !this.route.snapshot.paramMap.get('code')) {
+        this.query = q || this.query;
+        this.group = grp || this.group;
+        this.search(1);
+      }
     });
   }
 

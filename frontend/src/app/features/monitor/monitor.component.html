@@ -673,10 +673,16 @@
                                     <div class="dept-items-ribbon">
                                       <span class="ribbon-label">📦 ยาเบิกหลัก:</span>
                                       @for (item of dept.top_items; track item.stock_code) {
-                                        <span class="dept-item-chip" [title]="item.stock_code + ' - เบิก ' + number(item.qty) + ' ' + item.unit + ' (' + money(item.value) + ')'">
+                                        <button
+                                          type="button"
+                                          class="dept-item-chip clickable-chip"
+                                          (click)="openItemQuickView(item.stock_code)"
+                                          [title]="'คลิกดูข้อมูล: ' + item.stock_code + ' - ' + item.name + ' (เบิก ' + number(item.qty) + ' ' + item.unit + ')'"
+                                        >
                                           <span class="chip-name">{{ item.name }}</span>
                                           <span class="chip-val">{{ money(item.value) }}</span>
-                                        </span>
+                                          <span class="chip-action-icon">🔍</span>
+                                        </button>
                                       }
                                     </div>
                                   }
@@ -834,10 +840,16 @@
                                     <div class="dept-items-ribbon">
                                       <span class="ribbon-label">📦 พัสดุเบิกหลัก:</span>
                                       @for (item of dept.top_items; track item.stock_code) {
-                                        <span class="dept-item-chip" [title]="item.stock_code + ' - เบิก ' + number(item.qty) + ' ' + item.unit + ' (' + money(item.value) + ')'">
+                                        <button
+                                          type="button"
+                                          class="dept-item-chip clickable-chip"
+                                          (click)="openItemQuickView(item.stock_code)"
+                                          [title]="'คลิกดูข้อมูล: ' + item.stock_code + ' - ' + item.name + ' (เบิก ' + number(item.qty) + ' ' + item.unit + ')'"
+                                        >
                                           <span class="chip-name">{{ item.name }}</span>
                                           <span class="chip-val">{{ money(item.value) }}</span>
-                                        </span>
+                                          <span class="chip-action-icon">🔍</span>
+                                        </button>
                                       }
                                     </div>
                                   }
@@ -1050,52 +1062,58 @@
         </div>
       }
 
-      <!-- MODAL: เจาะลึกรายการเบิกของหน่วยงาน (Requisition Leader Dept Breakdown Modal) -->
+      <!-- MODAL 1: เจาะลึกรายการเบิกของหน่วยงาน (Requisition Leader Dept Breakdown Modal) -->
       @if (leaderDeptModal) {
-        <div class="dept-modal-backdrop" (click)="closeDeptBreakdown()">
-          <div class="dept-modal-card" (click)="$event.stopPropagation()" style="max-width: 960px;">
-            <div class="dept-modal-head">
-              <div>
-                <span class="dept-modal-badge">📋 รายละเอียดรายการเบิกจ่าย</span>
-                <h3>{{ leaderDeptModal.dept.name }} ({{ leaderDeptModal.dept.dept_code }})</h3>
-                <p class="text-muted text-sm" style="margin-top: 4px;">
-                  หมวด: <strong>{{ leaderDeptModal.scopeTitle }}</strong> · รอบข้อมูล {{ leadersMonths }} เดือน
+        <div class="modal-backdrop dept-breakdown-backdrop" (click)="closeDeptBreakdown()">
+          <div class="modal-card dept-modal-window dept-breakdown-window" (click)="$event.stopPropagation()" style="max-width: 980px;">
+            <div class="modal-head dept-modal-header">
+              <div class="dept-modal-title">
+                <span class="dept-rank-pill">📋 รายละเอียดรายการเบิกจ่าย</span>
+                <h3>🏢 {{ leaderDeptModal.dept.name }} ({{ leaderDeptModal.dept.dept_code }})</h3>
+                <p class="text-muted text-sm" style="margin: 4px 0 0; font-size: 12px;">
+                  หมวด: <strong>{{ leaderDeptModal.scopeTitle }}</strong> · ข้อมูลย้อนหลัง {{ leadersMonths }} เดือน
                 </p>
               </div>
-              <button type="button" class="btn-close-icon" (click)="closeDeptBreakdown()" title="ปิด (Esc)">✕</button>
+              <button type="button" class="dept-close-btn" (click)="closeDeptBreakdown()" title="ปิด (Esc)">✕</button>
             </div>
 
-            <div class="dept-modal-body">
+            <div class="modal-body dept-modal-content">
               @if (leaderDeptModal.loading) {
-                <div class="leaders-loading-box" style="margin: 40px 0;">กำลังดึงรายการเบิกจ่ายทั้งหมด...</div>
+                <div class="leaders-loading-box" style="margin: 40px 0;">
+                  <span class="sync-dot" style="margin-right: 8px;"></span> กำลังดึงรายการเบิกจ่ายทั้งหมด...
+                </div>
               } @else if (leaderDeptModal.data) {
                 <!-- KPI Summary Badges -->
-                <div class="dept-modal-summary-grid">
-                  <div class="summary-chip">
-                    <span class="lbl">มูลค่าเบิกจ่ายรวม</span>
-                    <strong class="val text-emerald">{{ money(leaderDeptModal.data.total_val) }}</strong>
+                <div class="dept-kpi-summary-grid">
+                  <div class="dept-kpi-box">
+                    <span class="box-label">มูลค่าเบิกจ่ายรวม</span>
+                    <strong class="box-val text-emerald">{{ money(leaderDeptModal.data.total_val) }}</strong>
                   </div>
-                  <div class="summary-chip">
-                    <span class="lbl">จำนวนรายการที่เบิก</span>
-                    <strong class="val">{{ number(leaderDeptModal.data.total_items) }} รายการ</strong>
+                  <div class="dept-kpi-box">
+                    <span class="box-label">จำนวนรายการที่เบิก</span>
+                    <strong class="box-val">{{ number(leaderDeptModal.data.total_items) }} รายการ</strong>
                   </div>
-                  <div class="summary-chip">
-                    <span class="lbl">จำนวนใบเบิกทั้งหมด</span>
-                    <strong class="val">{{ number(leaderDeptModal.dept.slips) }} ใบ</strong>
+                  <div class="dept-kpi-box">
+                    <span class="box-label">จำนวนใบเบิกทั้งหมด</span>
+                    <strong class="box-val">{{ number(leaderDeptModal.dept.slips) }} ใบ</strong>
                   </div>
-                  <div class="summary-chip">
-                    <span class="lbl">สัดส่วนในหมวดนี้</span>
-                    <strong class="val text-cyan">{{ leaderDeptModal.dept.percent }}%</strong>
+                  <div class="dept-kpi-box">
+                    <span class="box-label">สัดส่วนในหมวดนี้</span>
+                    <strong class="box-val text-cyan">{{ leaderDeptModal.dept.percent }}%</strong>
                   </div>
                 </div>
 
-                <div class="dept-search-bar" style="margin-top: 16px;">
-                  <span class="search-icon">🔍</span>
+                <div class="dept-table-top-bar" style="margin-top: 14px;">
+                  <div>
+                    <strong style="color: #f1f5f9; font-size: 13.5px;">รายการที่เบิกทั้งหมด ({{ filteredDeptBreakdownItems.length }} รายการ)</strong>
+                    <small style="color: var(--muted); font-size: 11px;">คลิกที่ชื่อหรือรหัสรายการเพื่อดูรายละเอียดและประวัติ</small>
+                  </div>
                   <input
-                    type="text"
+                    type="search"
                     [(ngModel)]="leaderDeptModal.search"
-                    placeholder="ค้นหารหัสพัสดุ/ยา หรือชื่อรายการ..."
+                    placeholder="🔍 ค้นหารหัสพัสดุ/ยา หรือชื่อรายการ..."
                     class="dept-modal-search"
+                    style="min-width: 250px;"
                   >
                 </div>
 
@@ -1104,12 +1122,13 @@
                     <thead>
                       <tr>
                         <th style="width: 35px; text-align: center;">#</th>
-                        <th style="width: 120px;">รหัส</th>
-                        <th>ชื่อรายการ</th>
-                        <th class="number" style="width: 130px;">จำนวนเบิก</th>
-                        <th class="number" style="width: 140px;">มูลค่าเบิก (บาท)</th>
-                        <th class="number" style="width: 80px;">สัดส่วน</th>
-                        <th class="number" style="width: 90px;">จำนวนใบเบิก</th>
+                        <th style="width: 110px;">รหัส</th>
+                        <th>ชื่อรายการ (คลิกเพื่อดูข้อมูล)</th>
+                        <th class="number" style="width: 120px;">จำนวนเบิก</th>
+                        <th class="number" style="width: 130px;">มูลค่าเบิก (บาท)</th>
+                        <th class="number" style="width: 75px;">สัดส่วน</th>
+                        <th class="number" style="width: 85px;">ใบเบิก</th>
+                        <th style="width: 65px; text-align: center;">ดูข้อมูล</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -1117,12 +1136,14 @@
                         <tr>
                           <td style="text-align: center; color: var(--muted); font-weight: 600;">{{ idx + 1 }}</td>
                           <td>
-                            <a class="drug-code-chip" [routerLink]="['/drugs', it.stock_code]" (click)="closeDeptBreakdown()" title="คลิกดูรายละเอียดรหัสนี้">
-                              {{ it.stock_code }} ↗
-                            </a>
+                            <button type="button" class="drug-code-chip clickable-chip" (click)="openItemQuickView(it.stock_code)" title="คลิกดูข้อมูลรายการนี้">
+                              {{ it.stock_code }} 🔍
+                            </button>
                           </td>
                           <td>
-                            <strong class="drug-name-text">{{ it.name }}</strong>
+                            <a href="javascript:void(0)" (click)="openItemQuickView(it.stock_code)" class="drug-name-text clickable-item-link" title="คลิกดูข้อมูลรายการนี้">
+                              {{ it.name }}
+                            </a>
                           </td>
                           <td class="number">
                             <strong>{{ number(it.qty) }}</strong> <small class="text-muted">{{ it.unit }}</small>
@@ -1136,20 +1157,154 @@
                           <td class="number text-muted">
                             {{ number(it.slips) }} ใบ
                           </td>
+                          <td style="text-align: center;">
+                            <button type="button" class="btn-icon-view" (click)="openItemQuickView(it.stock_code)" title="คลิกดูข้อมูลเจาะลึก">
+                              🔍
+                            </button>
+                          </td>
                         </tr>
                       } @empty {
                         <tr>
-                          <td colspan="7" class="empty">ไม่พบรายการที่ตรงกับคำค้น</td>
+                          <td colspan="8" class="empty">ไม่พบรายการที่ตรงกับคำค้น</td>
                         </tr>
                       }
                     </tbody>
                   </table>
                 </div>
+              } @else {
+                <div class="leaders-loading-box text-rose" style="margin: 40px 0;">
+                  {{ leaderDeptModal.error || 'ไม่พบข้อมูลรายการเบิกจ่าย' }}
+                </div>
               }
             </div>
 
-            <div class="modal-foot">
+            <div class="modal-foot" style="padding: 14px 24px; border-top: 1px solid rgba(148, 163, 184, 0.15); background: rgba(15, 23, 42, 0.95); display: flex; justify-content: flex-end;">
               <button type="button" class="btn secondary" (click)="closeDeptBreakdown()">ปิดหน้าต่าง</button>
+            </div>
+          </div>
+        </div>
+      }
+
+      <!-- MODAL 2: เจาะลึกข้อมูลยาหรือพัสดุ (Item Quick-Detail Modal) -->
+      @if (itemQuickModal) {
+        <div class="modal-backdrop item-quick-backdrop" (click)="closeItemQuickView()">
+          <div class="modal-card dept-modal-window item-quick-window" (click)="$event.stopPropagation()" style="max-width: 820px; z-index: 10001;">
+            <div class="modal-head dept-modal-header">
+              <div class="dept-modal-title">
+                <div style="display: flex; align-items: center; gap: 8px;">
+                  <span class="dept-rank-pill" style="color: #38bdf8; background: rgba(56, 189, 248, 0.15); padding: 2px 8px; border-radius: 4px;">
+                    {{ itemQuickModal.data?.group || 'ข้อมูลพัสดุ/ยา' }}
+                  </span>
+                  <span style="font-family: monospace; font-size: 13px; font-weight: 700; color: #94a3b8;">
+                    #{{ itemQuickModal.code }}
+                  </span>
+                </div>
+                <h3 style="margin-top: 4px; font-size: 18px; color: #f8fafc;">
+                  {{ itemQuickModal.data?.name || itemQuickModal.code }}
+                </h3>
+              </div>
+              <button type="button" class="dept-close-btn" (click)="closeItemQuickView()" title="ปิด (Esc)">✕</button>
+            </div>
+
+            <div class="modal-body dept-modal-content">
+              @if (itemQuickModal.loading) {
+                <div class="leaders-loading-box" style="margin: 40px 0;">
+                  <span class="sync-dot" style="margin-right: 8px;"></span> กำลังโหลดข้อมูลรายการ {{ itemQuickModal.code }}...
+                </div>
+              } @else if (itemQuickModal.data) {
+                @if (itemQuickModal.data.summary; as s) {
+                  <!-- KPI Grid -->
+                  <div class="dept-kpi-summary-grid" style="grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));">
+                    <div class="dept-kpi-box">
+                      <span class="box-label">คงคลังในมือ (On-Hand)</span>
+                      <strong class="box-val text-emerald">
+                        {{ number(s.stock_qty) }}
+                        <small style="font-size: 12px; font-weight: normal; color: #94a3b8;">{{ s.receipt_quantities?.[0]?.unit || '' }}</small>
+                      </strong>
+                      <small class="box-sub">{{ s.stock_lots || 0 }} ล็อต</small>
+                    </div>
+
+                    <div class="dept-kpi-box">
+                      <span class="box-label">มูลค่าคงคลังรวม</span>
+                      <strong class="box-val text-cyan">{{ money(s.stock_value) }}</strong>
+                      <small class="box-sub">ยอดเงินทุนหมุนเวียน</small>
+                    </div>
+
+                    <div class="dept-kpi-box">
+                      <span class="box-label">เบิกจ่ายสะสม ({{ s.usage_days || 180 }} วัน)</span>
+                      <strong class="box-val text-amber">
+                        {{ number(s.issue_qty) }}
+                        <small style="font-size: 12px; font-weight: normal; color: #94a3b8;">{{ s.issue_quantities?.[0]?.unit || '' }}</small>
+                      </strong>
+                      <small class="box-sub">{{ money(s.issue_value) }}</small>
+                    </div>
+
+                    <div class="dept-kpi-box">
+                      <span class="box-label">Rate เบิกเฉลี่ย/เดือน (AMC 3M)</span>
+                      <strong class="box-val" style="color: #60a5fa;">
+                        {{ number(s.avg_monthly_issue_qty_3m, 1) }}
+                      </strong>
+                      <small class="box-sub">{{ money(s.avg_monthly_issue_value_3m) }}/เดือน</small>
+                    </div>
+                  </div>
+                }
+
+                <!-- Department Distribution -->
+                @if (itemQuickModal.data.department_distribution && itemQuickModal.data.department_distribution.length > 0) {
+                  <div class="dept-detail-section" style="margin-top: 10px;">
+                    <div class="section-title-line">
+                      <strong>🏢 หน่วยงานที่เบิกรายการนี้มากที่สุด</strong>
+                      <small>แสดงสถิติการใช้งานแยกตามแผนก/วอร์ด</small>
+                    </div>
+                    <div class="table-wrap dept-table-container" style="max-height: 220px; overflow-y: auto;">
+                      <table class="dept-drugs-data-table">
+                        <thead>
+                          <tr>
+                            <th style="width: 35px; text-align: center;">#</th>
+                            <th>ชื่อแผนก / หน่วยงาน</th>
+                            <th class="number" style="width: 120px;">จำนวนเบิก</th>
+                            <th class="number" style="width: 130px;">มูลค่าเบิก</th>
+                            <th class="number" style="width: 80px;">สัดส่วน</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          @for (dp of itemQuickModal.data.department_distribution; track dp.department; let idx = $index) {
+                            <tr>
+                              <td style="text-align: center; color: var(--muted);">{{ idx + 1 }}</td>
+                              <td><strong style="color: #f1f5f9;">{{ dp.department }}</strong></td>
+                              <td class="number">{{ number(dp.quantity) }}</td>
+                              <td class="number text-emerald font-bold">{{ money(dp.value) }}</td>
+                              <td class="number"><span class="pct-badge green-pct">{{ dp.percent }}%</span></td>
+                            </tr>
+                          }
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                }
+
+                <!-- Facts / Alerts if any -->
+                @if (itemQuickModal.data.facts && itemQuickModal.data.facts.length > 0) {
+                  <div style="margin-top: 10px; display: flex; flex-direction: column; gap: 6px;">
+                    @for (fact of itemQuickModal.data.facts; track fact.title) {
+                      <div style="background: rgba(15, 23, 42, 0.6); border: 1px solid rgba(148, 163, 184, 0.15); border-left: 3px solid #38bdf8; border-radius: 6px; padding: 8px 12px; font-size: 12px;">
+                        <strong style="color: #38bdf8;">{{ fact.title }}</strong>: <span style="color: #cbd5e1;">{{ fact.evidence }}</span>
+                      </div>
+                    }
+                  </div>
+                }
+              } @else {
+                <div class="leaders-loading-box text-rose" style="margin: 40px 0;">
+                  {{ itemQuickModal.error || 'ไม่พบข้อมูลรายการนี้' }}
+                </div>
+              }
+            </div>
+
+            <div class="modal-foot" style="display: flex; justify-content: space-between; align-items: center; padding: 14px 24px; border-top: 1px solid rgba(148, 163, 184, 0.15); background: rgba(15, 23, 42, 0.95);">
+              <a [routerLink]="['/drugs', itemQuickModal.code]" (click)="closeItemQuickView()" class="btn primary" style="display: inline-flex; align-items: center; gap: 6px;">
+                <span>📋 เปิดหน้ารายละเอียดฉบับเต็มและประวัติจัดซื้อ (Lot / PO / Vendor) ↗</span>
+              </a>
+              <button type="button" class="btn secondary" (click)="closeItemQuickView()">ปิดหน้าต่าง</button>
             </div>
           </div>
         </div>

@@ -756,14 +756,21 @@ export class MonitorComponent implements OnInit, OnDestroy {
   }
 
   leaderDeptModal: any = null;
+  itemQuickModal: any = null;
 
   openDeptBreakdown(dept: any, scope: string, scopeTitle: string): void {
+    const codeParts = String(dept.dept_code || '').split('-');
+    const div = dept.division || codeParts[0] || '';
+    const deptId = dept.dept || codeParts[1] || '';
+    const sec = dept.section || codeParts[2] || '';
+
     this.leaderDeptModal = {
       dept,
       scope,
       scopeTitle,
       loading: true,
       data: null,
+      error: '',
       search: '',
     };
     document.body.style.overflow = 'hidden';
@@ -771,23 +778,26 @@ export class MonitorComponent implements OnInit, OnDestroy {
 
     this.api.requisitionLeadersDeptBreakdown({
       months: this.leadersMonths,
-      div: dept.division || '',
-      dept: dept.dept || '',
-      sec: dept.section || '',
-      scope: scope,
+      div,
+      dept: deptId,
+      sec,
+      scope,
     }).subscribe({
       next: (res: any) => {
         if (this.leaderDeptModal) {
           this.leaderDeptModal.loading = false;
           if (res?.status === 'success') {
             this.leaderDeptModal.data = res.data;
+          } else {
+            this.leaderDeptModal.error = res?.message || 'ไม่สามารถโหลดข้อมูลได้';
           }
           this.cdr.detectChanges();
         }
       },
-      error: () => {
+      error: (err: any) => {
         if (this.leaderDeptModal) {
           this.leaderDeptModal.loading = false;
+          this.leaderDeptModal.error = 'เกิดข้อผิดพลาดในการโหลดข้อมูลรายการเบิก';
           this.cdr.detectChanges();
         }
       }
@@ -796,7 +806,46 @@ export class MonitorComponent implements OnInit, OnDestroy {
 
   closeDeptBreakdown(): void {
     this.leaderDeptModal = null;
-    document.body.style.overflow = '';
+    if (!this.selectedDepartment && !this.itemQuickModal) {
+      document.body.style.overflow = '';
+    }
+    this.cdr.detectChanges();
+  }
+
+  openItemQuickView(code: string): void {
+    if (!code) return;
+    this.itemQuickModal = {
+      code,
+      loading: true,
+      data: null,
+      error: '',
+    };
+    document.body.style.overflow = 'hidden';
+    this.cdr.detectChanges();
+
+    this.api.drugDetail(code).subscribe({
+      next: (data: any) => {
+        if (this.itemQuickModal) {
+          this.itemQuickModal.loading = false;
+          this.itemQuickModal.data = data;
+          this.cdr.detectChanges();
+        }
+      },
+      error: () => {
+        if (this.itemQuickModal) {
+          this.itemQuickModal.loading = false;
+          this.itemQuickModal.error = 'ไม่พบรายละเอียดของสินค้านี้';
+          this.cdr.detectChanges();
+        }
+      }
+    });
+  }
+
+  closeItemQuickView(): void {
+    this.itemQuickModal = null;
+    if (!this.leaderDeptModal && !this.selectedDepartment) {
+      document.body.style.overflow = '';
+    }
     this.cdr.detectChanges();
   }
 
@@ -813,6 +862,10 @@ export class MonitorComponent implements OnInit, OnDestroy {
 
   @HostListener('window:keydown.escape')
   onEscapePress(): void {
+    if (this.itemQuickModal) {
+      this.closeItemQuickView();
+      return;
+    }
     if (this.selectedDepartment) {
       this.closeDepartmentModal();
     }

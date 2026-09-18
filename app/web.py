@@ -722,10 +722,22 @@ def api_requisition_leaders_dept_breakdown():
         months = int(months_str)
     except (ValueError, TypeError):
         months = 18
-    div = request.args.get("div", "")
-    dept = request.args.get("dept", "")
-    sec = request.args.get("sec", "")
-    scope = request.args.get("scope", "")
+    div = (request.args.get("div") or "").strip()
+    dept = (request.args.get("dept") or "").strip()
+    sec = (request.args.get("sec") or "").strip()
+    dept_code = (request.args.get("dept_code") or "").strip()
+    scope = (request.args.get("scope") or "").strip()
+
+    if not div and dept_code:
+        parts = dept_code.split("-")
+        div = parts[0] if len(parts) > 0 else ""
+        dept = parts[1] if len(parts) > 1 else ""
+        sec = parts[2] if len(parts) > 2 else ""
+    elif not div and "-" in dept:
+        parts = dept.split("-")
+        div = parts[0] if len(parts) > 0 else ""
+        dept = parts[1] if len(parts) > 1 else ""
+        sec = parts[2] if len(parts) > 2 else ""
 
     conn = open_warehouse()
     if conn is None:
