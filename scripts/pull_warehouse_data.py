@@ -38,6 +38,8 @@ def main() -> int:
     parser.add_argument("--plan-only", action="store_true", help="แสดงแผนโดยไม่ดึงจริง")
     parser.add_argument("--recheck", type=int, default=0, metavar="N",
                         help="ดึงซ้ำย้อนหลัง N เดือน กันเอกสารที่บันทึกย้อนวัน (งานประจำสัปดาห์)")
+    parser.add_argument("--years-back", type=int, default=1, metavar="N",
+                        help="ดึงย้อนหลัง N ปีงบประมาณ (ค่าเริ่มต้น 1 = ปีงบก่อนหน้า + ปีปัจจุบัน, เช่น 5 = ย้อนหลัง 5 ปี)")
     # ผู้ใช้สั่ง 16 ก.ย. 2569 ว่าทุกแผนกที่เบิกของต้องเห็นภาพ ไม่ใช่เฉพาะยา ค่าตั้งต้นจึง
     # เป็นทุกหมวด ตาราง periods ไม่มีมิติหมวด การเปลี่ยนค่านี้คือดึงทับของเดิม ไม่ใช่ดึงเพิ่ม
     parser.add_argument("--group", default=categories.ALL,
@@ -51,6 +53,7 @@ def main() -> int:
     print("=" * 70)
     try:
         work = extractor.plan_detail(store_codes=args.store, kinds=args.kind,
+                                     years_back=args.years_back,
                                      recheck_months=args.recheck, group_key=args.group)
     except Exception as exc:
         # ส่วนใหญ่คือตารางหน่วยของ Stock5 อ่านไม่ได้ ถ้าดึงต่อ ทุกงวดใบจ่ายจะล้มอยู่ดี
@@ -94,6 +97,7 @@ def main() -> int:
                 outcome.get("message", "")[:44]), flush=True)
 
     result = extractor.run(store_codes=args.store, kinds=args.kind, limit=args.limit,
+                           years_back=args.years_back,
                            pacing=args.pacing, progress=show, recheck_months=args.recheck,
                            group_key=args.group)
 
