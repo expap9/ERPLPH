@@ -1,4 +1,29 @@
 <div class="page">
+  <!-- Top Navigation & Return Bar (ปุ่มกลับหน้าที่เดิมเสมอ ไม่ต้องกด back) -->
+  <div class="top-nav-banner">
+    <div class="top-nav-actions">
+      <button type="button" class="nav-return-btn primary-return" (click)="goBack()" title="กลับหน้าที่แล้ว (Dashboard / คลังย่อย)">
+        <span class="btn-icon">⬅</span>
+        <span class="btn-text"><strong>กลับหน้าที่แล้ว</strong> <small>(Dashboard / คลังย่อย)</small></span>
+      </button>
+      <a routerLink="/dashboard" class="nav-return-btn secondary-return" title="กลับหน้าแดชบอร์ดบริหารโรงพยาบาลลำปาง">
+        <span class="btn-icon">📊</span>
+        <span class="btn-text">แดชบอร์ดภาพรวม (Dashboard)</span>
+      </a>
+      <a routerLink="/substores" class="nav-return-btn secondary-return" title="ไปหน้าระบบคลังย่อย 29 คลัง">
+        <span class="btn-icon">🏥</span>
+        <span class="btn-text">คลังย่อย 29 คลัง</span>
+      </a>
+    </div>
+    @if (detail) {
+      <div class="top-nav-current">
+        <span class="item-tag">{{ detail.group || 'รายการ' }} · รหัส {{ detail.code }}</span>
+        <strong class="item-name-preview" [title]="detail.name">{{ detail.name }}</strong>
+        <button type="button" class="nav-catalog-btn" (click)="resetSearch()">🔍 ค้นหารายการอื่น</button>
+      </div>
+    }
+  </div>
+
   <header class="page-heading"><div><div class="eyebrow">การตรวจสอบข้อมูลรายรายการ — ทุกประเภทของ ทุกคลัง</div><h1>ค้นหาและตรวจสอบข้อมูลต้นทาง</h1><p>ค้นหาด้วยชื่อ รหัส หรือชื่อผู้ขาย ได้ทั้งยา เวชภัณฑ์ พัสดุ ครุภัณฑ์ อาหาร และงานจ้าง แล้วเปิดตรวจสอบย้อนกลับได้ทุกบรรทัด</p></div></header>
   <section class="panel search-panel">
     <div class="search-input-wrapper" (click)="$event.stopPropagation()">
@@ -171,9 +196,9 @@
       <div class="notice error">ยังไม่คำนวณ MOS เพราะหน่วยจ่ายหรืออัตราแปลงหน่วยไม่ครบ ประวัติจ่ายยังแสดงจำนวนและหน่วยตามไฟล์ไว้ตรวจสอบ อ่านสาเหตุและหน่วยที่โรงพยาบาลยืนยันด้านล่าง หากเป็นไฟล์เก่าที่ไม่เก็บหน่วยจ่ายจริงจึงต้องดึงข้อมูลใหม่</div>
     }
     <div class="detail-nav-bar">
-      <button class="btn ghost back-btn" (click)="goBack()">← กลับไปที่หน้าก่อนหน้านี้</button>
+      <button class="btn ghost back-btn" (click)="goBack()">⬅ กลับหน้าที่แล้ว (Dashboard / คลังย่อย)</button>
       <div class="quick-jump-bar">
-        <span class="jump-label">ทางลัด:</span>
+        <span class="jump-label">ทางลัดในหน้านี้:</span>
         <button type="button" class="jump-btn" (click)="scrollToSection('section-procurement')">🏢 ข้อมูลผู้ขาย</button>
         <button type="button" class="jump-btn" (click)="scrollToSection('section-kpi')">📊 มูลค่า & MOS</button>
         <button type="button" class="jump-btn" (click)="scrollToSection('section-movement')">📅 รับ-จ่ายรายเดือน</button>

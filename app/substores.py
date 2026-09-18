@@ -427,16 +427,35 @@ def get_ward_monthly_trend(conn: sqlite3.Connection, dept_code: str, months: int
 
 
 
+def _balance_period_clause(conn: sqlite3.Connection, store_code: str = "", table_alias: str = "") -> tuple[str, list[Any]]:
+    """สร้าง WHERE clause สำหรับกรอง balances ให้ดึงเฉพาะงวด snapshot ล่าสุดเท่านั้น ป้องกันการบวกเบิ้ลซ้ำข้ามวัน"""
+    dot = f"{table_alias}." if table_alias else ""
+    try:
+        if store_code and store_code.upper() not in ("ALL", "TOTAL", "HOSPITAL"):
+            r = conn.execute("SELECT MAX(period) FROM balances WHERE store = ?", [store_code]).fetchone()
+            latest = r[0] if (r and r[0]) else None
+        else:
+            r = conn.execute("SELECT MAX(period) FROM balances").fetchone()
+            latest = r[0] if (r and r[0]) else None
+    except Exception:
+        latest = None
+
+    if latest:
+        return f"{dot}period = ?", [latest]
+    return "1=1", []
+
+
 def get_substore_kpis(conn: sqlite3.Connection, store_code: str, latest: str = "", months: int = 18) -> dict[str, Any]:
     """สรุป KPI หลักของคลังย่อยที่เลือก"""
     latest = latest or latest_period(conn)
     p_first, p_latest = _period_range(latest, months)
     p_first_3, _ = _period_range(latest, 3)
 
-    # 1. ยอดคงคลังปัจจุบัน (On-hand Stock)
+    # 1. ยอดคงคลังปัจจุบัน (On-hand Stock) — กรองเฉพาะงวด snapshot ล่าสุด ป้องกันยอดบวมจากการบวกทบทุกวัน
+    p_clause, p_vals = _balance_period_clause(conn, store_code)
     bal_row = conn.execute(
-        "SELECT COALESCE(SUM(value), 0), COUNT(DISTINCT stock_code), COUNT(*) "
-        "FROM balances WHERE store = ?", [store_code]).fetchone()
+        f"SELECT COALESCE(SUM(value), 0), COUNT(DISTINCT stock_code), COUNT(*) "
+        f"FROM balances WHERE store = ? AND {p_clause}", [store_code, *p_vals]).fetchone()
     stock_value = bal_row[0] if bal_row else 0.0
     stock_items = bal_row[1] if bal_row else 0
 
@@ -491,9 +510,9 @@ def get_substore_kpis(conn: sqlite3.Connection, store_code: str, latest: str = "
     today_str = "20260917"
     cutoff_6m = "20270317"
     exp_count = conn.execute(
-        "SELECT COUNT(DISTINCT stock_code) FROM balances "
-        "WHERE store = ? AND qty > 0 AND expire_date != '' AND expire_date <= ?",
-        [store_code, cutoff_6m]).fetchone()[0]
+        f"SELECT COUNT(DISTINCT stock_code) FROM balances "
+        f"WHERE store = ? AND qty > 0 AND expire_date != '' AND expire_date <= ? AND {p_clause}",
+        [store_code, cutoff_6m, *p_vals]).fetchone()[0]
 
     return {
         "store_code": store_code,
@@ -964,27 +983,28 @@ def get_amc_and_mos_list(conn: sqlite3.Connection, store_code: str, limit: int =
     p_first_3, p_latest = _period_range(latest, 3)
     is_all = (store_code.upper() in ("ALL", "TOTAL", "HOSPITAL"))
 
-    # 1. ดึงยอดคงคลังปัจจุบัน
+    # 1. ดึงยอดคงคลังปัจจุบัน (กรอง snapshot ล่าสุด)
+    p_clause, p_vals = _balance_period_clause(conn, "" if is_all else store_code, table_alias="b")
     if is_all:
-        balances_sql = """
+        balances_sql = f"""
             SELECT b.stock_code,
                    SUM(b.qty) as on_hand_qty, SUM(b.value) as on_hand_val,
                    COALESCE(MAX(b.unit), '') as unit
             FROM balances b
-            WHERE b.qty > 0
+            WHERE b.qty > 0 AND {p_clause}
             GROUP BY b.stock_code
         """
-        bal_rows = conn.execute(balances_sql).fetchall()
+        bal_rows = conn.execute(balances_sql, p_vals).fetchall()
     else:
-        balances_sql = """
+        balances_sql = f"""
             SELECT b.stock_code,
                    SUM(b.qty) as on_hand_qty, SUM(b.value) as on_hand_val,
                    COALESCE(MAX(b.unit), '') as unit
             FROM balances b
-            WHERE b.store = ? AND b.qty > 0
+            WHERE b.store = ? AND b.qty > 0 AND {p_clause}
             GROUP BY b.stock_code
         """
-        bal_rows = conn.execute(balances_sql, [store_code]).fetchall()
+        bal_rows = conn.execute(balances_sql, [store_code, *p_vals]).fetchall()
 
     bal_map = {
         r[0]: {
@@ -1257,6 +1277,7 @@ def get_expiring_medicines(conn: sqlite3.Connection, store_code: str, limit: int
     is_all = (store_code.upper() in ("ALL", "TOTAL", "HOSPITAL"))
     retired_clause = "AND COALESCE(m.retired, 0) = 0" if _items_has_column(conn, "retired") else ""
 
+    p_clause, p_vals = _balance_period_clause(conn, "" if is_all else store_code, table_alias="b")
     if is_all:
         sql = f"""
             SELECT b.stock_code, COALESCE(m.name, ''), COALESCE(m.main_category, ''),
@@ -1265,11 +1286,12 @@ def get_expiring_medicines(conn: sqlite3.Connection, store_code: str, limit: int
             JOIN items m ON m.stock_code = b.stock_code
             WHERE b.qty > 0 AND b.value > 0 AND b.expire_date != ''
               AND b.expire_date >= ? AND b.expire_date <= ?
+              AND {p_clause}
               {retired_clause}
             ORDER BY b.expire_date ASC
             LIMIT ?
         """
-        rows = conn.execute(sql, [past_6m_str, next_8m_str, limit * 2]).fetchall()
+        rows = conn.execute(sql, [past_6m_str, next_8m_str, *p_vals, limit * 2]).fetchall()
     else:
         sql = f"""
             SELECT b.stock_code, COALESCE(m.name, ''), COALESCE(m.main_category, ''),
@@ -1278,11 +1300,12 @@ def get_expiring_medicines(conn: sqlite3.Connection, store_code: str, limit: int
             JOIN items m ON m.stock_code = b.stock_code
             WHERE b.store = ? AND b.qty > 0 AND b.value > 0 AND b.expire_date != ''
               AND b.expire_date >= ? AND b.expire_date <= ?
+              AND {p_clause}
               {retired_clause}
             ORDER BY b.expire_date ASC
             LIMIT ?
         """
-        rows = conn.execute(sql, [store_code, past_6m_str, next_8m_str, limit * 2]).fetchall()
+        rows = conn.execute(sql, [store_code, past_6m_str, next_8m_str, *p_vals, limit * 2]).fetchall()
 
     expiring_soon = []
     already_expired = []
@@ -1559,13 +1582,14 @@ def get_hospital_all_stores_analytics(conn: sqlite3.Connection, months: int = 18
     p_first, p_latest = _period_range(latest, months)
     p_first_3, _ = _period_range(latest, 3)
 
-    # 1. ยอดคงคลังรวมทั้งโรงพยาบาล (On-hand Stock)
-    bal_row = conn.execute("""
+    # 1. ยอดคงคลังรวมทั้งโรงพยาบาล (On-hand Stock) — กรอง snapshot ล่าสุด
+    p_clause, p_vals = _balance_period_clause(conn, "", table_alias="b")
+    bal_row = conn.execute(f"""
         SELECT COALESCE(SUM(b.value), 0), COUNT(DISTINCT b.stock_code), COUNT(DISTINCT b.store)
         FROM balances b
         JOIN items m ON m.stock_code = b.stock_code
-        WHERE b.qty > 0 AND b.value > 0 AND COALESCE(m.retired, 0) = 0
-    """).fetchone()
+        WHERE b.qty > 0 AND b.value > 0 AND COALESCE(m.retired, 0) = 0 AND {p_clause}
+    """, p_vals).fetchone()
     stock_value = float(bal_row[0]) if bal_row else 0.0
     stock_items = int(bal_row[1]) if bal_row else 0
     stores_count = int(bal_row[2]) if bal_row else 0
@@ -1615,14 +1639,14 @@ def get_hospital_all_stores_analytics(conn: sqlite3.Connection, months: int = 18
 
     # 5. รายการใกล้หมดอายุ (ภายใน 8 เดือน)
     cutoff_8m = "20270518"
-    exp_count = conn.execute("""
+    exp_count = conn.execute(f"""
         SELECT COUNT(DISTINCT b.stock_code)
         FROM balances b
         JOIN items m ON m.stock_code = b.stock_code
         WHERE b.qty > 0 AND b.value > 0 AND b.expire_date != ''
           AND b.expire_date >= '20260918' AND b.expire_date <= ?
-          AND COALESCE(m.retired, 0) = 0
-    """, [cutoff_8m]).fetchone()[0]
+          AND COALESCE(m.retired, 0) = 0 AND {p_clause}
+    """, [cutoff_8m, *p_vals]).fetchone()[0]
 
     kpis = {
         "store_code": "ALL",
@@ -1692,6 +1716,7 @@ def get_hospital_all_stores_analytics(conn: sqlite3.Connection, months: int = 18
     ]
 
     groups_data = []
+    p_clause_g, p_vals_g = _balance_period_clause(conn, "")
     for g in group_configs:
         st_list = g["stores"]
         placeholders = ",".join(["?"] * len(st_list))
@@ -1700,8 +1725,8 @@ def get_hospital_all_stores_analytics(conn: sqlite3.Connection, months: int = 18
         g_bal = conn.execute(f"""
             SELECT COALESCE(SUM(value), 0), COUNT(DISTINCT stock_code)
             FROM balances
-            WHERE store IN ({placeholders}) AND qty > 0 AND value > 0
-        """, list(st_list)).fetchone()
+            WHERE store IN ({placeholders}) AND qty > 0 AND value > 0 AND {p_clause_g}
+        """, list(st_list) + p_vals_g).fetchone()
         g_stock_val = float(g_bal[0]) if g_bal else 0.0
         g_stock_items = int(g_bal[1]) if g_bal else 0
 
@@ -1863,15 +1888,16 @@ def get_item_substore_detail(conn: sqlite3.Connection, store_code: str, stock_co
     total_on_hand_qty = 0.0
     total_on_hand_val = 0.0
 
+    p_clause, p_vals = _balance_period_clause(conn, "" if is_all else store_code)
     if is_w:
         lots_data = []
     elif is_all:
-        lot_rows = conn.execute("""
+        lot_rows = conn.execute(f"""
             SELECT lot_no, qty, value, COALESCE(unit, ''), expire_date, last_in_date, store
             FROM balances
-            WHERE stock_code = ? AND qty > 0
+            WHERE stock_code = ? AND qty > 0 AND {p_clause}
             ORDER BY expire_date ASC
-        """, [stock_code]).fetchall()
+        """, [stock_code, *p_vals]).fetchall()
         for lr in lot_rows:
             q = float(lr[1] or 0)
             v = float(lr[2] or 0)
@@ -1897,12 +1923,12 @@ def get_item_substore_detail(conn: sqlite3.Connection, store_code: str, stock_co
                 "days_left": days_left,
             })
     else:
-        lot_rows = conn.execute("""
+        lot_rows = conn.execute(f"""
             SELECT lot_no, qty, value, COALESCE(unit, ''), expire_date, last_in_date, store
             FROM balances
-            WHERE store = ? AND stock_code = ? AND qty > 0
+            WHERE store = ? AND stock_code = ? AND qty > 0 AND {p_clause}
             ORDER BY expire_date ASC
-        """, [store_code, stock_code]).fetchall()
+        """, [store_code, stock_code, *p_vals]).fetchall()
         for lr in lot_rows:
             q = float(lr[1] or 0)
             v = float(lr[2] or 0)
@@ -2239,14 +2265,15 @@ def get_top_requisition_leaders_dashboard(conn: sqlite3.Connection, months: int 
         trans_in_slips = int(row_trans[1]) if row_trans else 0
 
         # 4. Current Balances (คงคลังปัจจุบัน)
+        p_clause_b, p_vals_b = _balance_period_clause(conn, "", table_alias="b")
         sql_bal = f"""
             SELECT COALESCE(SUM(b.value), 0), COUNT(DISTINCT b.stock_code)
             FROM balances b
             JOIN items m ON b.stock_code = m.stock_code
-            WHERE b.store IN ({placeholders}) AND b.qty > 0 AND b.value > 0
+            WHERE b.store IN ({placeholders}) AND b.qty > 0 AND b.value > 0 AND {p_clause_b}
               {retired_clause}
         """
-        row_bal = conn.execute(sql_bal, stores).fetchone()
+        row_bal = conn.execute(sql_bal, stores + p_vals_b).fetchone()
         bal_val = float(row_bal[0]) if row_bal else 0.0
         bal_items = int(row_bal[1]) if row_bal else 0
         mos = (bal_val / monthly_rate) if monthly_rate > 0 else 0.0
@@ -2412,14 +2439,15 @@ def get_top_requisition_leaders_dashboard(conn: sqlite3.Connection, months: int 
             pass
 
         # 4. Current Balances (คงคลังปัจจุบัน)
+        p_clause_b, p_vals_b = _balance_period_clause(conn, "", table_alias="b")
         sql_bal = f"""
             SELECT COALESCE(SUM(b.value), 0), COUNT(DISTINCT b.stock_code)
             FROM balances b
             JOIN items m ON b.stock_code = m.stock_code
-            WHERE {filter_clause} AND b.qty > 0 AND b.value > 0
+            WHERE {filter_clause} AND b.qty > 0 AND b.value > 0 AND {p_clause_b}
               {retired_clause}
         """
-        row_bal = conn.execute(sql_bal).fetchone()
+        row_bal = conn.execute(sql_bal, p_vals_b).fetchone()
         bal_val = float(row_bal[0]) if row_bal else 0.0
         bal_items = int(row_bal[1]) if row_bal else 0
         mos = (bal_val / monthly_rate) if monthly_rate > 0 else 0.0

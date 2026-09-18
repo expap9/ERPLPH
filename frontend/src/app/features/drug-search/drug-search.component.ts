@@ -1,14 +1,14 @@
 import { Location } from '@angular/common';
 import { ChangeDetectorRef, Component, HostListener, OnInit } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { ActivatedRoute } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { of } from 'rxjs';
 import { catchError } from 'rxjs/operators';
 import { ApiService } from '../../core/api.service';
 
 @Component({
   selector: 'app-drug-search',
-  imports: [FormsModule],
+  imports: [FormsModule, RouterLink],
   templateUrl: './drug-search.component.html',
   styleUrl: './drug-search.component.css',
 })
@@ -87,22 +87,47 @@ export class DrugSearchComponent implements OnInit {
   constructor(
     private readonly api: ApiService,
     private readonly route: ActivatedRoute,
+    private readonly router: Router,
     private readonly cdr: ChangeDetectorRef,
     private readonly location: Location,
   ) {}
 
   ngOnInit(): void {
-    this.api.scopes().subscribe({ next: options => { this.groupOptions = options?.groups || []; this.cdr.detectChanges(); }, error: () => {} });
+    this.api.scopes().subscribe({
+      next: options => {
+        this.groupOptions = options?.groups || [];
+        this.cdr.detectChanges();
+      },
+      error: () => {}
+    });
+
     this.route.paramMap.subscribe(params => {
       const code = params.get('code');
       if (code) {
+        this.query = code;
+        this.results = null;
         this.open(code);
+      } else {
+        const q = this.route.snapshot.queryParamMap.get('q');
+        const grp = this.route.snapshot.queryParamMap.get('group');
+        if (q || grp) {
+          this.query = q || '';
+          this.group = grp || '';
+        }
+        if (!this.detail) {
+          this.search(1);
+        }
       }
     });
+
     this.route.queryParamMap.subscribe(params => {
+      // If we are currently on a route with :code (e.g. /drugs/:code), do not run list search
+      if (this.route.snapshot.paramMap.get('code')) {
+        return;
+      }
       const q = params.get('q');
       const grp = params.get('group');
-      if (q !== null || grp !== null || !this.route.snapshot.paramMap.get('code')) {
+      if (q !== null || grp !== null) {
         this.query = q || this.query;
         this.group = grp || this.group;
         this.search(1);
@@ -307,8 +332,17 @@ export class DrugSearchComponent implements OnInit {
     if (window.history.length > 1) {
       this.location.back();
     } else {
-      this.closeDetail();
+      this.router.navigate(['/dashboard']);
     }
+  }
+
+  resetSearch(): void {
+    this.detail = null;
+    this.raw = null;
+    this.investigation = null;
+    this.query = '';
+    this.router.navigate(['/drugs']);
+    this.search(1);
   }
 
   setPrimaryVendor(vendor: any): void {
