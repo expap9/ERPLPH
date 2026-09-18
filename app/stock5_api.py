@@ -33,6 +33,7 @@ from flask import Blueprint, jsonify, request
 import categories
 import department_usage
 import departments
+import his_login
 import metrics
 import overview
 import stores
@@ -1256,18 +1257,52 @@ NO_WAREHOUSE = {"status": "error",
 
 @bp.route("/api/auth/me")
 def auth_me():
-    # ยังไม่มีระบบล็อกอิน (docs/system_design.md ข้อ 6) ทุกคนเป็นผู้ใช้อ่านอย่างเดียว
-    return _no_store(jsonify({"status": "ok", "user": READ_ONLY_USER}))
+    token = request.cookies.get(his_login.SESSION_COOKIE_NAME) or request.cookies.get(his_login.ALT_COOKIE_NAME, "")
+    session = his_login.get_session(token)
+    return _no_store(jsonify({"status": "ok", "user": his_login.public_user(session)}))
 
 
 @bp.route("/api/auth/login", methods=["POST"])
 def auth_login():
-    return _no_store(jsonify({"status": "ok", "user": READ_ONLY_USER}))
+    payload = request.get_json(silent=True) or {}
+    username = payload.get("username", "")
+    password = payload.get("password", "")
+    try:
+        his_login.check_login_allowed(username)
+        user = his_login.verify_login(username, password)
+    except his_login.LoginThrottled as exc:
+        response = _no_store(jsonify({"status": "error", "message": str(exc)}))
+        response.headers["Retry-After"] = str(exc.retry_after_seconds)
+        return response, 429
+    except his_login.LoginUnavailable as exc:
+        return _no_store(jsonify({"status": "error", "message": str(exc)})), 401
+    except his_login.LoginError as exc:
+        his_login.record_login_failure(username)
+        return _no_store(jsonify({"status": "error", "message": str(exc)})), 401
+
+    his_login.clear_login_failures(username)
+    token = his_login.create_session(user)
+    response = _no_store(jsonify({"status": "ok", "user": his_login.public_user(user)}))
+    response.set_cookie(
+        his_login.SESSION_COOKIE_NAME,
+        token,
+        httponly=True,
+        samesite="Lax",
+        secure=request.is_secure,
+        path="/",
+        max_age=None,
+    )
+    return response
 
 
 @bp.route("/api/auth/logout", methods=["POST"])
 def auth_logout():
-    return _no_store(jsonify({"status": "ok"}))
+    token = request.cookies.get(his_login.SESSION_COOKIE_NAME) or request.cookies.get(his_login.ALT_COOKIE_NAME, "")
+    his_login.destroy_session(token)
+    response = _no_store(jsonify({"status": "ok"}))
+    response.delete_cookie(his_login.SESSION_COOKIE_NAME, path="/")
+    response.delete_cookie(his_login.ALT_COOKIE_NAME, path="/")
+    return response
 
 
 @bp.route("/api/status")

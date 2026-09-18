@@ -1,0 +1,8 @@
+{
+  "db_host": "172.16.0.33",
+  "db_port": "1433",
+  "db_name": "SSBSTOCK",
+  "db_user": "sa",
+  "db_pass": "",
+  "hosp_code": "EA0010672"
+}

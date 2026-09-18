@@ -1,4 +1,7 @@
 # ความลับและข้อมูลโรงพยาบาล ห้ามขึ้น git
+.env
+.env.*
+!.env.example
 config.json
 config/table_mappings.json
 warehouse_data/

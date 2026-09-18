@@ -22,12 +22,13 @@
 """
 from datetime import date
 import math
+import os
 from pathlib import Path
 import sqlite3
 import sys
-from urllib.parse import urlencode
+from urllib.parse import quote, urlencode
 
-from flask import Flask, Response, render_template, request, send_from_directory
+from flask import Flask, Response, redirect, render_template, request, send_from_directory, url_for
 from markupsafe import Markup, escape
 
 BASE_DIR = Path(__file__).resolve().parents[1]
@@ -38,6 +39,7 @@ import cut_status  # noqa: E402
 import department_usage  # noqa: E402
 import departments  # noqa: E402
 import executive_analytics  # noqa: E402
+import his_login  # noqa: E402
 import metrics  # noqa: E402
 import overview  # noqa: E402
 import stock5_api  # noqa: E402
@@ -79,6 +81,13 @@ def open_warehouse():
     return conn
 
 
+def get_current_user():
+    """ดึงข้อมูลผู้ใช้ที่ล็อกอินอยู่ในปัจจุบันจาก session cookie"""
+    token = request.cookies.get(his_login.SESSION_COOKIE_NAME) or request.cookies.get(his_login.ALT_COOKIE_NAME, "")
+    session = his_login.get_session(token)
+    return his_login.public_user(session)
+
+
 @app.context_processor
 def inject_global_data():
     conn = open_warehouse()
@@ -93,7 +102,40 @@ def inject_global_data():
             freshness = executive_analytics.get_data_freshness_status(conn)
         finally:
             conn.close()
-    return dict(data_freshness=freshness)
+    return dict(data_freshness=freshness, current_user=get_current_user())
+
+
+@app.before_request
+def enforce_login_for_pages():
+    """ตรวจสอบการเข้าสู่ระบบสำหรับหน้าเว็บ HTML ของระบบ
+
+    - ในโหมดทดสอบ (app.testing) ปล่อยผ่านเพื่อให้ Unit Test ทำงานได้
+    - หน้าจอ Angular SPA (/<path>) มี authGuard คุมทางฝั่งหน้าบ้านอยู่แล้ว
+    - ปล่อยผ่าน API และ static assets ทั้งหมด
+    - หน้า HTML ที่เรนเดอร์จากฝั่งเซิร์ฟเวอร์ (เช่น /substores, /departments) หากยังไม่ล็อกอิน
+      จะส่งต่อไปยังหน้า /login พร้อมจำ returnUrl ไว้กลับมาหน้าเดิม
+    """
+    if app.testing or os.environ.get("ERPLPH_DISABLE_AUTH", "").lower() in ("1", "true", "yes"):
+        return None
+
+    path = request.path
+    if (
+        path.startswith("/api/")
+        or path in ("/", "/login")
+        or "." in path
+        or path.startswith("/dashboard")
+        or path.startswith("/drugs/")
+        or path.startswith("/drug-search")
+        or path.startswith("/purchasing")
+        or path.startswith("/procurement-plan")
+        or path.startswith("/monitor")
+    ):
+        return None
+
+    if get_current_user() is None:
+        target = request.full_path if request.query_string else request.path
+        return redirect("/login?returnUrl=" + quote(target, safe="/:?=&"))
+    return None
 
 
 # --------------------------------------------------------------------------- ตัวช่วยแสดงผล

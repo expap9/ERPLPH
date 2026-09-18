@@ -26,6 +26,54 @@ DEFAULT_CONFIG = {
 }
 
 
+ENV_PATH = BASE_DIR / ".env"
+
+ENV_KEY_MAP = {
+    "DB_HOST": "db_host",
+    "DB_PORT": "db_port",
+    "DB_NAME": "db_name",
+    "DB_USER": "db_user",
+    "DB_PASS": "db_pass",
+    "HOSP_CODE": "hosp_code",
+}
+
+
+def parse_dotenv(content: str) -> dict[str, str]:
+    """แยกคู่ตัวแปรจากข้อความรูปแบบ .env รองรับเครื่องหมายคำพูดและการตัดช่องว่าง"""
+    result: dict[str, str] = {}
+    for raw_line in content.splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if "=" not in line:
+            continue
+        key, val = line.split("=", 1)
+        key = key.strip()
+        val = val.strip()
+        if (val.startswith('"') and val.endswith('"')) or (val.startswith("'") and val.endswith("'")):
+            val = val[1:-1]
+        if key:
+            result[key] = val
+    return result
+
+
+def _load_env_file() -> dict[str, str]:
+    """อ่านค่าจากไฟล์ .env ของ ERPLPH ถ้ามี"""
+    if not ENV_PATH.is_file():
+        return {}
+    try:
+        content = ENV_PATH.read_text(encoding="utf-8")
+        raw_env = parse_dotenv(content)
+        mapped = {}
+        for env_key, val in raw_env.items():
+            cfg_key = ENV_KEY_MAP.get(env_key.upper()) or env_key.lower()
+            if cfg_key in DEFAULT_CONFIG and val != "":
+                mapped[cfg_key] = val
+        return mapped
+    except OSError:
+        return {}
+
+
 def _stock5_config() -> dict:
     """ค่าตั้งต้นจาก Stock5 ถ้ามี — อ่านอย่างเดียว"""
     import stock5_engine
@@ -41,17 +89,35 @@ def _stock5_config() -> dict:
 
 
 def load_config() -> dict:
+    """โหลดการตั้งค่าฐานข้อมูลโรงพยาบาล
+
+    ลำดับความสำคัญ (จากต่ำไปสูง):
+    1. ค่าเริ่มต้น (DEFAULT_CONFIG)
+    2. ค่ายืมจาก Stock5 (ถ้ามี)
+    3. config.json ของ ERPLPH
+    4. ไฟล์ .env ของ ERPLPH
+    5. Environment Variables ของระบบ (os.environ)
+    """
     config = dict(DEFAULT_CONFIG)
+    # 2. ยืมจาก Stock5
     config.update({
         key: value for key, value in _stock5_config().items()
         if key in DEFAULT_CONFIG and value
     })
+    # 3. config.json ของ ERPLPH
     if CONFIG_PATH.is_file():
         try:
             with CONFIG_PATH.open("r", encoding="utf-8") as stream:
                 config.update(json.load(stream))
         except (OSError, ValueError):
             pass
+    # 4. ไฟล์ .env ของ ERPLPH
+    config.update(_load_env_file())
+    # 5. Environment Variables ของระบบ
+    for env_key, cfg_key in ENV_KEY_MAP.items():
+        val = os.environ.get(env_key)
+        if val is not None and val != "":
+            config[cfg_key] = val
     return config
 
 
@@ -125,6 +191,7 @@ def error_summary(exc: Exception) -> dict:
 def describe_config() -> dict:
     """ค่าที่ตั้งไว้ โดยไม่เปิดเผยรหัสผ่าน"""
     config = load_config()
+    env_file = ENV_PATH.is_file()
     return {
         "db_host": config.get("db_host", ""),
         "db_port": config.get("db_port", ""),
@@ -132,5 +199,6 @@ def describe_config() -> dict:
         "db_user": config.get("db_user", ""),
         "password_set": bool(config.get("db_pass")),
         "own_config": CONFIG_PATH.is_file(),
-        "inherited_from_stock5": not CONFIG_PATH.is_file() and bool(_stock5_config()),
+        "env_config": env_file,
+        "inherited_from_stock5": not CONFIG_PATH.is_file() and not env_file and bool(_stock5_config()),
     }
