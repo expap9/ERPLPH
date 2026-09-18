@@ -9,6 +9,7 @@
 """
 from datetime import datetime, timedelta, timezone
 import logging
+import os
 from pathlib import Path
 import threading
 import time
@@ -21,7 +22,24 @@ import warehouse_db
 
 logger = logging.getLogger("erplph.auto_sync")
 
-DEFAULT_INTERVAL_SECONDS = 6 * 3600  #: ค่าเริ่มต้น 6 ชั่วโมง (4 รอบต่อวัน)
+
+def _get_default_interval() -> int:
+    hours_str = os.environ.get("AUTO_SYNC_INTERVAL_HOURS")
+    if hours_str:
+        try:
+            return max(300, int(float(hours_str) * 3600))
+        except (ValueError, TypeError):
+            pass
+    sec_str = os.environ.get("AUTO_SYNC_INTERVAL_SECONDS")
+    if sec_str:
+        try:
+            return max(300, int(sec_str))
+        except (ValueError, TypeError):
+            pass
+    return 6 * 3600  #: ค่าเริ่มต้น 6 ชั่วโมง (4 รอบต่อวัน)
+
+
+DEFAULT_INTERVAL_SECONDS = _get_default_interval()
 RETRY_INTERVAL_SECONDS = 5 * 60     #: เมื่อล้มเหลว รอ 5 นาทีแล้วลองใหม่ตามกติกาหน้าจอ
 
 _sync_lock = threading.Lock()
@@ -30,7 +48,7 @@ _scheduler_running = False
 
 # สถานะส่วนกลางของระบบ Auto-Sync
 _state: dict[str, Any] = {
-    "enabled": True,
+    "enabled": os.environ.get("AUTO_SYNC_ENABLED", "1").strip().lower() not in ("0", "false", "no"),
     "is_syncing": False,
     "interval_seconds": DEFAULT_INTERVAL_SECONDS,
     "last_sync": None,
