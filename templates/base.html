@@ -219,6 +219,274 @@
   .nav-sync-chip:hover {
     filter: brightness(1.15);
   }
+
+  /* =========================================================================
+     ERPLPH Quick Navigation Dock (แถบเมนูลัดจำลองจาก Sidebar รูปที่ 1)
+     รองรับทั้งการตรึงไว้ด้านล่าง (Bottom Dock) และ ตรึงซ้าย (Left Sidebar)
+     ========================================================================= */
+  body.has-dock-bottom {
+    padding-bottom: 90px;
+  }
+  body.has-dock-left {
+    padding-left: 78px;
+  }
+
+  .erplph-dock {
+    position: fixed;
+    z-index: 9990;
+    transition: all 0.28s cubic-bezier(0.4, 0, 0.2, 1);
+    user-select: none;
+  }
+
+  /* 1. Bottom Dock Mode (Default - ตรึงไว้ด้านล่าง) */
+  .erplph-dock.dock-bottom {
+    bottom: 16px;
+    left: 50%;
+    transform: translateX(-50%);
+  }
+  .erplph-dock.dock-bottom .erplph-dock-inner {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 7px;
+    padding: 7px 12px;
+    background: rgba(11, 20, 38, 0.94);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    border-radius: 22px;
+    box-shadow: 0 14px 40px rgba(0, 0, 0, 0.45), 0 0 0 1px rgba(0, 0, 0, 0.25);
+  }
+
+  /* 2. Left Dock Mode (ตรึงไว้ด้านข้างซ้ายเหมือนรูปที่ 1) */
+  .erplph-dock.dock-left {
+    left: 14px;
+    top: 50%;
+    transform: translateY(-50%);
+  }
+  .erplph-dock.dock-left .erplph-dock-inner {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    padding: 14px 8px;
+    background: linear-gradient(180deg, #07111f 0%, #0a1728 100%);
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    border-radius: 18px;
+    box-shadow: 0 14px 40px rgba(0, 0, 0, 0.5);
+  }
+
+  /* Brand Mark (ERP aqua badge) */
+  .dock-brand {
+    text-decoration: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .dock-brand-badge {
+    width: 42px;
+    height: 42px;
+    border-radius: 13px;
+    background: linear-gradient(135deg, #67e8f9 0%, #34d399 100%);
+    color: #04212a;
+    font-weight: 900;
+    font-size: 16px;
+    letter-spacing: 0.5px;
+    display: grid;
+    place-items: center;
+    box-shadow: 0 4px 14px rgba(52, 211, 153, 0.35);
+    transition: transform 0.18s ease;
+  }
+  .dock-brand:hover .dock-brand-badge {
+    transform: scale(1.08);
+  }
+
+  .dock-divider {
+    background: rgba(255, 255, 255, 0.15);
+  }
+  .dock-bottom .dock-divider {
+    width: 1px;
+    height: 28px;
+    margin: 0 3px;
+  }
+  .dock-left .dock-divider {
+    width: 28px;
+    height: 1px;
+    margin: 3px 0;
+  }
+
+  /* Navigation Items & Icons */
+  .dock-item {
+    position: relative;
+    display: grid;
+    place-items: center;
+    width: 42px;
+    height: 42px;
+    border-radius: 12px;
+    color: #cbd5e1;
+    text-decoration: none;
+    background: rgba(15, 23, 42, 0.65);
+    border: 1px solid transparent;
+    transition: all 0.18s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  .dock-item .dock-icon {
+    font-size: 21px;
+    line-height: 1;
+    display: inline-block;
+    transition: transform 0.18s ease;
+  }
+  .dock-item:hover {
+    background: rgba(51, 65, 85, 0.65);
+    color: #ffffff;
+    border-color: rgba(255, 255, 255, 0.2);
+    transform: translateY(-2px) scale(1.06);
+    z-index: 10;
+  }
+  .dock-left .dock-item:hover {
+    transform: translateX(2px) scale(1.06);
+  }
+  .dock-item:active {
+    transform: scale(0.96);
+  }
+
+  /* Active State (เหมือนในรูปที่ 1: ขอบฟ้า + เรืองแสง) */
+  .dock-item.active {
+    color: #ffffff;
+    border-color: rgba(103, 232, 249, 0.5);
+    background: linear-gradient(135deg, rgba(8, 145, 178, 0.35), rgba(16, 185, 129, 0.15));
+    box-shadow: 0 0 16px rgba(56, 189, 248, 0.3), inset 0 0 8px rgba(56, 189, 248, 0.2);
+  }
+
+  /* Tooltips on Hover */
+  .dock-item .dock-tooltip {
+    position: absolute;
+    pointer-events: none;
+    opacity: 0;
+    visibility: hidden;
+    white-space: nowrap;
+    font-size: 12px;
+    font-weight: 600;
+    color: #f8fafc;
+    background: #09121f;
+    border: 1px solid rgba(56, 189, 248, 0.3);
+    border-radius: 8px;
+    padding: 5px 10px;
+    box-shadow: 0 6px 18px rgba(0,0,0,0.4);
+    transition: all 0.15s ease;
+    z-index: 9999;
+  }
+  .dock-bottom .dock-item .dock-tooltip {
+    bottom: calc(100% + 9px);
+    left: 50%;
+    transform: translateX(-50%) translateY(4px);
+  }
+  .dock-bottom .dock-item:hover .dock-tooltip {
+    opacity: 1;
+    visibility: visible;
+    transform: translateX(-50%) translateY(0);
+  }
+  .dock-left .dock-item .dock-tooltip {
+    left: calc(100% + 10px);
+    top: 50%;
+    transform: translateY(-50%) translateX(-4px);
+  }
+  .dock-left .dock-item:hover .dock-tooltip {
+    opacity: 1;
+    visibility: visible;
+    transform: translateY(-50%) translateX(0);
+  }
+
+  /* Dock Controls (Switch Position & Collapse) */
+  .dock-controls {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    margin-left: 2px;
+  }
+  .dock-left .dock-controls {
+    flex-direction: column;
+    margin-left: 0;
+    margin-top: 4px;
+  }
+  .dock-btn-ctrl {
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    color: #94a3b8;
+    border-radius: 8px;
+    width: 28px;
+    height: 28px;
+    display: grid;
+    place-items: center;
+    cursor: pointer;
+    font-size: 11px;
+    padding: 0;
+    transition: all 0.15s ease;
+  }
+  .dock-btn-ctrl:hover {
+    background: rgba(103, 232, 249, 0.2);
+    color: #67e8f9;
+    border-color: rgba(103, 232, 249, 0.4);
+  }
+
+  /* Minimized State (Float Button) */
+  .erplph-dock-minimized {
+    position: fixed;
+    z-index: 9990;
+    cursor: pointer;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+  }
+  .erplph-dock-minimized.dock-bottom {
+    bottom: 16px;
+    right: 20px;
+  }
+  .erplph-dock-minimized.dock-left {
+    left: 16px;
+    bottom: 20px;
+  }
+  .dock-brand-badge-mini {
+    width: 44px;
+    height: 44px;
+    border-radius: 14px;
+    background: linear-gradient(135deg, #67e8f9 0%, #34d399 100%);
+    color: #04212a;
+    font-weight: 900;
+    font-size: 15px;
+    display: grid;
+    place-items: center;
+    box-shadow: 0 6px 20px rgba(52, 211, 153, 0.4);
+    border: 2px solid rgba(255, 255, 255, 0.3);
+  }
+  .erplph-dock-minimized:hover {
+    transform: scale(1.1);
+  }
+
+  @media (max-width: 600px) {
+    .dock-bottom .erplph-dock-inner {
+      padding: 5px 8px;
+      gap: 4px;
+    }
+    .dock-item {
+      width: 36px;
+      height: 36px;
+    }
+    .dock-brand-badge {
+      width: 36px;
+      height: 36px;
+      font-size: 14px;
+    }
+    .dock-item .dock-icon {
+      font-size: 18px;
+    }
+    .dock-controls {
+      display: none;
+    }
+  }
+
+  @media print {
+    .erplph-dock, .erplph-dock-minimized {
+      display: none !important;
+    }
+  }
   {% block style %}{% endblock %}
 </style>
 </head>
@@ -355,6 +623,164 @@
       if (x + tip.offsetWidth > window.innerWidth - 8) x = event.clientX - tip.offsetWidth - 14;
       tip.style.left = x + 'px'; tip.style.top = y + 'px';
     });
+  })();
+</script>
+
+<!-- Floating Quick Navigation Dock (แถบเมนูลัด ERPLPH เลียนแบบรูปที่ 1) -->
+<nav class="erplph-dock dock-bottom no-print" id="erplph-dock" aria-label="แถบเมนูลัด ERPLPH">
+  <div class="erplph-dock-inner">
+    <!-- Brand Mark (ERP) -->
+    <a href="/overview" class="dock-item dock-brand" title="ERPLPH · ภาพรวมผู้บริหาร (Overview)">
+      <span class="dock-brand-badge">ERP</span>
+      <span class="dock-tooltip">ERPLPH ระบบข้อมูลคลังทั้งโรงพยาบาล</span>
+    </a>
+
+    <div class="dock-divider"></div>
+
+    <!-- 1. 📊 Dashboard (ภาพรวม) -->
+    <a href="/dashboard" id="dock-item-dashboard" class="dock-item" title="Dashboard ภาพรวมทุกคลัง ทุกประเภทของ">
+      <span class="dock-icon">📊</span>
+      <span class="dock-tooltip">Dashboard ภาพรวมทุกคลัง</span>
+    </a>
+
+    <!-- 2. 🛒 จัดซื้อ / PO -->
+    <a href="/purchasing" id="dock-item-purchasing" class="dock-item" title="ส่วนของด้านจัดซื้อ ตารางวิเคราะห์ปฏิบัติการ">
+      <span class="dock-icon">🛒</span>
+      <span class="dock-tooltip">ส่วนของด้านจัดซื้อ (Purchasing)</span>
+    </a>
+
+    <!-- 3. 🔎 ค้นหาและตรวจสอบข้อมูล -->
+    <a href="/drug-search" id="dock-item-search" class="dock-item" title="ค้นหาและตรวจสอบข้อมูล ยา พัสดุ ครุภัณฑ์">
+      <span class="dock-icon">🔎</span>
+      <span class="dock-tooltip">ค้นหาและตรวจสอบข้อมูล (ยา/พัสดุ)</span>
+    </a>
+
+    <!-- 4. 💊 ข้อมูลคลังยา (Stock5 เดิม) -->
+    <a href="http://172.16.13.102/stock" id="dock-item-drug" target="_blank" rel="noopener" class="dock-item" title="ระบบข้อมูลคลังยา (Stock5 เดิม) ↗">
+      <span class="dock-icon">💊</span>
+      <span class="dock-tooltip">ข้อมูลคลังยา (Stock5 เดิม) ↗</span>
+    </a>
+
+    <!-- 5. 🏥 แต่ละแผนกเบิกอะไรไปเท่าไร -->
+    <a href="/departments" id="dock-item-departments" class="dock-item" title="แต่ละแผนกเบิกอะไรไปเท่าไร">
+      <span class="dock-icon">🏥</span>
+      <span class="dock-tooltip">แต่ละแผนกเบิกอะไรไปเท่าไร</span>
+    </a>
+
+    <!-- 6. 🏬 คลังย่อยและวอร์ด -->
+    <a href="/substores" id="dock-item-substores" class="dock-item" title="คลังย่อยและวอร์ด (ห้องยาใน/นอก, เคมี, ER)">
+      <span class="dock-icon">🏬</span>
+      <span class="dock-tooltip">คลังย่อยและวอร์ด (Sub-stores)</span>
+    </a>
+
+    <!-- 7. ⏱️ คลังไหนข้อมูลค้าง -->
+    <a href="/cut-status" id="dock-item-cut-status" class="dock-item" title="คลังไหนข้อมูลค้าง (หยุดตัดยอด/ช้ากว่าปกติ)">
+      <span class="dock-icon">⏱️</span>
+      <span class="dock-tooltip">คลังไหนข้อมูลค้าง (Cut Status)</span>
+    </a>
+
+    <div class="dock-divider"></div>
+
+    <!-- Dock Controls: Position switch & Minimize -->
+    <div class="dock-controls">
+      <button type="button" class="dock-btn-ctrl" id="dock-pos-toggle" onclick="toggleDockPosition()" title="สลับตำแหน่ง (ตรึงล่าง ↔ ตรึงซ้าย)">
+        <span class="dock-ctrl-icon" id="dock-pos-icon">⮂</span>
+      </button>
+      <button type="button" class="dock-btn-ctrl" onclick="toggleDockCollapse()" title="ย่อ / ซ่อนแถบเมนู">
+        <span class="dock-ctrl-icon">✕</span>
+      </button>
+    </div>
+  </div>
+</nav>
+
+<!-- Minimized Floating Button -->
+<div class="erplph-dock-minimized dock-bottom no-print" id="erplph-dock-minimized" onclick="toggleDockCollapse()" style="display:none;" title="คลิกเพื่อเปิดแถบเมนูลัด ERPLPH">
+  <span class="dock-brand-badge-mini">ERP</span>
+</div>
+
+<script>
+  // ERPLPH Dock Manager (Active State, Position Toggle, Minimize)
+  (function initErplphDock() {
+    const dock = document.getElementById('erplph-dock');
+    const mini = document.getElementById('erplph-dock-minimized');
+    const posIcon = document.getElementById('dock-pos-icon');
+    if (!dock || !mini) return;
+
+    // 1. Highlight Active Item
+    const p = window.location.pathname;
+    if (p === '/overview' || p === '/dashboard' || p === '/') {
+      document.getElementById('dock-item-dashboard')?.classList.add('active');
+    } else if (p.startsWith('/purchasing') || p.startsWith('/procure-to-pay')) {
+      document.getElementById('dock-item-purchasing')?.classList.add('active');
+    } else if (p.startsWith('/drug-search') || p.startsWith('/items')) {
+      document.getElementById('dock-item-search')?.classList.add('active');
+    } else if (p.startsWith('/departments')) {
+      document.getElementById('dock-item-departments')?.classList.add('active');
+    } else if (p.startsWith('/substores')) {
+      document.getElementById('dock-item-substores')?.classList.add('active');
+    } else if (p.startsWith('/cut-status')) {
+      document.getElementById('dock-item-cut-status')?.classList.add('active');
+    }
+
+    // 2. Load Saved Position & State
+    let pos = 'bottom';
+    try {
+      pos = localStorage.getItem('erplph_dock_pos') || 'bottom';
+    } catch(e) {}
+    let collapsed = false;
+    try {
+      collapsed = localStorage.getItem('erplph_dock_collapsed') === 'true';
+    } catch(e) {}
+
+    function applyPosition(newPos) {
+      pos = newPos;
+      dock.classList.remove('dock-bottom', 'dock-left');
+      mini.classList.remove('dock-bottom', 'dock-left');
+      document.body.classList.remove('has-dock-bottom', 'has-dock-left');
+
+      dock.classList.add(`dock-${pos}`);
+      mini.classList.add(`dock-${pos}`);
+      if (!collapsed) {
+        document.body.classList.add(`has-dock-${pos}`);
+      }
+      if (posIcon) {
+        posIcon.textContent = (pos === 'bottom') ? '⮂' : '⮇';
+        const toggleBtn = document.getElementById('dock-pos-toggle');
+        if (toggleBtn) {
+          toggleBtn.title = (pos === 'bottom') ? 'ย้ายไปตรึงด้านซ้าย (Left Sidebar)' : 'ย้ายไปตรึงด้านล่าง (Bottom Dock)';
+        }
+      }
+      try {
+        localStorage.setItem('erplph_dock_pos', pos);
+      } catch(e) {}
+    }
+
+    function applyCollapse(isCollapsed) {
+      collapsed = isCollapsed;
+      if (collapsed) {
+        dock.style.display = 'none';
+        mini.style.display = 'block';
+        document.body.classList.remove('has-dock-bottom', 'has-dock-left');
+      } else {
+        dock.style.display = 'block';
+        mini.style.display = 'none';
+        document.body.classList.add(`has-dock-${pos}`);
+      }
+      try {
+        localStorage.setItem('erplph_dock_collapsed', collapsed ? 'true' : 'false');
+      } catch(e) {}
+    }
+
+    window.toggleDockPosition = function() {
+      applyPosition(pos === 'bottom' ? 'left' : 'bottom');
+    };
+
+    window.toggleDockCollapse = function() {
+      applyCollapse(!collapsed);
+    };
+
+    applyPosition(pos);
+    applyCollapse(collapsed);
   })();
 </script>
 </body>
