@@ -1262,18 +1262,28 @@
                           <tr>
                             <th style="width: 35px; text-align: center;">#</th>
                             <th>ชื่อแผนก / หน่วยงาน</th>
-                            <th class="number" style="width: 120px;">จำนวนเบิก</th>
-                            <th class="number" style="width: 130px;">มูลค่าเบิก</th>
+                            <th class="number" style="width: 130px;">จำนวนเบิก</th>
+                            <th class="number" style="width: 140px;">มูลค่าเบิก</th>
                             <th class="number" style="width: 80px;">สัดส่วน</th>
                           </tr>
                         </thead>
                         <tbody>
-                          @for (dp of itemQuickModal.data.department_distribution; track dp.department; let idx = $index) {
+                          @for (dp of itemQuickModal.data.department_distribution; track dp.dept_code || dp.dept_name || $index; let idx = $index) {
                             <tr>
                               <td style="text-align: center; color: var(--muted);">{{ idx + 1 }}</td>
-                              <td><strong style="color: #f1f5f9;">{{ dp.department }}</strong></td>
-                              <td class="number">{{ number(dp.quantity) }}</td>
-                              <td class="number text-emerald font-bold">{{ money(dp.value) }}</td>
+                              <td>
+                                <strong style="color: #f1f5f9;">{{ dp.dept_name || dp.department || '-' }}</strong>
+                                @if (dp.dept_code) {
+                                  <span class="mono" style="font-size: 11px; color: #94a3b8; margin-left: 6px;">({{ dp.dept_code }})</span>
+                                }
+                              </td>
+                              <td class="number">
+                                <strong>{{ number(dp.total_qty ?? dp.quantity) }}</strong>
+                                @if (itemQuickModal.data.summary?.issue_quantities?.[0]?.unit) {
+                                  <small style="font-size: 11px; color: #94a3b8; margin-left: 3px;">{{ itemQuickModal.data.summary.issue_quantities[0].unit }}</small>
+                                }
+                              </td>
+                              <td class="number text-emerald font-bold">{{ money(dp.total_value ?? dp.value) }}</td>
                               <td class="number"><span class="pct-badge green-pct">{{ dp.percent }}%</span></td>
                             </tr>
                           }
