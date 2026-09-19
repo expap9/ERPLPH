@@ -2753,20 +2753,16 @@ def get_category_all_depts(conn: sqlite3.Connection, scope: str, months: int = 1
 
 
 def get_pharmacy_daily_stock_cut(conn: sqlite3.Connection, store_code: str = 'ALL') -> dict[str, Any]:
-    """คำนวณตัดสต็อกรายวันของห้องยา"""
-    today = datetime.datetime.now().date()
-    yesterday = today - datetime.timedelta(days=1)
-    
-    tomorrow = today + datetime.timedelta(days=1)
-    today_str = today.strftime("%Y-%m-%d")
-    yesterday_str = yesterday.strftime("%Y-%m-%d")
-    tomorrow_str = tomorrow.strftime("%Y-%m-%d")
+    """คำนวณตัดสต็อกรายวันของห้องยา
 
-    # Snapshot balances period format is YYYYMMDD
-    yesterday_bal_str = yesterday.strftime("%Y%m%d")
-    
+    ใช้วันที่จริงล่าสุดที่มีข้อมูล ไม่ใช่นาฬิกาเครื่อง — คลังข้อมูลต้นทาง (SSB) เป็น
+    สำเนา restore รายวัน ข้อมูลของ "วันนี้"/"เมื่อวาน" ตามปฏิทินจริงอาจยังไม่มาถึง
+    เลยก็ได้ ถ้ายึดวันที่ตามนาฬิกาตรง ๆ ทุกยอดจะเป็น 0 หมดโดยดูเหมือนของหมดคลัง
+    ทั้งที่จริงแค่ข้อมูลยังไม่มา (เจอจริง 19 ก.ย. 2569 หลังรัน pull_warehouse_data.bat
+    รอบแรกบนเซิร์ฟเวอร์ใหม่ — ยอดขึ้น 0 ทุกตัวเพราะ SSB ยังไม่มีข้อมูลของวันนั้นจริง ๆ)
+    """
     valid_stores = [s['code'] for s in PHARMACY_SUBSTORES]
-    
+
     if store_code != 'ALL':
         store_clause = "AND store = ?"
         store_params = [store_code]
@@ -2775,6 +2771,27 @@ def get_pharmacy_daily_stock_cut(conn: sqlite3.Connection, store_code: str = 'AL
         valid_stores = valid_stores + ['2']
         store_clause = f"AND store IN ({','.join(['?']*len(valid_stores))})"
         store_params = valid_stores
+
+    # งวดคงคลังจริงล่าสุดของกลุ่มคลังนี้ (ไม่ใช่ "เมื่อวาน" ตามปฏิทิน)
+    bal_row = conn.execute(
+        f"SELECT MAX(period) FROM balances WHERE 1=1 {store_clause}", store_params).fetchone()
+    yesterday_bal_str = (bal_row[0] if bal_row and bal_row[0] else "") or "00000000"
+
+    # วันจริงล่าสุดที่มีใบจ่าย/โอนของกลุ่มคลังนี้ (ไม่ใช่ "วันนี้" ตามปฏิทิน)
+    day_row = conn.execute(
+        f"SELECT MAX(substr(issued_at, 1, 10)) FROM issues WHERE issued_at != '' {store_clause}",
+        store_params).fetchone()
+    latest_day_str = day_row[0] if day_row and day_row[0] else None
+    try:
+        today = (datetime.datetime.strptime(latest_day_str, "%Y-%m-%d").date()
+                 if latest_day_str else datetime.datetime.now().date())
+    except ValueError:
+        today = datetime.datetime.now().date()
+    yesterday = today - datetime.timedelta(days=1)
+    tomorrow = today + datetime.timedelta(days=1)
+    today_str = today.strftime("%Y-%m-%d")
+    yesterday_str = yesterday.strftime("%Y-%m-%d")
+    tomorrow_str = tomorrow.strftime("%Y-%m-%d")
 
     sql = f'''
         WITH 
@@ -2900,9 +2917,15 @@ def get_pharmacy_daily_stock_cut(conn: sqlite3.Connection, store_code: str = 'AL
         "total_on_hand_val": total_on_hand_val,
         "total_yesterday_val": total_yest_val,
         "total_today_val": total_tod_val,
-        "total_items": len(results)
+        "total_items": len(results),
+        # วันที่จริงที่ใช้คำนวณ (อาจไม่ตรงกับวันนี้ตามนาฬิกา ถ้าข้อมูลจากโรงพยาบาลยังมาไม่ถึง)
+        # ให้หน้าเว็บโชว์ตรง ๆ แทนที่จะอ้างวันที่ตามเครื่องผู้ใช้เอง (new Date() ฝั่ง JS)
+        "as_of_today": today_str,
+        "as_of_yesterday": yesterday_str,
+        "as_of_balance_period": yesterday_bal_str if yesterday_bal_str != "00000000" else "",
+        "data_is_stale": latest_day_str is None or today.strftime("%Y-%m-%d") != datetime.datetime.now().strftime("%Y-%m-%d"),
     }
-    
+
     return {"data": results, "kpis": kpis}
 
 

@@ -2715,12 +2715,22 @@
             return;
           }
           dailyRawRows = res.data.data || [];
-          renderDailyKpis(res.data.kpis || {});
+          const kpis = res.data.kpis || {};
+          renderDailyKpis(kpis);
           renderDailyTable();
           const ts = document.getElementById('daily-timestamp');
           if (ts) {
             const now = new Date();
-            ts.textContent = `🕒 ข้อมูล ณ ${now.toLocaleDateString('th-TH')} เวลา ${now.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })} น. · อัปเดตอัตโนมัติทุก 1 ชม.`;
+            const checkedAt = `เช็คล่าสุด ${now.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })} น.`;
+            if (kpis.data_is_stale && kpis.as_of_today) {
+              // ข้อมูลจากโรงพยาบาลยังไม่ถึงวันนี้จริง (SSB เป็นสำเนา restore รายวัน)
+              // บอกวันที่ข้อมูลจริงตรง ๆ แทนวันที่ตามนาฬิกาเครื่อง ไม่ให้เข้าใจผิดว่าของหมด
+              ts.innerHTML = `⚠️ ข้อมูลล่าสุดที่มีคือวันที่ ${kpis.as_of_today} (ยังไม่ถึงวันนี้จริง) · ${checkedAt}`;
+              ts.style.color = '#fde68a';
+            } else {
+              ts.textContent = `🕒 ข้อมูล ณ ${now.toLocaleDateString('th-TH')} · ${checkedAt} · อัปเดตอัตโนมัติทุก 1 ชม.`;
+              ts.style.color = '';
+            }
           }
         })
         .catch(err => {
