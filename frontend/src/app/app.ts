@@ -36,9 +36,13 @@ export class App implements OnInit {
     { path: '/purchasing', icon: '🛒', label: 'ส่วนของด้านจัดซื้อ', detail: 'ตารางวิเคราะห์ปฏิบัติการจัดซื้อ' },
     { path: '/drug-search', icon: '🔎', label: 'ค้นหาและตรวจสอบข้อมูล', detail: 'ยา พัสดุ ครุภัณฑ์ อาหาร งานจ้าง' },
     { path: 'http://172.16.13.102/stock', icon: '💊', label: 'ข้อมูลคลังยา', detail: 'ระบบข้อมูลคลังยา (Stock5 เดิม)', external: true },
-    { path: '/departments', icon: '🏥', label: 'แต่ละแผนกเบิกอะไรไปเท่าไร', detail: 'กลุ่มงาน › งาน › ส่วนย่อย › รายการ', external: true },
-    { path: '/substores', icon: '🏬', label: 'คลังย่อยและวอร์ด', detail: 'ห้องยาใน, ห้องยานอก, เมตตา, เคมี, ER', external: true },
-    { path: '/cut-status', icon: '⏱️', label: 'คลังไหนข้อมูลค้าง', detail: 'คลังที่หยุดตัดยอด / ช้ากว่าปกติ', external: true },
+    // ลิงก์ external ใช้ [href] ตรง ๆ ไม่ผ่าน Angular Router จึงไม่รู้จัก <base href>
+    // เหมือน routerLink — ต้องเป็น path สัมพัทธ์ (ไม่มี / นำหน้า) ไม่งั้นตอนเผยแพร่ที่
+    // 172.16.13.102/ERPLPH เบราว์เซอร์จะตีความเป็น absolute แล้วเด้งไป root ของเว็บ
+    // เซิร์ฟเวอร์แทน (เจอจริง 19 ก.ย. 2569 ตอน deploy ที่ /ERPLPH)
+    { path: 'departments', icon: '🏥', label: 'แต่ละแผนกเบิกอะไรไปเท่าไร', detail: 'กลุ่มงาน › งาน › ส่วนย่อย › รายการ', external: true },
+    { path: 'substores', icon: '🏬', label: 'คลังย่อยและวอร์ด', detail: 'ห้องยาใน, ห้องยานอก, เมตตา, เคมี, ER', external: true },
+    { path: 'cut-status', icon: '⏱️', label: 'คลังไหนข้อมูลค้าง', detail: 'คลังที่หยุดตัดยอด / ช้ากว่าปกติ', external: true },
   ];
 
   alertsData: any = null;

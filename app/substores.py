@@ -927,7 +927,8 @@ def get_amc_and_mos_list(conn: sqlite3.Connection, store_code: str, limit: int =
         # กำหนดสถานะความเสี่ยง
         if on_hand_qty == 0 and amc_qty > 0:
             status = "STOCKOUT"
-            status_label = "🚨 ยาหมดคลัง (Stockout)"
+            # คำกลาง ไม่ใช่ "ยา" เพราะฟังก์ชันนี้ใช้กับทุกประเภทของ (ครุภัณฑ์ พัสดุ ฯลฯ ด้วย)
+            status_label = "🚨 ของหมดคลัง (Stockout)"
             badge_class = "late"
         elif mos < 0.5 and amc_qty > 0:
             status = "CRITICAL_LOW"
@@ -978,7 +979,7 @@ def get_requisition_recommendations(
     หลักเกณฑ์การแนะนำเบิก:
     1. รายการที่มีอัตราการใช้จริงเฉลี่ย 3 เดือน (AMC > 0)
     2. อยู่ในเกณฑ์ความเสี่ยงขาด:
-       - STOCKOUT: ยาหมดคลัง (On-hand = 0) -> ความเร่งด่วนสูงสุด
+       - STOCKOUT: ของหมดคลัง (On-hand = 0) -> ความเร่งด่วนสูงสุด
        - CRITICAL: MOS < 0.25 เดือน (< 7 วัน) -> ความเร่งด่วนสูงมาก
        - WARNING: 0.25 <= MOS < 0.50 เดือน (8-15 วัน) -> ควรเบิกเติม
     3. คำนวณจำนวนที่แนะนำให้เบิก:
@@ -1032,7 +1033,9 @@ def get_requisition_recommendations(
 
         if on_hand_qty == 0:
             urgency = "STOCKOUT"
-            urgency_label = "🚨 ยาหมดคลัง"
+            # คำกลาง ไม่ใช่ "ยา" เพราะเรียกใช้กับทุกประเภทของ (ครุภัณฑ์ พัสดุ ฯลฯ ด้วย)
+            # เจอจริง 19 ก.ย. 2569: กล้องส่องตรวจ/เครื่องมือแพทย์ขึ้น "ยาหมดคลัง" ผิดบริบท
+            urgency_label = "🚨 ของหมดคลัง"
             urgency_badge = "late"
             stockout_count += 1
         elif mos < 0.25:

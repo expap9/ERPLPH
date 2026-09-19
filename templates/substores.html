@@ -1417,7 +1417,7 @@
       <!-- 5 KPI Summary Badges -->
       <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:10px; background:var(--head); border:1px solid var(--line); border-radius:8px; padding:10px 14px; margin-bottom:14px;">
         <div>
-          <div style="font-size:11.5px; color:var(--muted);">🚨 ยาหมดคลัง (Stockout)</div>
+          <div style="font-size:11.5px; color:var(--muted);">🚨 ของหมดคลัง (Stockout)</div>
           <div style="font-size:18px; font-weight:800; color:#dc2626;">{{ '{:,}'.format(reorder_recommendations.stockout_count) }} <small style="font-size:12px; font-weight:normal; color:var(--muted);">รายการ</small></div>
           <div style="font-size:10.5px; color:var(--muted);">ยอดคงคลังเหลือ 0 แต่มีการใช้</div>
         </div>
@@ -2211,7 +2211,7 @@
 
           let statusBadge = '';
           if (d.on_hand.qty === 0 && d.kpis.amc_qty > 0) {
-            statusBadge = '<span class="pill late">🚨 ยาหมดคลัง</span>';
+            statusBadge = '<span class="pill late">🚨 ของหมดคลัง</span>';
           } else if (d.kpis.mos < 0.5 && d.kpis.amc_qty > 0) {
             statusBadge = '<span class="pill late">⚠ เสี่ยงขาด (< 15 วัน)</span>';
           } else if (d.kpis.mos > 2.5 && d.kpis.amc_qty > 0) {

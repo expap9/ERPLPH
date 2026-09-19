@@ -13,7 +13,7 @@ import { AuthService } from './auth.service';
 export const authInterceptor: HttpInterceptorFn = (request, next) => {
   const auth = inject(AuthService);
   const router = inject(Router);
-  const isLoginCall = request.url.includes('/api/auth/login');
+  const isLoginCall = request.url.includes('api/auth/login');
 
   return next(request).pipe(
     catchError((error: unknown) => {

@@ -57,7 +57,7 @@ export class AuthService {
 
   private refreshMe(): Observable<CurrentUser | null> {
     this.checkingAuth.set(true);
-    return this.http.get<MeResponse>('/api/auth/me').pipe(
+    return this.http.get<MeResponse>('api/auth/me').pipe(
       map(res => res.user),
       tap(user => {
         this.currentUser.set(user);
@@ -74,7 +74,7 @@ export class AuthService {
   }
 
   login(username: string, password: string): Observable<LoginResponse> {
-    return this.http.post<LoginResponse>('/api/auth/login', { username, password }).pipe(
+    return this.http.post<LoginResponse>('api/auth/login', { username, password }).pipe(
       tap(res => {
         if (res?.user) {
           this.currentUser.set(res.user);
@@ -89,7 +89,7 @@ export class AuthService {
   }
 
   logout(): Observable<unknown> {
-    return this.http.post('/api/auth/logout', {}).pipe(
+    return this.http.post('api/auth/logout', {}).pipe(
       tap(() => this.clearUser()),
       catchError(() => {
         this.clearUser();
