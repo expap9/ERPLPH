@@ -201,6 +201,13 @@ def verify_login(username: str, password: str) -> dict:
         cursor = conn.cursor()
         cursor.execute(query, user)
         row = cursor.fetchone()
+    except Exception as exc:
+        # เชื่อมต่อเซิร์ฟเวอร์ได้ แต่ฐาน SSBHOSPITAL เข้าไม่ได้ตอนนี้ — เจอจริง
+        # 19 ก.ย. 2569 ตอนฐานกำลัง restore แบบรายวัน (error 927) ไม่ใช่รหัสผิด
+        print(f"[Login] อ่านฐาน SSBHOSPITAL ไม่สำเร็จ: {type(exc).__name__}: {exc}")
+        raise LoginUnavailable(
+            "ระบบฐานข้อมูลโรงพยาบาลกำลังปรับปรุงข้อมูล (เช่น restore รายวัน) กรุณาลองใหม่อีกครั้งในอีกสักครู่"
+        ) from exc
     finally:
         conn.close()
 

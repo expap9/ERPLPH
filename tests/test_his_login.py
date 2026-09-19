@@ -85,6 +85,23 @@ class TestHisLogin(unittest.TestCase):
             self.assertEqual(user["username"], "PHAR01")
             self.assertEqual(user["name"], "Pharmacist John")
 
+    def test_verify_login_when_hospital_database_is_mid_restore(self):
+        """เจอจริง 19 ก.ย. 2569: ต่อเซิร์ฟเวอร์ได้ แต่ SSBHOSPITAL กำลัง restore รายวัน
+        (pyodbc error 927) ต้องขึ้นข้อความสุภาพ ไม่ใช่ traceback ดิบ 500 ให้ผู้ใช้เห็น"""
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_conn.cursor.return_value = mock_cursor
+        mock_cursor.execute.side_effect = Exception(
+            "[42000] [Microsoft][ODBC Driver 18 for SQL Server][SQL Server]"
+            "Database 'SSBHOSPITAL' cannot be opened. It is in the middle of a restore. (927)"
+        )
+
+        with patch("database.connect", return_value=mock_conn):
+            with self.assertRaises(his_login.LoginUnavailable) as ctx:
+                his_login.verify_login("41850", "somepassword")
+            self.assertIn("ปรับปรุงข้อมูล", str(ctx.exception))
+        mock_conn.close.assert_called_once()
+
     def test_verify_login_cancelled_account(self):
         mock_conn = MagicMock()
         mock_cursor = MagicMock()
