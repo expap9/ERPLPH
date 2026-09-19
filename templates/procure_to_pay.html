@@ -106,6 +106,19 @@
   </div>
 
   {% if po_amount_available %}
+  {% if receipts.nothing_pulled_yet %}
+  <div class="notice" style="margin-bottom:14px; border-color:var(--late);">
+    <b>สถานะรับของด้านล่างยังใช้ไม่ได้</b> — เครื่องนี้ยังไม่เคยรัน <code>pull_warehouse_data.bat</code>
+    ตาราง "ยอดรับ" ว่างเปล่าทั้งหมด ทุกใบจะขึ้น "ยังไม่ได้รับของ" ทั้งที่อาจรับแล้วจริง
+    รันสคริปต์ดึงข้อมูลก่อนแล้วรีเฟรชหน้านี้ใหม่
+  </div>
+  {% elif not receipts.complete %}
+  <div class="notice" style="margin-bottom:14px; border-color:var(--slow);">
+    <b>สถานะรับของยังไม่ครบทุกคลัง</b> — ตาราง "ยอดรับ" มีเฉพาะ{{ receipts.stores | map('store_name') | join(', ') or 'บางคลัง' }}
+    ใบ PO ของคลังอื่นอาจขึ้น "ยังไม่ได้รับของ" ทั้งที่รับแล้วจริง จนกว่าจะรัน
+    <code>pull_warehouse_data.bat</code> รอบถัดไป
+  </div>
+  {% endif %}
   <p class="card-hint" style="color:var(--muted); font-size:13px; margin:-4px 0 12px;">
     {{ '{:,}'.format(total_pos) }} ใบสั่งซื้อ · สั่งรวม {{ money(total_ordered) }} บาท ·
     รับแล้ว {{ money(total_received) }} บาท · อนุมัติแล้ว {{ approved_count }}/{{ total_pos }} ใบ

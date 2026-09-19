@@ -493,9 +493,11 @@ def receipt_coverage(conn, months: int = DEFAULT_MONTHS) -> dict[str, Any]:
     """
     latest = latest_period(conn)
     if not latest:
-        return {"stores": [], "complete": False}
+        # ไม่มีทั้งใบรับและใบจ่ายเลยสักงวด — ยังไม่เคยรัน pull_warehouse_data.bat บนเครื่องนี้
+        # ต่างจากกรณี "ดึงแล้วแต่ใบรับยังไม่ครบทุกคลัง" ที่ยอดใช้/คงคลังยังใช้งานได้ปกติ
+        return {"stores": [], "complete": False, "nothing_pulled_yet": True}
     first, until = window(months, latest)
     found = [store_code for (store_code,) in conn.execute(
         "SELECT DISTINCT store FROM receipts WHERE period >= ? AND period < ? ORDER BY store",
         [first, until])]
-    return {"stores": found, "complete": len(found) > 1}
+    return {"stores": found, "complete": len(found) > 1, "nothing_pulled_yet": False}

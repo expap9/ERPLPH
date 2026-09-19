@@ -222,8 +222,22 @@ class OverviewTests(unittest.TestCase):
 
     def test_receipt_coverage_says_when_only_the_pharmacy_has_receipts(self):
         self.assertTrue(overview.receipt_coverage(self.conn)["complete"])
+        self.assertFalse(overview.receipt_coverage(self.conn)["nothing_pulled_yet"],
+                         "มีข้อมูลอยู่แล้ว ต้องไม่ขึ้นว่ายังไม่เคยดึงอะไรเลย")
         self.conn.execute("DELETE FROM receipts WHERE store <> '2'")
         self.assertFalse(overview.receipt_coverage(self.conn)["complete"])
+        self.assertFalse(overview.receipt_coverage(self.conn)["nothing_pulled_yet"],
+                         "ใบรับยังไม่ครบทุกคลัง แต่ยอดใช้/คงคลังยังมีอยู่ ไม่ใช่กรณี 'ยังไม่เคยดึงเลย'")
+
+    def test_receipt_coverage_on_a_never_pulled_database(self):
+        """เครื่องใหม่ที่ยังไม่เคยรัน pull_warehouse_data.bat เลย — ต้องแยกจากกรณี
+        'ดึงแล้วแต่ใบรับยังไม่ครบทุกคลัง' เพราะยอดใช้/คงคลังก็ยังว่างเปล่าเหมือนกัน"""
+        self.conn.execute("DELETE FROM issues")
+        self.conn.execute("DELETE FROM receipts")
+        coverage = overview.receipt_coverage(self.conn)
+        self.assertFalse(coverage["complete"])
+        self.assertTrue(coverage["nothing_pulled_yet"])
+        self.assertEqual(coverage["stores"], [])
 
 
 class OverviewPageTests(unittest.TestCase):

@@ -14,7 +14,13 @@
   <div class="problem">{{ problem }}</div>
 {% else %}
 
-{% if not receipts.complete %}
+{% if receipts.nothing_pulled_yet %}
+  <div class="notice">
+    <b>ยังไม่มีข้อมูลคลังเลย</b> — เครื่องนี้ยังไม่เคยรัน <code>pull_warehouse_data.bat</code>
+    ตัวเลขทั้งหน้านี้ (ยอดใช้ คงคลัง ยอดรับ) ยังว่างเปล่าทั้งหมด รันสคริปต์ดึงข้อมูลก่อน
+    แล้วรีเฟรชหน้านี้ใหม่
+  </div>
+{% elif not receipts.complete %}
   <div class="notice">
     <b>ยอดรับ (ยอดซื้อ/จ้าง) ยังไม่ครบ</b> — คลังข้อมูลนี้ยังมีใบรับของ{{ receipts.stores | map('store_name') | join(', ') or 'ไม่มีคลังไหนเลย' }}
     เท่านั้น ใบรับของคลังพัสดุ ห้องชันสูตร คลังโภชนาการ และคลังอื่น จะเข้ามาหลังรัน

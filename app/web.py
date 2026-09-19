@@ -508,10 +508,14 @@ def procure_to_pay_page():
         pipeline = executive_analytics.procure_to_pay_pipeline(conn)
         central_vs_substore = substores.get_central_vs_substore_stock(conn)
         reorder = substores.get_requisition_recommendations(conn, "ALL", target_mos=1.0)
+        # สถานะ "ได้รับครบ/บางส่วน/ยังไม่ได้รับ" อ้างอิงตาราง receipts ถ้ายังดึงไม่ครบ
+        # ทุกคลัง (หรือยังไม่เคยดึงเลย) ต้องบอกตรง ๆ ไม่งั้นจะดูเหมือนยังไม่ได้รับของทั้งที่รับแล้ว
+        receipts = overview.receipt_coverage(conn)
     finally:
         conn.close()
     return render_template("procure_to_pay.html", problem=None, active="p2p",
-                            central_vs_substore=central_vs_substore, reorder=reorder, **pipeline)
+                            central_vs_substore=central_vs_substore, reorder=reorder,
+                            receipts=receipts, **pipeline)
 
 
 @app.route("/substores")
